@@ -34,7 +34,7 @@ Watches pump.fun live. Coins past **70 %** of the bonding curve go through the b
 **Data sources (all free, no keys):**
 - pump.fun public frontend API `GET /coins?sort=last_trade_timestamp&complete=false` — top 100 most recently traded, not-yet-graduated coins every 15 s. Curve progress = `(793.1M − real_token_reserves) / 793.1M`.
 - PumpPortal websocket `wss://pumpportal.fun/api/data` (`subscribeNewToken`, `subscribeMigration`, free). Every new pump.fun coin is tracked **on-chain**: its bonding-curve account is read in batches of 100 with Helius `getMultipleAccounts` (1 credit per batch, 49-byte slice), every 15–30 s while young/hot, slower as it ages; dead coins are dropped (<3 % after 30 min, <10 % after 2 h, <30 % after 6 h, all after 24 h). ≈3–8k credits/day. (PumpPortal's per-token trade stream needs a funded key, so it's not used.)
-- `RADAR_SOURCE=auto` (default) uses both; the pump.fun API is paused 30 min after 3 failures (it returns **403 from Render's datacenter IPs**, so in production the on-chain tracker does the work and only sees coins created after the last boot).
+- Sources (all free): **trade stream** (primary: every pump.fun TradeEvent from the public Solana RPC log stream shared with the scalper; post-trade real reserves give exact curve progress for any coin that trades, old or new, 0 Helius credits), **on-chain tracker** (curve accounts via getMultipleAccounts for coins from PumpPortal new-token events and **GeckoTerminal**'s public pump-fun pool list, polled every 5 min, every 1 min if the stream goes quiet), **PumpPortal** websocket. The pump.fun frontend API sits behind a Cloudflare bot challenge (403 for any server, Render or not), so it is off unless `RADAR_PUMP_API=1` (exponential backoff 30-240 min). `RADAR_SOURCE=chain` disables it, `RADAR_SOURCE=api` disables the on-chain tracker.
 - Helius RPC only through the existing analyzer: **one scan per mint** when it crosses the threshold (~30 RPC calls ≈ 40 credits), capped by `RADAR_MAX_SCANS_PER_DAY` (250).
 
 **Clean = every check passes** (any missing data = not clean):
@@ -85,7 +85,7 @@ Scanned-clean mints are remembered (last 200, persisted) so they aren't re-scann
 ### Helius budget (free 1M credits/month)
 Basic scans ≤250/day × ~35 ≈ 9k · deep ≤40/day × ~200 ≈ 8k · on-chain tracker ≈ 6k → ≈ 23k/day ≈ 700k/month. Hard stop: `RADAR_DAILY_CREDIT_CAP` (28k/day, counted in-process: 1 per call, 10 per getProgramAccounts) — when reached the radar stops scanning until 00:00 UTC; the rest is for `/api/analyze` and Telegram `/sniff`. Credits are shown in `/api/radar/status`.
 
-**Limitations:** the trade sample is the last ~120 trades (older history not parsed); funder = first incoming SOL (multi-hop funding, CEX withdrawals are missed); dev history only sees the dev's last 40 txs; in production only coins created after the last boot are tracked (pump.fun API is 403 from Render); none of this predicts price.
+**Limitations:** the trade sample is the last ~120 trades (older history not parsed); funder = first incoming SOL (multi-hop funding, CEX withdrawals are missed); dev history only sees the dev's last 40 txs; none of this predicts price.
 
 **Persistence:** Render free disk is ephemeral. If `STATE_RENDER_API_KEY` is set, subscribers + alerted mints are stored as JSON in the service env var `RADAR_STATE` through the Render API (updating an env var via API does not redeploy) and read back on boot. Without it, state is in memory only and lost on restart. Don't declare `RADAR_STATE` in render.yaml.
 

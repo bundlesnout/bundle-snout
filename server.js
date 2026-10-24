@@ -40,7 +40,10 @@ const createdSyms = new Map(); // mint -> symbol, fed by the radar's PumpPortal 
 let scalper = null;
 if (process.env.SCALP_ENABLED !== '0') {
   const { createScalper, renderEnvStore } = require('./scalp');
-  scalper = createScalper({ store: renderEnvStore(), symbolOf: (m) => createdSyms.get(m), onTradeHook: (tr, m) => agent?.onTrade(tr, m) });
+  scalper = createScalper({ store: renderEnvStore(), symbolOf: (m) => createdSyms.get(m), onTradeHook: (tr, m) => {
+    try { agent?.onTrade(tr, m); } catch (e) { console.error('[agent] trade hook', e.message); }
+    try { radar?.onTrade(tr, { symbol: createdSyms.get(tr.mint) || null, solUsd: scalper?.solUsd?.() }); } catch (e) { console.error('[radar] trade hook', e.message); } // Bond Radar's primary source
+  } });
   scalper.start().catch((e) => console.error('[scalp] start failed', e.message));
 }
 const onWsEvent = (j) => { if (j.txType === 'create' && j.mint && j.symbol) { createdSyms.set(j.mint, j.symbol); if (createdSyms.size > 20000) createdSyms.delete(createdSyms.keys().next().value); } };

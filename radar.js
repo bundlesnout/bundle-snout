@@ -1,10 +1,17 @@
 // Bond Radar — watches pump.fun for coins approaching graduation and alerts when they scan clean.
-// Free sources only:
-//  * pump.fun public frontend API (no key): recently-traded, not-yet-graduated coins incl. curve reserves -> progress.
-//  * PumpPortal data websocket (no key): live new-token + migration events (liveness/stats; trade streams need a paid key).
+// Free, legitimate sources only (pump.fun's frontend API sits behind a Cloudflare bot challenge and answers 403 to
+// servers, so it is optional and off by default; we never try to get around that block):
+//  1. Trade stream (primary, 0 credits): every pump.fun TradeEvent from the public Solana RPC log stream that the
+//     scalper already decodes. Each event carries the post-trade real token reserves -> exact curve progress.
+//  2. On-chain tracker: curve accounts read with getMultipleAccounts for coins found by PumpPortal (new tokens) and
+//     GeckoTerminal (public API, pump-fun dex pools = bonding-curve accounts). Confirms progress and graduation.
+//  3. PumpPortal data websocket (no key): live new-token + migration events.
+//  4. pump.fun frontend API: only if RADAR_PUMP_API=1, with exponential backoff.
 // Helius is only used by the existing analyzer, once per mint that crosses the threshold, under a daily budget.
 const WebSocket = require('ws');
-const { analyze, rpc, creditStats, setCreditTag } = require('./analyzer');
+const analyzerMod = require('./analyzer');
+const { analyze, creditStats, setCreditTag } = analyzerMod;
+const rpc = (...a) => analyzerMod.rpc(...a); // late-bound so tests can stub it
 const { deepAnalyze } = require('./deep');
 
 const num = (k, d) => (process.env[k] != null && process.env[k] !== '' ? Number(process.env[k]) : d);
@@ -27,7 +34,15 @@ const CFG = () => ({
   // 'auto' = pump.fun API (if reachable) + on-chain tracking of coins seen on the PumpPortal stream; 'api' | 'chain' to force one
   source: (process.env.RADAR_SOURCE || 'auto').toLowerCase(),
   chainTickMs: num('RADAR_CHAIN_TICK_MS', 15000),
+  pumpApi: process.env.RADAR_PUMP_API === '1',
+  gecko: process.env.RADAR_GECKO !== '0',
+  geckoMs: num('RADAR_GECKO_MS', 300000),      // supplementary discovery every 5 min (2 requests; free limit is ~30/min)
+  geckoStaleMs: num('RADAR_GECKO_STALE_MS', 60000), // every 1 min while the trade stream is silent
+  streamThrottleMs: num('RADAR_STREAM_THROTTLE_MS', 2000),
+  maxTracked: num('RADAR_MAX_TRACKED', 30000),
 });
+const GECKO = process.env.GECKO_API || 'https://api.geckoterminal.com/api/v2';
+const VIRTUAL_GAP = 279_900_000e6; // virtual - real token reserves on a standard curve (1.073B - 793.1M), raw units
 const API = process.env.PUMP_API || 'https://frontend-api-v3.pump.fun';
 const WS_URL = process.env.PUMPPORTAL_WS || 'wss://pumpportal.fun/api/data';
 const PUMP_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
@@ -81,7 +96,11 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
     recent: [],
   };
   let ws = null, wsBackoff = 1000, pollTimer = null, chainTimer = null, stopped = false, working = false, apiPausedUntil = 0, apiFailStreak = 0, apiPauses = 0;
-  const useApi = cfg.source !== 'chain', useChain = cfg.source !== 'api';
+  const useApi = cfg.pumpApi && cfg.source !== 'chain', useChain = cfg.source !== 'api';
+  let geckoTimer = null, pruneTimer = null, geckoLastAt = 0;
+  st.stream = { trades: 0, mints: 0, upserts: 0, lastAt: null };
+  st.gecko = { enabled: cfg.gecko && useChain, polls: 0, ok: 0, fail: 0, added: 0, lastAt: null, lastError: null };
+  if (!useApi) st.poll.disabled = 'pump.fun frontend API is behind a Cloudflare bot challenge (403 for servers); set RADAR_PUMP_API=1 to try it';
 
   // ---- On-chain tracker: coins created while we're running (from PumpPortal), curve read in batches of 100
   // with getMultipleAccounts (1 Helius credit per batch, 49-byte data slice). Re-check interval by progress;
@@ -93,6 +112,60 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
     const vTok = Number(j.vTokensInBondingCurve) * 1e6;
     chain.set(j.mint, { mint: j.mint, curve: j.bondingCurveKey, createdAt: Date.now(), lastCheckAt: Date.now(), name: j.name, symbol: j.symbol,
       progress: Number.isFinite(vTok) ? Math.max(0, Math.round(((1_073_000_000e6 - vTok) / INITIAL_REAL) * 1000) / 10) : 0, initReal: INITIAL_REAL });
+  }
+  // a curve found elsewhere (GeckoTerminal): read on the next chain tick
+  function chainAddCurve({ mint, curve, symbol = null, name = null }) {
+    if (!useChain || !mint || !curve || chain.has(mint)) return false;
+    chain.set(mint, { mint, curve, createdAt: Date.now(), lastCheckAt: 0, name, symbol, progress: 0, initReal: INITIAL_REAL });
+    return true;
+  }
+
+  // ---- 1. trade stream (shared with the scalper/agent): tr = decoded TradeEvent (sol/tok units, realTok in tokens)
+  function onTrade(tr, { symbol = null, solUsd = null } = {}) {
+    if (!tr?.mint || stopped) return;
+    st.stream.trades++; st.stream.lastAt = new Date().toISOString();
+    const now = Date.now(); const t = tracked.get(tr.mint);
+    if (t && t._streamAt && now - t._streamAt < cfg.streamThrottleMs) return;
+    let realRaw = tr.realTok != null ? Math.round(tr.realTok * 1e6) : (Number.isFinite(tr.vt) ? Math.round(tr.vt * 1e6) - VIRTUAL_GAP : NaN);
+    if (!Number.isFinite(realRaw)) return;
+    realRaw = Math.max(0, realRaw);
+    const complete = realRaw === 0;
+    if (!t) st.stream.mints++;
+    const mcUsd = solUsd && tr.vt > 0 ? Math.round((tr.vs / tr.vt) * 1e9 * solUsd) : null;
+    st.stream.upserts++;
+    upsert({ mint: tr.mint, symbol: symbol ?? undefined, real_token_reserves: realRaw, complete, usd_market_cap: mcUsd, last_trade_timestamp: tr.ts ? tr.ts * 1000 : now, _initReal: Math.max(INITIAL_REAL, chain.get(tr.mint)?.initReal || 0) });
+    const u = tracked.get(tr.mint); if (u) u._streamAt = now;
+    if (complete) tracked.delete(tr.mint);
+  }
+
+  // ---- 2b. GeckoTerminal discovery (public, no key): most active pump-fun pools; the pool address is the bonding curve
+  async function geckoPoll(force = false) {
+    if (!st.gecko.enabled || stopped) return;
+    const now = Date.now(); const streamAge = st.stream.lastAt ? now - Date.parse(st.stream.lastAt) : Infinity;
+    const every = streamAge > cfg.geckoStaleMs ? cfg.geckoStaleMs : cfg.geckoMs;
+    if (!force && now - geckoLastAt < every) return;
+    geckoLastAt = now; st.gecko.polls++; st.gecko.lastAt = new Date().toISOString();
+    try {
+      for (const sort of ['h24_tx_count_desc', 'h24_volume_usd_desc']) {
+        const r = await fetch(`${GECKO}/networks/solana/dexes/pump-fun/pools?page=1&sort=${sort}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+        if (!r.ok) throw new Error('GeckoTerminal HTTP ' + r.status);
+        const j = await r.json();
+        for (const p of j?.data || []) {
+          const curve = p?.attributes?.address; const mint = p?.relationships?.base_token?.data?.id?.replace(/^solana_/, '');
+          const symbol = (p?.attributes?.name || '').split(' / ')[0] || null;
+          if (chainAddCurve({ mint, curve, symbol })) st.gecko.added++;
+        }
+        await sleep(1500);
+      }
+      st.gecko.ok++; st.gecko.lastError = null;
+    } catch (e) { st.gecko.fail++; st.gecko.lastError = e.message; log('[radar] gecko error:', e.message); }
+  }
+
+  function prune() {
+    const cutoff = Date.now() - 3 * 3600e3;
+    for (const [m, t] of tracked) if (t.lastSeenAt < cutoff) tracked.delete(m);
+    if (tracked.size > cfg.maxTracked) { const old = [...tracked.values()].sort((a, b) => a.lastSeenAt - b.lastSeenAt).slice(0, tracked.size - cfg.maxTracked); for (const t of old) tracked.delete(t.mint); }
+    if (decided.size > 5000) for (const k of [...decided.keys()].slice(0, 1000)) decided.delete(k);
   }
   function dueMs(c, now) {
     const age = now - c.createdAt;
@@ -169,10 +242,6 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
       if (apiFailStreak >= 3) { const min = apiPauseMin(apiPauses++); apiPausedUntil = Date.now() + min * 60e3; st.poll.pausedUntil = new Date(apiPausedUntil).toISOString(); st.poll.pauses = apiPauses; log(`[radar] pump.fun API failing (${e.message}); pausing it ${min} min, on-chain tracker continues`); apiFailStreak = 2; } // still failing after a pause -> next failure re-pauses at once, for longer
       else log('[radar] poll error:', e.message);
     }
-    // prune: coins not seen for 3h; cap memory
-    const cutoff = Date.now() - 3 * 3600e3;
-    for (const [m, t] of tracked) if (t.lastSeenAt < cutoff) tracked.delete(m);
-    if (decided.size > 5000) for (const k of [...decided.keys()].slice(0, 1000)) decided.delete(k);
   }
 
   async function work() {
@@ -253,16 +322,21 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
     start() {
       if (st.running) return; st.running = true; stopped = false;
       log(`[radar] started: threshold ${cfg.thresholdPct}%, poll ${cfg.pollMs}ms, ${cfg.pages}x${cfg.pageLimit} coins, budget ${cfg.maxScansPerDay} scans + ${cfg.maxDeepPerDay} deep/day, credit cap ${cfg.dailyCreditCap}/day`);
-      poll(); pollTimer = setInterval(poll, cfg.pollMs); if (useChain) chainTimer = setInterval(chainTick, cfg.chainTickMs); connectWs();
+      log(`[radar] sources: trade stream${useChain ? ' + on-chain tracker' : ''}${st.gecko.enabled ? ' + GeckoTerminal' : ''}${cfg.useWs ? ' + PumpPortal' : ''}${useApi ? ' + pump.fun API' : ''}`);
+      if (useApi) { poll(); pollTimer = setInterval(poll, cfg.pollMs); }
+      if (useChain) chainTimer = setInterval(chainTick, cfg.chainTickMs);
+      if (st.gecko.enabled) { setTimeout(() => geckoPoll(true), 20000).unref?.(); geckoTimer = setInterval(() => geckoPoll(), 15000); }
+      pruneTimer = setInterval(prune, 60000); connectWs();
     },
-    stop() { stopped = true; st.running = false; clearInterval(pollTimer); clearInterval(chainTimer); try { ws?.close(); } catch {} },
+    stop() { stopped = true; st.running = false; clearInterval(pollTimer); clearInterval(chainTimer); clearInterval(geckoTimer); clearInterval(pruneTimer); try { ws?.close(); } catch {} },
+    onTrade, geckoPoll, chainTick, prune,
     status() {
       const list = [...tracked.values()];
-      const lastEvt = [st.poll.lastOkAt, st.ws.lastEventAt, st.chain.lastAt].filter(Boolean).sort().pop() || null;
+      const lastEvt = [st.poll.lastOkAt, st.ws.lastEventAt, st.chain.lastAt, st.stream.lastAt].filter(Boolean).sort().pop() || null;
       return {
         running: st.running, startedAt: st.startedAt, config: cfg, trackedCoins: list.length,
         aboveThreshold: list.filter((t) => t.progress >= cfg.thresholdPct && !t.complete).length,
-        lastEventAt: lastEvt, sources: { api: useApi, chain: useChain }, poll: st.poll, chain: { ...st.chain, tracked: chain.size }, ws: st.ws, scans: st.scans, alerts: st.alerts, queue: queue.length,
+        lastEventAt: lastEvt, sources: { stream: true, chain: useChain, gecko: st.gecko.enabled, pumpportal: cfg.useWs, pumpApi: useApi }, stream: st.stream, gecko: st.gecko, poll: st.poll, chain: { ...st.chain, tracked: chain.size }, ws: st.ws, scans: st.scans, alerts: st.alerts, queue: queue.length,
         hottest: list.filter((t) => !t.complete && t.progress != null).sort((a, b) => b.progress - a.progress).slice(0, 5).map((t) => ({ mint: t.mint, symbol: t.symbol, progress: t.progress, decided: decided.has(t.mint) ? (decided.get(t.mint).clean ? 'clean' : 'dirty') : null })),
         recentDecisions: st.recent.slice(0, 10), credits: creditStats(), picks: picker ? picker.status() : null,
       };
