@@ -99,6 +99,43 @@ app.get('/api/agent', (_, res) => { res.set('cache-control', 'no-store'); res.js
 app.get('/agent/diary', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent-diary.html')));
 app.get('/api/agent/activity', (_, res) => { res.set('cache-control', 'no-store'); res.json(agent ? agent.activity() : { disabled: true }); }); // light, polled every few seconds by /agent
 app.get('/api/agent/diary', (_, res) => { res.set('cache-control', 'no-store'); res.json(agent ? agent.diary() : { disabled: true }); });
+// ---- /m (= /agent/live): mobile live dashboard, polls the slim /api/agent/m every 3 s. Wallet balance read via public RPC, cached 15 s.
+const AGENT_WALLET = process.env.AGENT_WALLET_ADDRESS || '4iUUembrP2xMBeP4RbkYciZa1yFpp1YM87Uk5Y9dD1qy';
+const MOBILE_RPC = process.env.MOBILE_RPC_URL || 'https://api.mainnet-beta.solana.com';
+const walletBal = { sol: null, at: 0, pending: null, error: null };
+function walletBalance() {
+  if (Date.now() - walletBal.at < 15e3 || walletBal.pending) return walletBal.pending || Promise.resolve();
+  walletBal.pending = fetch(MOBILE_RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(6000),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [AGENT_WALLET, { commitment: 'confirmed' }] }) })
+    .then((r) => r.json()).then((j) => { if (j?.result?.value == null) throw new Error(j?.error?.message || 'no result'); walletBal.sol = j.result.value / 1e9; walletBal.error = null; })
+    .catch((e) => { walletBal.error = e.message; })
+    .finally(() => { walletBal.at = Date.now(); walletBal.pending = null; });
+  return walletBal.pending;
+}
+function mobileView(s) {
+  const a = s.activity || {}; const v = s.vitals || {}; const aff = v.affect || {};
+  const pay = s.payout || s.riskFree || s.principal || null;
+  return {
+    now: s.now, mode: s.mode, state: s.state, halted: s.halted || null,
+    wallet: { address: AGENT_WALLET, solscan: `https://solscan.io/account/${AGENT_WALLET}`, sol: walletBal.sol ?? s.wallet?.onChainSol ?? null,
+      at: walletBal.sol != null ? new Date(walletBal.at).toISOString() : s.wallet?.onChainAt || null },
+    balance: s.balance, solUsd: s.solUsd, pnl: s.pnl,
+    stats: s.stats ? { closedTrades: s.stats.closedTrades, wins: s.stats.wins, winRate: s.stats.winRate, drawdownPct: s.stats.drawdownPct } : null,
+    vitals: { signal: v.signal ?? null, state: v.state || null, pain: aff.pain ?? v.policy?.pain ?? null, comfort: aff.comfort ?? v.policy?.comfort ?? null, cooldownUntil: aff.cooldownUntil || null, lossStreak: aff.lossStreak ?? null },
+    mood: s.mind?.mood || null, regime: s.mind?.regime ? { label: s.mind.regime.label, tradesPerMin: s.mind.regime.tradesPerMin } : null,
+    activity: { key: a.key, label: a.label, headline: a.headline, detail: a.detail, scannedLastMin: a.scannedLastMin, coinsToday: a.coinsToday, candidates: a.candidates || [], log: (a.log || []).slice(0, 8), stream: a.stream || null },
+    positions: s.positions || [],
+    trades: (s.trades || []).slice(0, 10).map((t) => ({ side: t.side, symbol: t.symbol, mint: t.mint, arm: t.arm, sol: t.sol, pnlSol: t.pnlSol, pnlPct: t.pnlPct, reason: t.reason, tx: t.tx, at: t.at, mode: t.mode, heldMin: t.heldMin })),
+    payout: pay,
+  };
+}
+app.get(['/m', '/agent/live'], (_, res) => res.sendFile(path.join(__dirname, 'public', 'm.html')));
+app.get('/api/agent/m', async (_, res) => {
+  res.set('cache-control', 'no-store');
+  if (!agent) return res.json({ disabled: true });
+  await Promise.race([walletBalance(), new Promise((r) => setTimeout(r, 2500))]);
+  try { res.json(mobileView(agent.status())); } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/api/agent/backtest', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent-backtest.json')));
 // ---- Fee Rips tracker (/rips): creator fees -> Collector Crypt packs, read on-chain from the public RPC (0 Helius credits)
 let rips = null;

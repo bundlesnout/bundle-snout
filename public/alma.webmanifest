@@ -1,0 +1,15 @@
+{
+  "name": "ALMA Live",
+  "short_name": "ALMA",
+  "description": "ALMA, SpaniardDev's AI trader: live status, positions and trades.",
+  "start_url": "/m?src=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#07070d",
+  "theme_color": "#07070d",
+  "icons": [
+    { "src": "/alma-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/alma-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

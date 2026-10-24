@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ALMA Live</title>
+<meta name="theme-color" content="#07070d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/alma.webmanifest">
+<link rel="icon" type="image/png" href="/alma-icon-192.png">
+<link rel="apple-touch-icon" href="/alma-icon-192.png">
+<style>
+:root{--bg:#07070d;--card:#10101a;--line:#22223a;--tx:#eeeef8;--mu:#9a9ab8;--ac:#b388ff;--g:#3fd68f;--r:#ff6b63;--y:#f0b429;--b:#58a6ff}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--tx);font:17px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;-webkit-text-size-adjust:100%}
+a{color:var(--ac);text-decoration:none}
+main{max-width:980px;margin:0 auto;padding:calc(10px + env(safe-area-inset-top)) 12px calc(40px + env(safe-area-inset-bottom))}
+header{position:sticky;top:0;z-index:5;background:rgba(7,7,13,.92);backdrop-filter:blur(8px);display:flex;align-items:center;gap:10px;padding:8px 2px 10px;border-bottom:1px solid var(--line);margin-bottom:10px}
+header h1{font-size:22px;letter-spacing:.16em;margin:0;font-weight:800}
+.badge{font-weight:800;font-size:14px;letter-spacing:.08em;border-radius:8px;padding:3px 9px;border:2px solid var(--y);color:var(--y)}
+.badge.live{border-color:var(--g);color:var(--g)}
+.upd{margin-left:auto;display:flex;align-items:center;gap:7px;color:var(--mu);font-size:14px;white-space:nowrap}
+.dot{width:11px;height:11px;border-radius:50%;background:var(--g);box-shadow:0 0 0 0 rgba(63,214,143,.7)}
+.dot.pulse{animation:pulse 1s ease-out}.dot.stale{background:var(--y)}.dot.dead{background:var(--r)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,214,143,.8)}100%{box-shadow:0 0 0 14px rgba(63,214,143,0)}}
+.grid{display:grid;grid-template-columns:1fr;gap:12px}
+@media(min-width:600px){.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}}
+section{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mu);margin:0 0 8px;font-weight:700}
+.big{font-size:34px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.mid{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.sub{color:var(--mu);font-size:14.5px}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.kv div{background:#0b0b14;border:1px solid var(--line);border-radius:12px;padding:8px}
+.kv b{display:block;font-size:20px;font-variant-numeric:tabular-nums}.kv span{color:var(--mu);font-size:12.5px;text-transform:uppercase;letter-spacing:.06em}
+.pos{color:var(--g)}.neg{color:var(--r)}
+.bar{height:18px;background:#1a1a2a;border-radius:99px;overflow:hidden;margin:10px 0 6px}.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#7c4dff,#3fd68f);border-radius:99px;transition:width .6s}
+.head{font-size:19px;font-weight:600;margin:2px 0 6px}
+ul.list{list-style:none;margin:0;padding:0}ul.list li{padding:10px 0;border-top:1px solid var(--line)}ul.list li:first-child{border-top:0}
+.tag{display:inline-block;font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--mu);margin-right:4px}
+.v-scanning,.v-watch{color:var(--b);border-color:var(--b)}.v-bought{color:var(--g);border-color:var(--g)}.v-hold{color:var(--y);border-color:var(--y)}.v-pass,.v-rejected{color:var(--mu)}
+.sym{font-weight:700;font-size:18px}
+.empty{color:var(--mu);font-size:15px;padding:4px 0}
+.err{display:none;background:#2a1012;border:1px solid var(--r);color:#ffb3ae;border-radius:12px;padding:10px;margin-bottom:10px;font-size:15px}
+footer{margin-top:16px;display:flex;gap:14px;flex-wrap:wrap;font-size:15px}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>ALMA</h1><span id="mode" class="badge">PAPER</span>
+  <div class="upd"><span id="ago">connecting…</span><span id="dot" class="dot"></span></div>
+</header>
+<div id="err" class="err"></div>
+<div class="grid">
+  <section>
+    <h2>Wallet (on-chain)</h2>
+    <div class="big" id="wsol">–</div>
+    <div class="sub" id="wsub">reading Solana…</div>
+    <div class="kv">
+      <div><span>Today</span><b id="today">–</b></div>
+      <div><span>Unrealized</span><b id="unreal">–</b></div>
+      <div><span>Win rate</span><b id="wr">–</b></div>
+    </div>
+    <div class="sub" id="paperline" style="margin-top:8px"></div>
+  </section>
+  <section>
+    <h2>Vitals</h2>
+    <div class="row"><div class="big" id="vital">–</div><div class="mid" id="vstate">–</div></div>
+    <div class="sub" id="state">–</div>
+    <div class="kv">
+      <div><span>Mood</span><b id="mood" style="font-size:16px">–</b></div>
+      <div><span>Pain</span><b id="pain">–</b></div>
+      <div><span>Comfort</span><b id="comfort">–</b></div>
+    </div>
+  </section>
+  <section class="wide">
+    <h2>Right now</h2>
+    <div class="head" id="headline">–</div>
+    <div class="sub" id="detail"></div>
+    <h2 style="margin-top:14px">Top candidates</h2>
+    <ul class="list" id="cands"><li class="empty">–</li></ul>
+  </section>
+  <section class="wide">
+    <h2>Risk-free goal</h2>
+    <div class="row"><div class="mid" id="goalnow">–</div><div class="sub" id="goaltarget">target –</div></div>
+    <div class="bar"><i id="goalbar"></i></div>
+    <div class="sub" id="goalnote">When the wallet reaches the target, the starting 0.1858 SOL goes back to the funder once. ALMA keeps trading on profits only.</div>
+  </section>
+  <section>
+    <h2>Open positions</h2>
+    <ul class="list" id="positions"><li class="empty">–</li></ul>
+  </section>
+  <section>
+    <h2>Last trades</h2>
+    <ul class="list" id="trades"><li class="empty">–</li></ul>
+  </section>
+</div>
+<footer><a href="/agent">Full ALMA page →</a><a href="/agent/diary">Diary</a><a id="solscan" href="https://solscan.io/account/4iUUembrP2xMBeP4RbkYciZa1yFpp1YM87Uk5Y9dD1qy" target="_blank" rel="noopener">Wallet on Solscan</a></footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const START = 0.1858, TARGET = 0.3716;
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const n = (x) => (x == null || isNaN(x) ? null : Number(x));
+const sol = (x, d = 4) => (n(x) == null ? '–' : `${Number(x).toFixed(d)} SOL`);
+const sgn = (x, d = 4) => (n(x) == null ? '–' : `${x > 0 ? '+' : ''}${Number(x).toFixed(d)}`);
+const cls = (x) => (n(x) == null || x === 0 ? '' : x > 0 ? 'pos' : 'neg');
+const ago = (iso) => { if (!iso) return ''; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
+const hhmm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+let lastOk = 0, fails = 0, busy = false;
+
+function render(d) {
+  const live = d.mode === 'live';
+  $('mode').textContent = live ? 'LIVE' : 'PAPER'; $('mode').className = 'badge' + (live ? ' live' : '');
+  const w = d.wallet || {};
+  $('wsol').textContent = sol(w.sol);
+  $('wsub').textContent = `${d.solUsd && w.sol != null ? `≈ $${(w.sol * d.solUsd).toFixed(2)} · ` : ''}read ${ago(w.at) || '–'}`;
+  if (w.solscan) $('solscan').href = w.solscan;
+  const p = d.pnl || {};
+  $('today').textContent = sgn(p.todaySol); $('today').className = cls(p.todaySol);
+  $('unreal').textContent = sgn(p.unrealizedSol); $('unreal').className = cls(p.unrealizedSol);
+  const st = d.stats || {};
+  $('wr').textContent = st.winRate == null ? '–' : `${st.winRate}%`;
+  const b = d.balance || {};
+  $('paperline').textContent = live ? `Equity ${sol(b.equitySol)} · ${st.closedTrades ?? 0} closed trades` : `Paper equity ${sol(b.equitySol)} (start ${sol(b.startSol, 3)}) · ${st.closedTrades ?? 0} closed trades · real wallet untouched`;
+  const v = d.vitals || {};
+  $('vital').textContent = v.signal == null ? '–' : `${Number(v.signal).toFixed(1)}%`;
+  $('vstate').textContent = v.state?.label || '–'; $('vstate').style.color = v.state?.color || '';
+  $('state').textContent = `State: ${d.state || '–'}${d.halted ? ` (${d.halted})` : ''}${d.regime ? ` · market ${d.regime.label}` : ''}${v.cooldownUntil && Date.parse(v.cooldownUntil) > Date.now() ? ` · cooling down until ${hhmm(v.cooldownUntil)}` : ''}`;
+  $('mood').textContent = d.mood?.label || '–'; $('mood').style.color = d.mood?.color || '';
+  $('pain').textContent = v.pain == null ? '–' : Number(v.pain).toFixed(1);
+  $('comfort').textContent = v.comfort == null ? '–' : Number(v.comfort).toFixed(1);
+  const a = d.activity || {};
+  $('headline').textContent = a.headline || a.label || '–';
+  $('detail').textContent = [a.detail, a.coinsToday != null ? `${a.coinsToday} coins seen today` : ''].filter(Boolean).join(' · ');
+  const cs = a.candidates || [];
+  $('cands').innerHTML = cs.length ? cs.slice(0, 5).map((c) => `<li><div class="row"><span class="sym">${esc(c.label || c.symbol || c.mint?.slice(0, 6))}</span><span><span class="tag v-${esc(c.verdict)}">${esc(c.verdict)}</span><span class="tag">${esc(c.armLabel || c.arm || '')}</span></span></div><div class="sub">${esc(c.why || '')}${c.progressPct != null ? ` · curve ${c.progressPct}%` : ''}</div></li>`).join('') : '<li class="empty">No candidates in the last 5 minutes.</li>';
+  // risk-free goal: prefer the API's payout field when present
+  const pay = d.payout || null;
+  const start = n(pay?.startSol ?? pay?.principalSol ?? pay?.sol) || START;
+  const target = n(pay?.targetSol ?? pay?.goalSol) || (pay?.mult ? start * pay.mult : TARGET);
+  const cur = n(pay?.currentSol ?? pay?.balanceSol) ?? n(w.sol);
+  const done = !!(pay && (pay.done || pay.paid || pay.returned || pay.returnedAt || pay.paidAt || pay.tx));
+  const pct = done ? 100 : cur == null ? 0 : Math.max(0, Math.min(100, ((cur - start) / (target - start)) * 100));
+  $('goalnow').textContent = done ? 'Principal returned ✓' : `${sol(cur)} · ${pct.toFixed(0)}%`;
+  $('goaltarget').textContent = `${start.toFixed(4)} → ${target.toFixed(4)} SOL`;
+  $('goalbar').style.width = `${pct}%`;
+  const ptx = pay?.tx || pay?.payoutTx;
+  $('goalnote').innerHTML = done ? `The starting ${start.toFixed(4)} SOL went back to the funder${ptx ? ` · <a href="https://solscan.io/tx/${esc(ptx)}" target="_blank" rel="noopener">tx</a>` : ''}. ALMA now trades on profits only.`
+    : `When the wallet reaches ${target.toFixed(4)} SOL, the starting ${start.toFixed(4)} SOL goes back to the funder once. ALMA keeps trading on profits only.${pay ? '' : ' (payout status not reported yet)'}`;
+  const ps = d.positions || [];
+  $('positions').innerHTML = ps.length ? ps.map((x) => { const pl = x.valueSol != null ? x.valueSol - x.costSol : null; return `<li><div class="row"><span class="sym">$${esc(x.symbol || x.mint?.slice(0, 6))}</span><span class="mid ${cls(x.pnlPct)}">${x.pnlPct == null ? '–' : `${x.pnlPct > 0 ? '+' : ''}${Number(x.pnlPct).toFixed(1)}%`}</span></div><div class="sub">${sol(x.costSol)} in · ${pl == null ? '' : `<span class="${cls(pl)}">${sgn(pl)} SOL</span> · `}${x.ageMin ?? '?'} min · TP +${x.exits?.tp ?? '?'}% / SL -${x.exits?.sl ?? '?'}%${x.arm ? ` · ${esc(x.arm)}` : ''}</div></li>`; }).join('') : '<li class="empty">No open positions.</li>';
+  const ts = d.trades || [];
+  $('trades').innerHTML = ts.length ? ts.map((t) => { const sell = t.side === 'SELL'; return `<li><div class="row"><span><span class="tag ${sell ? '' : 'v-watch'}">${esc(t.side)}</span><span class="sym">$${esc(t.symbol || t.mint?.slice(0, 6))}</span></span><span class="${sell ? cls(t.pnlSol) : ''}" style="font-weight:700">${sell ? `${sgn(t.pnlSol)} SOL${t.pnlPct != null ? ` (${t.pnlPct > 0 ? '+' : ''}${t.pnlPct}%)` : ''}` : sol(t.sol)}</span></div><div class="sub">${esc(t.reason || '')}${t.tx ? ` · <a href="https://solscan.io/tx/${esc(t.tx)}" target="_blank" rel="noopener">tx</a>` : ''} · ${hhmm(t.at)}${t.mode === 'paper' ? ' · paper' : ''}</div></li>`; }).join('') : '<li class="empty">No trades yet.</li>';
+}
+
+async function tick() {
+  if (busy || document.hidden) return; busy = true;
+  try {
+    const r = await fetch('/api/agent/m', { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json(); if (d.disabled) throw new Error('agent is not running');
+    render(d); lastOk = Date.now(); fails = 0; $('err').style.display = 'none';
+    const dot = $('dot'); dot.className = 'dot'; void dot.offsetWidth; dot.className = 'dot pulse';
+  } catch (e) {
+    fails++; if (fails >= 3) { $('err').textContent = `Connection problem (${e.message}), retrying…`; $('err').style.display = 'block'; }
+  } finally { busy = false; }
+}
+setInterval(() => { if (!lastOk) return; const s = Math.round((Date.now() - lastOk) / 1000); $('ago').textContent = `updated ${s}s ago`; if (s > 15) $('dot').className = 'dot ' + (s > 60 ? 'dead' : 'stale'); }, 1000);
+setInterval(tick, 3000); tick();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+</script>
+</body>
+</html>

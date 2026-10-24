@@ -35,3 +35,12 @@ for (const f of ['agent.html', 'agent-diary.html']) { const h = pub(f); assert.o
 assert.ok(pub('dev.html').includes('href="/agent"'), 'dev links to /agent');
 for (const route of ["'/agent'", "'/api/agent'", "'/agent/diary'", "'/api/agent/diary'"]) assert.ok(server.includes(`app.get(${route}`), 'route ' + route);
 console.log('pages tests OK');
+// mobile live dashboard (/m, /agent/live)
+{ const m = pub('m.html');
+  for (const x of ['/api/agent/m', 'Right now', 'Risk-free goal', 'Open positions', 'Last trades', 'updated', 'alma.webmanifest', 'PAPER']) assert.ok(m.includes(x), 'm.html has ' + x);
+  assert.ok(!/[áéíóúñ¿¡]|financial advice|<b>Disclaimer/i.test(m) && !NO_CTA.test(m), 'm.html English, no disclaimers / CTA');
+  assert.ok(server.includes("app.get(['/m', '/agent/live']") && server.includes("app.get('/api/agent/m'"), 'mobile routes');
+  assert.ok(pub('agent.html').includes('href="/m"'), 'agent links to /m');
+  const man = JSON.parse(pub('alma.webmanifest')); assert.ok(man.icons.length >= 2 && man.start_url.startsWith('/m'), 'manifest');
+  for (const f of ['alma-icon-192.png', 'alma-icon-512.png']) assert.ok(fs.existsSync(path.join(__dirname, '..', 'public', f)), f); }
+console.log('mobile page ok');
