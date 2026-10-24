@@ -117,6 +117,7 @@ const wait = () => new Promise((r) => setTimeout(r, 15));
   const ps = mk(); ps._test.restore(g._test.snapshot()); assert.ok(ps.st.affect.pain > 0 && ps.st.affect.lossStreak >= 1);
   // pre-existing state (no affect saved): memory rebuilt from real closed trades, decayed to now
   const old = JSON.stringify({ v: 1, mode: 'paper', paperCash: 0.09, paperStart: 0.1, trades: [{ side: 'SELL', mint: 'Ma', arm: 'dip', pnlPct: -17, pnlSol: -0.003, at: new Date(t - 30 * MIN).toISOString() }, { side: 'SELL', mint: 'Mb', arm: 'momentum', pnlPct: 50, pnlSol: 0.003, at: new Date(t - 10 * MIN).toISOString() }] });
-  const rb = mk(); rb._test.restore(old); assert.strictEqual(rb.st.affectRebuiltFrom, 2); assert.ok(rb.st.affect.pain > 0 && rb.st.affect.comfort > 0 && rb.st.affect.lossStreak === 0 && rb.st.affect.armPain.dip > 0);
+  const rb = mk(); rb._test.restore(old);
+  const rb2 = mk(); rb2._test.restore(JSON.stringify({ ...JSON.parse(old), affect: VT.newAffect(t) })); assert.strictEqual(rb2.st.affectRebuiltFrom, 2, 'a saved-but-never-used affect is rebuilt too'); assert.strictEqual(rb.st.affectRebuiltFrom, 2); assert.ok(rb.st.affect.pain > 0 && rb.st.affect.comfort > 0 && rb.st.affect.lossStreak === 0 && rb.st.affect.armPain.dip > 0);
   console.log('vitals tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });

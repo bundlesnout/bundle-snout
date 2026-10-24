@@ -517,7 +517,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       if (n) st.migratedTrades = n;
     }
     // first boot with reward/pain: rebuild that memory from my real closed trades (real timestamps, same rules, decayed)
-    if (!j.affect) { const sells = st.trades.filter((x) => x.side === 'SELL' && x.pnlPct != null && x.at).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+    const blankAffect = !j.affect || (!j.affect.totalPain && !j.affect.totalComfort && !j.affect.last);
+    if (blankAffect) { const sells = st.trades.filter((x) => x.side === 'SELL' && x.pnlPct != null && x.at).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
       let af = VT.newAffect(sells.length ? Date.parse(sells[0].at) : now()); for (const x of sells) af = VT.feel(af, { t: Date.parse(x.at), arm: x.arm || 'dip', pnlPct: x.pnlPct, pnlSol: x.pnlSol }).affect;
       st.affect = af; st.affectRebuiltFrom = sells.length; }
     st.restoredFrom = j.savedAt;
