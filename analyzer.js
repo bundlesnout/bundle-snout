@@ -24,7 +24,7 @@ let rpcCalls = 0;
 // Helius credit accounting (1 per call, 10 for getProgramAccounts), per UTC day.
 const credits = { day: new Date().toISOString().slice(0, 10), today: 0, total: 0, byTag: {} };
 let creditTag = 'other';
-function setCreditTag(t) { creditTag = t; }
+function setCreditTag(t) { const prev = creditTag; creditTag = t; return prev; }
 function creditStats() { const d = new Date().toISOString().slice(0, 10); if (d !== credits.day) { credits.day = d; credits.today = 0; credits.byTag = {}; } return credits; }
 
 // --- RPC with rate-limit handling (429 / -32429 / network errors -> exponential backoff)

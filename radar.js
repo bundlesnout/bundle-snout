@@ -114,8 +114,8 @@ function createRadar({ onAlert, picker = null, isAlerted = () => false, markAler
       const due = [...chain.values()].filter((c) => now - c.lastCheckAt >= dueMs(c, now)).sort((a, b) => b.progress - a.progress).slice(0, 1000);
       for (let i = 0; i < due.length; i += 100) {
         const batch = due.slice(i, i + 100);
-        setCreditTag('tracker');
-        const res = await rpc('getMultipleAccounts', [batch.map((c) => c.curve), { encoding: 'base64', dataSlice: { offset: 0, length: 49 } }]);
+        const prevTag = setCreditTag('tracker');
+        const res = await rpc('getMultipleAccounts', [batch.map((c) => c.curve), { encoding: 'base64', dataSlice: { offset: 0, length: 49 } }]).finally(() => setCreditTag(prevTag));
         st.chain.batches++; st.chain.accountsRead += batch.length; st.chain.lastAt = new Date().toISOString();
         res.value.forEach((acc, k) => {
           const c = batch[k]; c.lastCheckAt = Date.now();

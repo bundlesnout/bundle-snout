@@ -25,6 +25,11 @@ const LABEL = {
 const MAX = { uniqueBuyers: 10, buyerVelocity: 10, sizeVariety: 8, netInflow10m: 7, momentum: 5, noUniformBots: 8, noRegularBots: 7, noWash: 10, noCluster: 10, noFresh: 10, devHistory: 10, socials: 5 };
 const weakest = (parts, n = 2) => { const w = Object.entries(parts || {}).map(([k, v]) => [k, v / MAX[k]]).filter(([k, r]) => r < 0.7 && k !== 'socials').sort((a, b) => a[1] - b[1]).slice(0, n).map(([k]) => LABEL[k]); return w.length ? w : ['sin un punto débil claro, solo menor nota total']; };
 
+const BASIC = [[/dev sold/, 'el dev vendió'], [/top-10/, 'top 10 concentrado'], [/right behind the create/, 'snipers justo tras el create'], [/creation block bought/, 'bloque de creación con mucho supply'],
+  [/multi-wallet/, 'tx multi-wallet (bundle)'], [/fee-paid by dev/, 'compras pagadas por el dev'], [/early wallets/, 'wallets tempranas aún cargadas'], [/dev holds/, 'el dev tiene demasiado'],
+  [/bundle check unavailable/, 'sin datos del bloque de creación'], [/progress/, 'curva por debajo del umbral'], [/overall risk/, null]];
+const basicLabel = (m) => { for (const [re, l] of BASIC) if (re.test(m)) return l; return m; };
+
 function rationale(best, window) {
   const r = best.rep, d = best.deep, t = d.trades, c = d.clusters, dv = d.dev, so = d.socials;
   const L = [];
@@ -32,11 +37,11 @@ function rationale(best, window) {
   L.push(`• Demanda: ${t.uniqueBuyers} compradores únicos en las últimas ${t.sampled} operaciones (${pct(t.uniqueBuyerRatio)} únicos), ${t.newBuyersSecondHalf} nuevos en la mitad más reciente; tamaños variados (CV ${t.buySizeCV}, media ${t.avgBuySol} SOL); ${t.netSol10 >= 0 ? '+' : ''}${t.netSol10} SOL netos en 10 min; actividad x${t.momentum} vs los 10 min anteriores.`);
   L.push(`• Bots: ${t.botWallets} wallets con ritmo de reloj (${pct(t.botTxShare)} de trades), ${pct(Math.max(t.tinyShare, t.modeShare))} compras diminutas/idénticas, ${pct(t.washVolShare)} del volumen de wallets que compran y venden.`);
   L.push(`• Holders: ${c.walletsChecked} wallets (top 10 + tempranas) revisadas: ${c.freshWallets} creadas <1h antes del lanzamiento, ${c.largestCluster.size >= 2 ? `mayor grupo con el mismo financiador: ${c.largestCluster.size} wallets (${c.largestCluster.pct}%)` : 'ningún grupo con el mismo financiador'}, ${c.devFundedHolders} financiadas por el dev. Top 10: ${r.holders.top10Pct}%.`);
-  L.push(`• Dev: no ha vendido, tiene ${r.dev.holdingPctSupply}%; ${dv.priorLaunches ? `${dv.priorLaunches} lanzamientos previos vistos, ${dv.priorDead} muertos, ${dv.priorGraduated} graduados` : dv.walletSigs < 10 ? 'wallet nueva sin historial (no se puede juzgar)' : 'sin lanzamientos previos en su historial reciente'}. Bundle: ${r.bundle.sameSlotWallets} wallets en el bloque de creación (${r.bundle.sameSlotPctSupply}%), 0 tx multi-wallet.`);
+  L.push(`• Dev: no ha vendido, tiene ${r.dev.holdingPctSupply}%; ${dv.priorLaunches ? `${dv.priorLaunches} lanzamientos previos vistos, ${dv.priorDead} muertos, ${dv.priorGraduated} graduados` : dv.walletSigs < 10 ? 'wallet nueva sin historial (no se puede juzgar)' : 'sin lanzamientos previos en su historial reciente'}. Bundle: ${r.bundle.sameSlotWallets} wallet(s) en el bloque de creación (${r.bundle.sameSlotPctSupply}%), 0 tx multi-wallet.`);
   L.push(`• Redes: ${['twitter', 'telegram', 'website'].filter((k) => so[k]).join(', ') || 'ninguna'}.`);
   const others = window.filter((x) => x.mint !== r.mint);
   const basic = others.filter((x) => x.stage === 'basic'); const deep = others.filter((x) => x.stage === 'deep');
-  const reasonCount = new Map(); basic.forEach((x) => (x.reasons || []).slice(0, 2).forEach((m) => { const k = m.replace(/[\d.]+%?/g, '#').replace(/\(.*?\)/g, '').trim(); reasonCount.set(k, (reasonCount.get(k) || 0) + 1); }));
+  const reasonCount = new Map(); basic.forEach((x) => [...new Set((x.reasons || []).map(basicLabel).filter(Boolean))].slice(0, 2).forEach((k) => reasonCount.set(k, (reasonCount.get(k) || 0) + 1)));
   const top = [...reasonCount].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${k} ×${n}`).join('; ');
   L.push(`Frente a las otras ${others.length} candidatas de los últimos ${PCFG().windowMin} min: ${basic.length} cayeron en el filtro básico${top ? ` (${top})` : ''}.`);
   deep.sort((a, b) => b.score - a.score).slice(0, 4).forEach((x) => L.push(`  – $${x.symbol}: ${x.hardFails?.length ? 'descartada: ' + x.hardFails[0] : `${x.score}/100, más floja en: ${weakest(x.parts).join(', ')}`}`));
