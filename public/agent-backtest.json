@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-24T17:49:25.365Z",
+ "generatedAt": "2026-10-24T18:23:53.612Z",
  "data": {
   "files": [
    "trades1.jsonl"
@@ -311,8 +311,23 @@
   }
  ],
  "system": {
-  "note": "real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass). withInSampleParams = what is deployed (in-sample exits + in-sample priors); withoutPriors = same exits, bandit starts blank; withDefaults = hand-set exits, blank bandit; doing nothing = 0 SOL",
+  "note": "real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass). withInSampleParams = what is deployed (in-sample exits + in-sample priors); withoutInstincts = deployed setup with survival scaling and reward/pain switched off (ablation); withoutPriors = same exits, bandit starts blank; withDefaults = hand-set exits, blank bandit; doing nothing = 0 SOL",
   "withInSampleParams": {
+   "seeds": 20,
+   "medianNetSol": 0.0006,
+   "meanNetSol": 0.0003,
+   "minNetSol": -0.0031,
+   "maxNetSol": 0.0022,
+   "profitableSeedsPct": 80,
+   "avgTrades": 5.1,
+   "avgWinRate": 21.7,
+   "avgMaxDDSol": 0.0026,
+   "avgSurvivalSkips": 3.7,
+   "endStates": {
+    "stable": 20
+   }
+  },
+  "withoutInstincts": {
    "seeds": 20,
    "medianNetSol": -0.0058,
    "meanNetSol": -0.0068,
@@ -321,490 +336,582 @@
    "profitableSeedsPct": 0,
    "avgTrades": 17.7,
    "avgWinRate": 13.9,
-   "avgMaxDDSol": 0.01
+   "avgMaxDDSol": 0.01,
+   "avgSurvivalSkips": 0,
+   "endStates": {
+    "stable": 20
+   }
   },
   "withoutPriors": {
    "seeds": 20,
-   "medianNetSol": -0.0151,
-   "meanNetSol": -0.0148,
-   "minNetSol": -0.0258,
-   "maxNetSol": 0.0005,
-   "profitableSeedsPct": 5,
-   "avgTrades": 23.1,
-   "avgWinRate": 14.2,
-   "avgMaxDDSol": 0.0197
+   "medianNetSol": -0.0002,
+   "meanNetSol": 0.0003,
+   "minNetSol": -0.0036,
+   "maxNetSol": 0.0067,
+   "profitableSeedsPct": 35,
+   "avgTrades": 5.5,
+   "avgWinRate": 24.9,
+   "avgMaxDDSol": 0.0043,
+   "avgSurvivalSkips": 2.1,
+   "endStates": {
+    "stable": 20
+   }
   },
   "withDefaults": {
    "seeds": 20,
-   "medianNetSol": -0.0138,
-   "meanNetSol": -0.013,
-   "minNetSol": -0.0236,
-   "maxNetSol": 0.0003,
-   "profitableSeedsPct": 5,
-   "avgTrades": 21.4,
-   "avgWinRate": 18.1,
-   "avgMaxDDSol": 0.0157
+   "medianNetSol": -0.003,
+   "meanNetSol": -0.0031,
+   "minNetSol": -0.0053,
+   "maxNetSol": -0.0012,
+   "profitableSeedsPct": 0,
+   "avgTrades": 4.5,
+   "avgWinRate": 19.7,
+   "avgMaxDDSol": 0.0041,
+   "avgSurvivalSkips": 0.8,
+   "endStates": {
+    "stable": 20
+   }
   },
   "baselineNoTrading": 0,
   "runs": [
    {
     "seed": 1,
-    "n": 18,
+    "n": 5,
     "wins": 1,
-    "winRate": 5.6,
-    "netSol": -0.0106,
-    "avgPct": -10.9,
-    "maxDDSol": 0.0106,
-    "sitOut": 85,
-    "scans": 18,
+    "winRate": 20,
+    "netSol": -0.0031,
+    "avgPct": -10.8,
+    "maxDDSol": 0.0031,
+    "sitOut": 23,
+    "survivalSkips": 4,
+    "pains": 11.8,
+    "life": "stable",
+    "signal": 96.4,
+    "scans": 5,
     "weights": {
-     "dip": 0.08,
-     "momentum": 0.733,
-     "breakout": 0.07,
-     "fresh": 0.117
+     "dip": 0.075,
+     "momentum": 0.782,
+     "breakout": 0.062,
+     "fresh": 0.082
     },
     "byArm": {
-     "dip": 2,
-     "momentum": 10,
-     "breakout": 5,
+     "dip": 0,
+     "momentum": 3,
+     "breakout": 1,
      "fresh": 1
     }
    },
    {
     "seed": 2,
-    "n": 15,
-    "wins": 2,
-    "winRate": 13.3,
-    "netSol": -0.0052,
-    "avgPct": -5.3,
-    "maxDDSol": 0.0085,
-    "sitOut": 100,
-    "scans": 15,
+    "n": 5,
+    "wins": 1,
+    "winRate": 20,
+    "netSol": 0.0006,
+    "avgPct": 2.5,
+    "maxDDSol": 0.0026,
+    "sitOut": 29,
+    "survivalSkips": 4,
+    "pains": 10.3,
+    "life": "stable",
+    "signal": 100.7,
+    "scans": 5,
     "weights": {
-     "dip": 0.072,
-     "momentum": 0.76,
-     "breakout": 0.057,
-     "fresh": 0.112
+     "dip": 0.092,
+     "momentum": 0.755,
+     "breakout": 0.05,
+     "fresh": 0.103
     },
     "byArm": {
-     "dip": 2,
-     "momentum": 9,
-     "breakout": 3,
-     "fresh": 1
+     "dip": 0,
+     "momentum": 4,
+     "breakout": 1,
+     "fresh": 0
     }
    },
    {
     "seed": 3,
-    "n": 15,
-    "wins": 2,
-    "winRate": 13.3,
-    "netSol": -0.0052,
-    "avgPct": -5.5,
-    "maxDDSol": 0.0093,
-    "sitOut": 86,
-    "scans": 15,
-    "weights": {
-     "dip": 0.027,
-     "momentum": 0.813,
-     "breakout": 0.048,
-     "fresh": 0.112
-    },
-    "byArm": {
-     "dip": 2,
-     "momentum": 11,
-     "breakout": 2,
-     "fresh": 0
-    }
-   },
-   {
-    "seed": 4,
-    "n": 18,
-    "wins": 2,
-    "winRate": 11.1,
-    "netSol": -0.0068,
-    "avgPct": -5.6,
-    "maxDDSol": 0.0101,
-    "sitOut": 73,
-    "scans": 18,
-    "weights": {
-     "dip": 0.093,
-     "momentum": 0.743,
-     "breakout": 0.037,
-     "fresh": 0.127
-    },
-    "byArm": {
-     "dip": 4,
-     "momentum": 11,
-     "breakout": 2,
-     "fresh": 1
-    }
-   },
-   {
-    "seed": 5,
-    "n": 19,
-    "wins": 3,
-    "winRate": 15.8,
-    "netSol": -0.0078,
-    "avgPct": -6.9,
-    "maxDDSol": 0.0111,
-    "sitOut": 91,
-    "scans": 19,
-    "weights": {
-     "dip": 0.028,
-     "momentum": 0.79,
-     "breakout": 0.052,
-     "fresh": 0.13
-    },
-    "byArm": {
-     "dip": 5,
-     "momentum": 10,
-     "breakout": 3,
-     "fresh": 1
-    }
-   },
-   {
-    "seed": 6,
-    "n": 20,
-    "wins": 2,
-    "winRate": 10,
-    "netSol": -0.0117,
-    "avgPct": -11.1,
-    "maxDDSol": 0.0117,
-    "sitOut": 103,
-    "scans": 20,
-    "weights": {
-     "dip": 0.075,
-     "momentum": 0.752,
-     "breakout": 0.04,
-     "fresh": 0.133
-    },
-    "byArm": {
-     "dip": 7,
-     "momentum": 9,
-     "breakout": 3,
-     "fresh": 1
-    }
-   },
-   {
-    "seed": 7,
-    "n": 15,
-    "wins": 3,
+    "n": 5,
+    "wins": 1,
     "winRate": 20,
-    "netSol": -0.0055,
-    "avgPct": -5.6,
-    "maxDDSol": 0.0099,
-    "sitOut": 74,
-    "scans": 15,
+    "netSol": 0.0013,
+    "avgPct": 2.3,
+    "maxDDSol": 0.0028,
+    "sitOut": 20,
+    "survivalSkips": 4,
+    "pains": 10.8,
+    "life": "stable",
+    "signal": 101.5,
+    "scans": 5,
     "weights": {
-     "dip": 0.102,
-     "momentum": 0.698,
-     "breakout": 0.053,
-     "fresh": 0.147
+     "dip": 0.057,
+     "momentum": 0.835,
+     "breakout": 0.03,
+     "fresh": 0.078
     },
     "byArm": {
-     "dip": 2,
-     "momentum": 10,
-     "breakout": 3,
-     "fresh": 0
-    }
-   },
-   {
-    "seed": 8,
-    "n": 15,
-    "wins": 2,
-    "winRate": 13.3,
-    "netSol": -0.0025,
-    "avgPct": -3.3,
-    "maxDDSol": 0.0067,
-    "sitOut": 57,
-    "scans": 15,
-    "weights": {
-     "dip": 0.092,
-     "momentum": 0.723,
-     "breakout": 0.087,
-     "fresh": 0.098
-    },
-    "byArm": {
-     "dip": 2,
-     "momentum": 13,
+     "dip": 1,
+     "momentum": 4,
      "breakout": 0,
      "fresh": 0
     }
    },
    {
-    "seed": 9,
-    "n": 20,
-    "wins": 3,
-    "winRate": 15,
-    "netSol": -0.0089,
-    "avgPct": -7.8,
-    "maxDDSol": 0.0123,
-    "sitOut": 87,
-    "scans": 20,
+    "seed": 4,
+    "n": 7,
+    "wins": 2,
+    "winRate": 28.6,
+    "netSol": 0.0001,
+    "avgPct": 1.5,
+    "maxDDSol": 0.0032,
+    "sitOut": 39,
+    "survivalSkips": 4,
+    "pains": 14.9,
+    "life": "stable",
+    "signal": 100.1,
+    "scans": 7,
     "weights": {
-     "dip": 0.03,
-     "momentum": 0.792,
-     "breakout": 0.073,
-     "fresh": 0.105
+     "dip": 0.082,
+     "momentum": 0.777,
+     "breakout": 0.038,
+     "fresh": 0.103
     },
     "byArm": {
-     "dip": 4,
-     "momentum": 13,
-     "breakout": 2,
-     "fresh": 1
+     "dip": 3,
+     "momentum": 4,
+     "breakout": 0,
+     "fresh": 0
+    }
+   },
+   {
+    "seed": 5,
+    "n": 5,
+    "wins": 1,
+    "winRate": 20,
+    "netSol": 0.0004,
+    "avgPct": 3.6,
+    "maxDDSol": 0.0029,
+    "sitOut": 31,
+    "survivalSkips": 4,
+    "pains": 9.3,
+    "life": "stable",
+    "signal": 100.5,
+    "scans": 5,
+    "weights": {
+     "dip": 0.073,
+     "momentum": 0.745,
+     "breakout": 0.072,
+     "fresh": 0.11
+    },
+    "byArm": {
+     "dip": 0,
+     "momentum": 5,
+     "breakout": 0,
+     "fresh": 0
+    }
+   },
+   {
+    "seed": 6,
+    "n": 6,
+    "wins": 2,
+    "winRate": 33.3,
+    "netSol": -0.0023,
+    "avgPct": -6.6,
+    "maxDDSol": 0.0023,
+    "sitOut": 18,
+    "survivalSkips": 2,
+    "pains": 12.2,
+    "life": "stable",
+    "signal": 97.3,
+    "scans": 6,
+    "weights": {
+     "dip": 0.073,
+     "momentum": 0.747,
+     "breakout": 0.078,
+     "fresh": 0.102
+    },
+    "byArm": {
+     "dip": 2,
+     "momentum": 3,
+     "breakout": 1,
+     "fresh": 0
+    }
+   },
+   {
+    "seed": 7,
+    "n": 5,
+    "wins": 1,
+    "winRate": 20,
+    "netSol": 0.0009,
+    "avgPct": 4.3,
+    "maxDDSol": 0.0027,
+    "sitOut": 19,
+    "survivalSkips": 3,
+    "pains": 8.6,
+    "life": "stable",
+    "signal": 101,
+    "scans": 5,
+    "weights": {
+     "dip": 0.06,
+     "momentum": 0.798,
+     "breakout": 0.042,
+     "fresh": 0.1
+    },
+    "byArm": {
+     "dip": 0,
+     "momentum": 4,
+     "breakout": 1,
+     "fresh": 0
+    }
+   },
+   {
+    "seed": 8,
+    "n": 5,
+    "wins": 1,
+    "winRate": 20,
+    "netSol": 0.0022,
+    "avgPct": 5.3,
+    "maxDDSol": 0.002,
+    "sitOut": 8,
+    "survivalSkips": 0,
+    "pains": 7.7,
+    "life": "stable",
+    "signal": 102.5,
+    "scans": 5,
+    "weights": {
+     "dip": 0.048,
+     "momentum": 0.847,
+     "breakout": 0.032,
+     "fresh": 0.073
+    },
+    "byArm": {
+     "dip": 0,
+     "momentum": 4,
+     "breakout": 1,
+     "fresh": 0
+    }
+   },
+   {
+    "seed": 9,
+    "n": 4,
+    "wins": 1,
+    "winRate": 25,
+    "netSol": 0.001,
+    "avgPct": 4.9,
+    "maxDDSol": 0.0023,
+    "sitOut": 21,
+    "survivalSkips": 2,
+    "pains": 8.9,
+    "life": "stable",
+    "signal": 101.2,
+    "scans": 4,
+    "weights": {
+     "dip": 0.05,
+     "momentum": 0.818,
+     "breakout": 0.037,
+     "fresh": 0.095
+    },
+    "byArm": {
+     "dip": 1,
+     "momentum": 3,
+     "breakout": 0,
+     "fresh": 0
     }
    },
    {
     "seed": 10,
-    "n": 19,
-    "wins": 4,
-    "winRate": 21.1,
-    "netSol": -0.0049,
-    "avgPct": -3.2,
-    "maxDDSol": 0.0082,
-    "sitOut": 92,
-    "scans": 19,
+    "n": 5,
+    "wins": 1,
+    "winRate": 20,
+    "netSol": 0.0004,
+    "avgPct": 1.5,
+    "maxDDSol": 0.0029,
+    "sitOut": 40,
+    "survivalSkips": 9,
+    "pains": 11.3,
+    "life": "stable",
+    "signal": 100.5,
+    "scans": 5,
     "weights": {
-     "dip": 0.14,
-     "momentum": 0.698,
-     "breakout": 0.047,
-     "fresh": 0.115
+     "dip": 0.062,
+     "momentum": 0.785,
+     "breakout": 0.062,
+     "fresh": 0.092
     },
     "byArm": {
-     "dip": 7,
-     "momentum": 11,
+     "dip": 1,
+     "momentum": 3,
      "breakout": 1,
      "fresh": 0
     }
    },
    {
     "seed": 11,
-    "n": 20,
-    "wins": 1,
-    "winRate": 5,
-    "netSol": -0.014,
-    "avgPct": -12.1,
-    "maxDDSol": 0.014,
-    "sitOut": 90,
-    "scans": 20,
+    "n": 3,
+    "wins": 0,
+    "winRate": 0,
+    "netSol": -0.0022,
+    "avgPct": -14.4,
+    "maxDDSol": 0.0022,
+    "sitOut": 10,
+    "survivalSkips": 2,
+    "pains": 8.6,
+    "life": "stable",
+    "signal": 97.4,
+    "scans": 3,
     "weights": {
-     "dip": 0.042,
-     "momentum": 0.577,
-     "breakout": 0.063,
-     "fresh": 0.318
+     "dip": 0.078,
+     "momentum": 0.762,
+     "breakout": 0.068,
+     "fresh": 0.092
     },
     "byArm": {
-     "dip": 4,
-     "momentum": 10,
-     "breakout": 3,
-     "fresh": 3
+     "dip": 1,
+     "momentum": 2,
+     "breakout": 0,
+     "fresh": 0
     }
    },
    {
     "seed": 12,
-    "n": 16,
+    "n": 4,
     "wins": 1,
-    "winRate": 6.3,
-    "netSol": -0.0063,
-    "avgPct": -7.6,
-    "maxDDSol": 0.0098,
-    "sitOut": 106,
-    "scans": 16,
+    "winRate": 25,
+    "netSol": 0.0007,
+    "avgPct": 4.1,
+    "maxDDSol": 0.0028,
+    "sitOut": 23,
+    "survivalSkips": 2,
+    "pains": 9.7,
+    "life": "stable",
+    "signal": 100.8,
+    "scans": 4,
     "weights": {
-     "dip": 0.065,
-     "momentum": 0.747,
-     "breakout": 0.062,
-     "fresh": 0.127
+     "dip": 0.055,
+     "momentum": 0.837,
+     "breakout": 0.045,
+     "fresh": 0.063
     },
     "byArm": {
-     "dip": 2,
-     "momentum": 12,
-     "breakout": 1,
+     "dip": 0,
+     "momentum": 3,
+     "breakout": 0,
      "fresh": 1
     }
    },
    {
     "seed": 13,
-    "n": 19,
+    "n": 7,
     "wins": 2,
-    "winRate": 10.5,
-    "netSol": -0.009,
-    "avgPct": -8.4,
-    "maxDDSol": 0.0123,
-    "sitOut": 75,
-    "scans": 19,
+    "winRate": 28.6,
+    "netSol": 0.0019,
+    "avgPct": 5.3,
+    "maxDDSol": 0.0017,
+    "sitOut": 39,
+    "survivalSkips": 6,
+    "pains": 11.8,
+    "life": "stable",
+    "signal": 102.2,
+    "scans": 7,
     "weights": {
-     "dip": 0.083,
-     "momentum": 0.685,
-     "breakout": 0.072,
-     "fresh": 0.16
+     "dip": 0.06,
+     "momentum": 0.758,
+     "breakout": 0.087,
+     "fresh": 0.095
     },
     "byArm": {
-     "dip": 2,
-     "momentum": 14,
-     "breakout": 3,
+     "dip": 0,
+     "momentum": 6,
+     "breakout": 1,
      "fresh": 0
     }
    },
    {
     "seed": 14,
-    "n": 20,
-    "wins": 4,
+    "n": 5,
+    "wins": 1,
     "winRate": 20,
-    "netSol": -0.0039,
-    "avgPct": -3.2,
-    "maxDDSol": 0.0072,
-    "sitOut": 92,
-    "scans": 20,
+    "netSol": 0.0009,
+    "avgPct": 3.8,
+    "maxDDSol": 0.0024,
+    "sitOut": 16,
+    "survivalSkips": 3,
+    "pains": 9.1,
+    "life": "stable",
+    "signal": 101,
+    "scans": 5,
     "weights": {
-     "dip": 0.072,
-     "momentum": 0.677,
-     "breakout": 0.042,
-     "fresh": 0.21
+     "dip": 0.04,
+     "momentum": 0.858,
+     "breakout": 0.035,
+     "fresh": 0.067
     },
     "byArm": {
-     "dip": 5,
-     "momentum": 12,
-     "breakout": 1,
-     "fresh": 2
+     "dip": 0,
+     "momentum": 4,
+     "breakout": 0,
+     "fresh": 1
     }
    },
    {
     "seed": 15,
-    "n": 16,
-    "wins": 2,
-    "winRate": 12.5,
-    "netSol": -0.0058,
-    "avgPct": -5.6,
-    "maxDDSol": 0.0103,
-    "sitOut": 84,
-    "scans": 16,
+    "n": 5,
+    "wins": 1,
+    "winRate": 20,
+    "netSol": 0.0001,
+    "avgPct": 0.8,
+    "maxDDSol": 0.0032,
+    "sitOut": 19,
+    "survivalSkips": 1,
+    "pains": 12,
+    "life": "stable",
+    "signal": 100.1,
+    "scans": 5,
     "weights": {
-     "dip": 0.048,
-     "momentum": 0.853,
-     "breakout": 0.045,
-     "fresh": 0.053
+     "dip": 0.062,
+     "momentum": 0.817,
+     "breakout": 0.038,
+     "fresh": 0.083
     },
     "byArm": {
-     "dip": 3,
-     "momentum": 10,
+     "dip": 1,
+     "momentum": 3,
      "breakout": 1,
-     "fresh": 2
+     "fresh": 0
     }
    },
    {
     "seed": 16,
-    "n": 20,
-    "wins": 4,
+    "n": 5,
+    "wins": 1,
     "winRate": 20,
-    "netSol": -0.0074,
-    "avgPct": -5.8,
-    "maxDDSol": 0.0107,
-    "sitOut": 70,
-    "scans": 20,
+    "netSol": 0.0006,
+    "avgPct": 4,
+    "maxDDSol": 0.0027,
+    "sitOut": 25,
+    "survivalSkips": 3,
+    "pains": 8.8,
+    "life": "stable",
+    "signal": 100.7,
+    "scans": 5,
     "weights": {
-     "dip": 0.087,
-     "momentum": 0.685,
-     "breakout": 0.095,
-     "fresh": 0.133
+     "dip": 0.065,
+     "momentum": 0.835,
+     "breakout": 0.027,
+     "fresh": 0.073
     },
     "byArm": {
-     "dip": 7,
-     "momentum": 10,
-     "breakout": 2,
+     "dip": 0,
+     "momentum": 4,
+     "breakout": 0,
      "fresh": 1
     }
    },
    {
     "seed": 17,
-    "n": 18,
-    "wins": 3,
-    "winRate": 16.7,
-    "netSol": -0.0075,
-    "avgPct": -5.7,
-    "maxDDSol": 0.0118,
-    "sitOut": 98,
-    "scans": 18,
+    "n": 5,
+    "wins": 1,
+    "winRate": 20,
+    "netSol": 0,
+    "avgPct": 3.4,
+    "maxDDSol": 0.0032,
+    "sitOut": 15,
+    "survivalSkips": 1,
+    "pains": 9.5,
+    "life": "stable",
+    "signal": 100.1,
+    "scans": 5,
     "weights": {
-     "dip": 0.077,
-     "momentum": 0.748,
-     "breakout": 0.078,
-     "fresh": 0.097
+     "dip": 0.075,
+     "momentum": 0.83,
+     "breakout": 0.028,
+     "fresh": 0.067
     },
     "byArm": {
-     "dip": 4,
-     "momentum": 10,
-     "breakout": 1,
-     "fresh": 3
+     "dip": 0,
+     "momentum": 4,
+     "breakout": 0,
+     "fresh": 1
     }
    },
    {
     "seed": 18,
-    "n": 18,
-    "wins": 3,
-    "winRate": 16.7,
-    "netSol": -0.0044,
-    "avgPct": -2.9,
-    "maxDDSol": 0.0083,
-    "sitOut": 70,
-    "scans": 18,
+    "n": 5,
+    "wins": 1,
+    "winRate": 20,
+    "netSol": 0.0004,
+    "avgPct": 1.5,
+    "maxDDSol": 0.0029,
+    "sitOut": 15,
+    "survivalSkips": 1,
+    "pains": 11.4,
+    "life": "stable",
+    "signal": 100.4,
+    "scans": 5,
     "weights": {
-     "dip": 0.155,
-     "momentum": 0.73,
-     "breakout": 0.038,
-     "fresh": 0.077
+     "dip": 0.05,
+     "momentum": 0.813,
+     "breakout": 0.053,
+     "fresh": 0.083
     },
     "byArm": {
-     "dip": 4,
-     "momentum": 12,
-     "breakout": 2,
+     "dip": 1,
+     "momentum": 4,
+     "breakout": 0,
      "fresh": 0
     }
    },
    {
     "seed": 19,
-    "n": 15,
+    "n": 6,
     "wins": 2,
-    "winRate": 13.3,
-    "netSol": -0.0053,
-    "avgPct": -6.7,
-    "maxDDSol": 0.0089,
-    "sitOut": 67,
-    "scans": 15,
+    "winRate": 33.3,
+    "netSol": 0.0009,
+    "avgPct": 2,
+    "maxDDSol": 0.0027,
+    "sitOut": 63,
+    "survivalSkips": 15,
+    "pains": 10.8,
+    "life": "stable",
+    "signal": 101,
+    "scans": 6,
     "weights": {
-     "dip": 0.057,
-     "momentum": 0.73,
-     "breakout": 0.078,
-     "fresh": 0.135
+     "dip": 0.058,
+     "momentum": 0.813,
+     "breakout": 0.028,
+     "fresh": 0.1
     },
     "byArm": {
-     "dip": 3,
-     "momentum": 11,
+     "dip": 0,
+     "momentum": 5,
      "breakout": 0,
      "fresh": 1
     }
    },
    {
     "seed": 20,
-    "n": 17,
-    "wins": 3,
-    "winRate": 17.6,
-    "netSol": -0.0036,
-    "avgPct": -3.6,
-    "maxDDSol": 0.008,
-    "sitOut": 80,
-    "scans": 17,
+    "n": 5,
+    "wins": 1,
+    "winRate": 20,
+    "netSol": 0.001,
+    "avgPct": 4.3,
+    "maxDDSol": 0.0022,
+    "sitOut": 31,
+    "survivalSkips": 3,
+    "pains": 8.5,
+    "life": "stable",
+    "signal": 101.2,
+    "scans": 5,
     "weights": {
-     "dip": 0.037,
-     "momentum": 0.725,
-     "breakout": 0.04,
-     "fresh": 0.198
+     "dip": 0.06,
+     "momentum": 0.775,
+     "breakout": 0.053,
+     "fresh": 0.112
     },
     "byArm": {
-     "dip": 3,
-     "momentum": 10,
-     "breakout": 2,
-     "fresh": 2
+     "dip": 0,
+     "momentum": 5,
+     "breakout": 0,
+     "fresh": 0
     }
    }
   ]

@@ -119,5 +119,9 @@ const wait = () => new Promise((r) => setTimeout(r, 15));
   const old = JSON.stringify({ v: 1, mode: 'paper', paperCash: 0.09, paperStart: 0.1, trades: [{ side: 'SELL', mint: 'Ma', arm: 'dip', pnlPct: -17, pnlSol: -0.003, at: new Date(t - 30 * MIN).toISOString() }, { side: 'SELL', mint: 'Mb', arm: 'momentum', pnlPct: 50, pnlSol: 0.003, at: new Date(t - 10 * MIN).toISOString() }] });
   const rb = mk(); rb._test.restore(old);
   const rb2 = mk(); rb2._test.restore(JSON.stringify({ ...JSON.parse(old), affect: VT.newAffect(t) })); assert.strictEqual(rb2.st.affectRebuiltFrom, 2, 'a saved-but-never-used affect is rebuilt too'); assert.strictEqual(rb.st.affectRebuiltFrom, 2); assert.ok(rb.st.affect.pain > 0 && rb.st.affect.comfort > 0 && rb.st.affect.lossStreak === 0 && rb.st.affect.armPain.dip > 0);
+  // ablation switch exists only as a constructor option (backtest), never via env
+  process.env.AGENT_INSTINCTS = '0'; const on = mk(); on.st.affect = worst; assert.ok(on._test.pol().sizeMult < 1, 'env cannot switch instincts off'); delete process.env.AGENT_INSTINCTS;
+  const off = createAgent({ scalper, now, log: () => {}, analyze: async () => clean(), cleanCheck, radarCfg: CFG(), params: null, instincts: false, fetchFn: async () => ({ json: async () => ({}) }) }); off.st.affect = worst;
+  assert.ok(off._test.pol().sizeMult === 1 && off._test.pol().minEvPct === 0);
   console.log('vitals tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });
