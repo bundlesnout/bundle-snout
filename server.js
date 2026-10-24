@@ -96,6 +96,7 @@ app.get('/live', (_, res) => res.sendFile(path.join(__dirname, 'public', 'live.h
 app.get('/rips/live', (_, res) => res.sendFile(path.join(__dirname, 'public', 'live.html')));
 app.get('/api/rips/live', (_, res) => { res.set('cache-control', 'no-store'); res.json(rips ? rips.live() : { disabled: true }); });
 app.get('/dev', (_, res) => res.sendFile(path.join(__dirname, 'public', 'dev.html')));
+require('./tankloop').register(app); // $TANKLOOP landing (/tankloop), CA via env TANKLOOP_CA
 app.get('/api/rips/status', (_, res) => { res.set('cache-control', 'no-store'); res.json(rips ? rips.status() : { disabled: true }); });
 for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} process.exit(0); });
 app.get('/api/radar/status', (_, res) => {

@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>$TANKLOOP · Two guys. One tank. Zero communication.</title>
+<meta name="description" content="Tank Loop ($TANKLOOP): a meme coin about two workers walking around a water tank in the same direction forever. No roadmap. No promises.">
+<meta property="og:title" content="$TANKLOOP · Tank Loop"><meta property="og:description" content="Two guys. One tank. Zero communication. The chart only goes around.">
+<meta property="og:image" content="https://bundle-snout.onrender.com/tankloop-assets/banner.jpg"><meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://bundle-snout.onrender.com/tankloop-assets/banner.jpg"><link rel="icon" href="/tankloop-assets/favicon.png">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#001137;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.5}
+.w{max-width:860px;margin:0 auto;padding:20px}.ban{width:100%;border-radius:14px;display:block}
+h1{font-size:2.6rem;margin:.6em 0 .1em;color:#ffcd1e;-webkit-text-stroke:1px #000}.sub{font-size:1.25rem;margin:0 0 1em}
+.row{display:flex;gap:20px;flex-wrap:wrap;align-items:center}.row video{width:300px;max-width:100%;border-radius:14px;border:3px solid #2878e6}
+.card{background:#0a1d4f;border:1px solid #2a4790;border-radius:14px;padding:16px;margin:16px 0}
+.ca{font-family:ui-monospace,monospace;word-break:break-all;background:#000c2a;padding:10px;border-radius:8px;display:block;margin:8px 0}
+.btn{display:inline-block;background:#ffcd1e;color:#000;font-weight:700;padding:10px 16px;border-radius:10px;text-decoration:none;margin:4px 6px 4px 0;border:0;cursor:pointer;font-size:1rem}
+.btn.alt{background:#2878e6;color:#fff}.muted{color:#9fb6e8;font-size:.92rem}ul{padding-left:1.2em}a{color:#8fc0ff}
+</style></head><body><div class="w">
+<img class="ban" src="/tankloop-assets/banner.jpg" alt="$TANKLOOP banner: two cartoon workers circling a blue water tank">
+<h1>$TANKLOOP</h1><p class="sub">Two guys. One tank. Zero communication. The chart only goes around.</p>
+<div class="row"><video src="/tankloop-assets/loop.mp4" autoplay loop muted playsinline poster="/tankloop-assets/logo.jpg"></video>
+<div style="flex:1;min-width:240px"><p>Inspired by the viral CCTV clip where two workers walk around a big water tank in the <b>same direction</b>, so they never meet. Looney Tunes physics, real life.</p>
+<p>$TANKLOOP is a meme coin about that loop. That's it. That's the coin.</p></div></div>
+<div class="card" id="cabox"><b>Contract (CA)</b><span class="ca" id="ca">Not launched yet. The CA will appear here once it's live on pump.fun.</span>
+<div id="links"></div></div>
+<div class="card"><b>The honest part</b><ul>
+<li>Fair launch on pump.fun. No presale, no team allocation, no bundle.</li>
+<li>The dev made one small, public buy at launch from the same wallet used for every SpaniardDev coin.</li>
+<li>No roadmap, no utility, no promises. It's a meme. Only use money you can afford to lose.</li>
+<li>Art is original cartoon art, not the original footage or the real people.</li></ul>
+<p class="muted">Not financial advice. Crypto meme coins are extremely risky and most go to zero.</p></div>
+<p class="muted">Made by <a href="https://x.com/SpaniardDev" target="_blank" rel="noopener">@SpaniardDev</a> · <a href="/">bundle checker</a> · no Telegram, X only.</p>
+</div><script>
+fetch('/api/tankloop-assets/config').then(r=>r.json()).then(c=>{if(!c.ca)return;
+document.getElementById('ca').textContent=c.ca;
+const L=document.getElementById('links');
+L.innerHTML='<button class="btn" id="cp">Copy CA</button><a class="btn" target="_blank" rel="noopener" href="'+c.pumpUrl+'">pump.fun</a><a class="btn alt" target="_blank" rel="noopener" href="'+c.dexUrl+'">DexScreener</a><a class="btn alt" target="_blank" rel="noopener" href="'+c.x+'">X</a>';
+document.getElementById('cp').onclick=e=>{navigator.clipboard.writeText(c.ca);e.target.textContent='Copied';};}).catch(()=>{});
+</script></body></html>
