@@ -62,14 +62,20 @@ const stats = (pnls) => { let eq = 0, pk = 0, dd = 0; for (const p of pnls) { eq
     const evs = sims.filter((e) => e.arm === k); const IS = evs.filter((e) => e.at < tSplit && e.sim.at < tSplit), OOS = evs.filter((e) => e.at >= tSplit);
     const score = (set, key) => stats(set.map((e) => e.sim.res[key]));
     const defKey = `${GRID.tp.includes(arms[k].tp) ? arms[k].tp : 20}/${GRID.sl.includes(arms[k].sl) ? arms[k].sl : 15}/${GRID.hold.includes(arms[k].hold) ? arms[k].hold : 15}`;
-    let best = null; for (const key of Object.keys(evs[0]?.sim.res || {})) { const s = score(IS, key); if (s.n >= 15 && (!best || s.netSol > best.s.netSol)) best = { key, s }; }
-    const pick = best ? best.key : defKey; const [tp, sl, hold] = pick.split('/').map(Number);
-    const enabled = true; const inSamplePositive = !!best && best.s.netSol > 0; // one short sample is too little to switch an arm off: the live bandit decides
-    chosen[k] = { tp, sl, hold, enabled, inSamplePositive };
+    const keys = Object.keys(evs[0]?.sim.res || {});
+    let best = null; for (const key of keys) { const s = score(IS, key); if (s.n >= 15 && (!best || s.netSol > best.s.netSol)) best = { key, s }; }
     // how lucky is the in-sample winner? share of the 80 combos that are positive in-sample
-    const posShare = IS.length ? Object.keys(evs[0].sim.res).filter((key) => score(IS, key).netSol > 0).length / 80 : 0;
+    const posShare = IS.length ? keys.filter((key) => score(IS, key).netSol > 0).length / 80 : 0;
+    const defIS = score(IS, defKey);
+    // anti-overfit rule: only move away from the defaults when a real region of the grid works (≥20% of combos
+    // profitable in-sample) and the best combo beats the defaults; one lucky corner of the grid is not an edge
+    const robust = !!best && posShare >= 0.2 && best.s.netSol > 0 && best.s.netSol > defIS.netSol;
+    const pick = robust ? best.key : defKey; const [tp, sl, hold] = pick.split('/').map(Number);
+    const picked = !best ? 'defaults (too few in-sample trades)' : robust ? 'best in-sample (≥15 trades, ≥20% of the grid profitable)' : `defaults (best in-sample combo ${best.key} looked like luck: only ${r1(posShare * 100)}% of the grid profitable)`;
+    const enabled = true; const inSamplePositive = score(IS, pick).netSol > 0; // one short sample is too little to switch an arm off: the live bandit decides
+    chosen[k] = { tp, sl, hold, enabled, inSamplePositive };
     perArm.push({ arm: k, label: arms[k].label, signals: events.filter((e) => e.arm === k).length, evaluated: evs.length, defaults: { params: defKey, inSample: score(IS, defKey), outOfSample: score(OOS, defKey) },
-      chosen: { params: pick, enabled, inSamplePositive, picked: best ? 'best in-sample (≥15 trades)' : 'defaults (too few in-sample trades)', inSample: score(IS, pick), outOfSample: score(OOS, pick) }, inSampleCombosPositivePct: r1(posShare * 100) });
+      chosen: { params: pick, enabled, inSamplePositive, picked, bestInSample: best ? best.key : null, inSample: score(IS, pick), outOfSample: score(OOS, pick) }, inSampleCombosPositivePct: r1(posShare * 100) });
   }
   // ---- 2) system replay with the real agent code
   process.env.AGENT_MODE = 'paper'; process.env.AGENT_ENABLED = '1'; delete process.env.AGENT_SECRET_KEY;
@@ -97,7 +103,8 @@ const stats = (pnls) => { let eq = 0, pk = 0, dd = 0; for (const p of pnls) { eq
     assumptions: { sizeSol: SIZE, feesPerSidePct: FEE.feePct, txFeeSol: FEE.txFeeSol, entryLatencyMs: LATENCY, grid: GRID, oneEntryPerCoinPerArm: true },
     perArm, system: { note: 'real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass)', withInSampleParams: summ(sysRuns.chosen), withDefaults: summ(sysRuns.defaults), runs: sysRuns.chosen },
     caveats: ['Short sample (one recording session): results are noisy and say little about the future.', 'The live scanner rejects most coins; it cannot be replayed offline, so the system replay trades coins the live agent would refuse.', 'Fills use the observed curve after a 5 s delay; real fills can be worse (slippage, priority-fee races, failed txs).', 'Exit params were picked on the in-sample half only; the out-of-sample numbers are the honest ones.'] };
-  fs.writeFileSync(path.join(__dirname, '..', 'public', 'agent-backtest.json'), JSON.stringify(outJ, null, 1));
-  fs.writeFileSync(path.join(__dirname, '..', 'agent-params.json'), JSON.stringify({ source: `backtest in-sample ${iso(tStart).slice(0, 16)}→${iso(tSplit).slice(11, 16)}Z (${files.map((f) => path.basename(f)).join(',')})`, generatedAt: outJ.generatedAt, arms: chosen }, null, 1));
+  const OUT = process.env.BT_OUT_DIR; if (OUT) fs.mkdirSync(OUT, { recursive: true });
+  fs.writeFileSync(OUT ? path.join(OUT, 'agent-backtest.json') : path.join(__dirname, '..', 'public', 'agent-backtest.json'), JSON.stringify(outJ, null, 1));
+  fs.writeFileSync(OUT ? path.join(OUT, 'agent-params.json') : path.join(__dirname, '..', 'agent-params.json'), JSON.stringify({ source: `backtest in-sample ${iso(tStart).slice(0, 16)}→${iso(tSplit).slice(11, 16)}Z (${files.map((f) => path.basename(f)).join(',')})`, generatedAt: outJ.generatedAt, arms: chosen }, null, 1));
   console.log(JSON.stringify({ data: outJ.data, perArm: perArm.map((a) => ({ arm: a.arm, signals: a.signals, def: [a.defaults.inSample, a.defaults.outOfSample].map((s) => `${s.n}t ${s.winRate}% ${s.netSol}`), chosen: a.chosen.params, en: a.chosen.enabled, ch: [a.chosen.inSample, a.chosen.outOfSample].map((s) => `${s.n}t ${s.winRate}% ${s.netSol}`), posCombos: a.inSampleCombosPositivePct })), system: { chosen: outJ.system.withInSampleParams, defaults: outJ.system.withDefaults } }, null, 1));
 })().catch((e) => { console.error(e); process.exit(1); });
