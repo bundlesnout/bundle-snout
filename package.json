@@ -10,7 +10,7 @@
     "webhook:info": "node set_webhook.js info",
     "webhook:delete": "node set_webhook.js delete",
     "radar:dryrun": "node scripts/radar-dryrun.js",
-    "test": "node tests/clean.test.js"
+    "test": "node tests/clean.test.js && node tests/telegram.test.js"
   },
   "keywords": [],
   "author": "",
