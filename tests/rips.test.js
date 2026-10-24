@@ -22,6 +22,25 @@ const tx = { transaction: { message: { accountKeys: [{ pubkey: 'DEV' }, { pubkey
     preTokenBalances: [{ accountIndex: 2, uiTokenAmount: { amount: '200000000' } }], postTokenBalances: [{ accountIndex: 2, uiTokenAmount: { amount: '0' } }] } };
 const d = R.vaultDeltas(tx, v); assert.ok(Math.abs(d.curve + 0.5) < 1e-9 && Math.abs(d.amm + 0.2) < 1e-9, JSON.stringify(d));
 
+// 4b) per-coin creator fees from a REAL mainnet SNOUT sell (creator_fee 481820 lamports == the vault delta in that tx).
+// The event appears both in the logs and as an emit_cpi inner instruction: it must be counted once.
+const real = require('./fixtures/pump_trade_snout.json');
+const SNOUT = 'FdAfduhybRLYNjreVSpPyBZEWfHbUVYaLQGp33Vjpump';
+let tf = R.tradeFees(real, { mint: SNOUT, pool: null });
+assert.strictEqual(tf.curveLamports, 481820); assert.strictEqual(tf.trades, 1); assert.deepStrictEqual([...tf.creators], ['9piBCsKoxYEs3MaE1eV6ZAEfGbyWDqEv23mRYo71X7ys']);
+assert.strictEqual(R.tradeFees(real, { mint: 'So11111111111111111111111111111111111111112', pool: null }).trades, 0, 'other coin of the same creator: not counted');
+assert.strictEqual(R.tradeFees({ ...real, meta: { ...real.meta, err: { x: 1 } } }, { mint: SNOUT }).trades, 0, 'failed tx');
+assert.strictEqual(R.coinAccounts(SNOUT).bondingCurve, 'GWfgfrRVju5Bh9U9Ssiv59uMTzjo8zyoPysEZDEUDtnw');
+// PumpSwap BuyEvent (synthetic, layout verified on mainnet): pool@120, coin_creator@312, bps@344, fee@352
+const crypto = require('crypto'); const { PublicKey } = require('@solana/web3.js');
+const POOL = R.coinAccounts(SNOUT).pumpswapPool;
+const ev = Buffer.alloc(368); crypto.createHash('sha256').update('event:BuyEvent').digest().copy(ev, 0, 0, 8);
+new PublicKey(POOL).toBuffer().copy(ev, 120); new PublicKey('9piBCsKoxYEs3MaE1eV6ZAEfGbyWDqEv23mRYo71X7ys').toBuffer().copy(ev, 312);
+ev.writeBigUInt64LE(30n, 344); ev.writeBigUInt64LE(12345n, 352);
+const ammTx = (pool) => { const b = Buffer.from(ev); new PublicKey(pool).toBuffer().copy(b, 120); return { meta: { err: null, logMessages: ['Program data: ' + b.toString('base64')] }, transaction: { message: { accountKeys: [] } } }; };
+tf = R.tradeFees(ammTx(POOL), { mint: SNOUT, pool: POOL }); assert.strictEqual(tf.ammLamports, 12345); assert.strictEqual(tf.trades, 1);
+assert.strictEqual(R.tradeFees(ammTx('So11111111111111111111111111111111111111112'), { mint: SNOUT, pool: POOL }).trades, 0, 'other pool');
+
 (async () => {
   // 5) not configured -> launching soon, no RPC
   let calls = 0;
@@ -31,9 +50,13 @@ const d = R.vaultDeltas(tx, v); assert.ok(Math.abs(d.curve + 0.5) < 1e-9 && Math
   assert.strictEqual(st.shelf[0].volumeNeededUsd, 8333); assert.ok(/dev keeps the cards/i.test(st.statement));
 
   // 6) end-to-end: one claim, one pack bought by the dev, one manual memo from a stranger (shown, not counted)
-  const DEV = '9piBCsKoxYEs3MaE1eV6ZAEfGbyWDqEv23mRYo71X7ys', CA = 'FdAfduhybRLYNjreVSpPyBZEWfHbUVYaLQGp33Vjpump';
+  const DEV = '9piBCsKoxYEs3MaE1eV6ZAEfGbyWDqEv23mRYo71X7ys', CA = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU';
   const NFT = 'H1JsvCMt52wLUpXP8BWHk2MhY7Bk7z5t9Rfrs5iXtAat';
   const M1 = 'cc-11111111-2222-3333-4444-555555555555', M2 = 'cc-99999999-2222-3333-4444-555555555555';
+  const M3 = 'cc-33333333-2222-3333-4444-555555555555', M4 = 'cc-44444444-2222-3333-4444-555555555555';
+  const ACC = R.coinAccounts(CA);
+  const tradeTx = { ...real, meta: { ...real.meta, logMessages: real.meta.logMessages.map((l) => { const b = Buffer.from(l.slice(14), 'base64'); new PublicKey(CA).toBuffer().copy(b, 8); return 'Program data: ' + b.toString('base64'); }), innerInstructions: [] } };
+  const otherCoinTx = real; // same creator, another mint (SNOUT): pooled vault only, not this coin
   const claimTx = { transaction: { message: { accountKeys: [{ pubkey: DEV }, { pubkey: v.curve }] } }, meta: { preBalances: [0, 0.3e9 + 890880], postBalances: [0.3e9, 890880] } };
   const ok = (j) => ({ ok: true, json: async () => j });
   const fetchMock = async (url, init) => {
@@ -44,13 +67,22 @@ const d = R.vaultDeltas(tx, v); assert.ok(Math.abs(d.curve + 0.5) < 1e-9 && Math
       if (method === 'getBalance') return ok({ result: { value: 0.1e9 + 890880 } });
       if (method === 'getAccountInfo' && params[0] === v.amm) return ok({ result: { value: null } });
       if (method === 'getAccountInfo' && params[0] === NFT) return ok({ result: { value: { owner: 'CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d', data: [asset.toString('base64'), 'base64'] } } });
-      if (method === 'getSignaturesForAddress') return ok({ result: params[1].until ? [] : [{ signature: 'buySig', memo: `[44] ${M1}:open`, err: null, blockTime: 1 }, { signature: 'claimSig', memo: null, err: null, blockTime: 1 }] });
-      if (method === 'getTransaction') return ok({ result: claimTx });
+      if (method === 'getSignaturesForAddress') {
+        if (params[1].until) return ok({ result: [] });
+        if (params[0] === ACC.bondingCurve) return ok({ result: [{ signature: 'trade2', err: null, blockTime: 2000 }, { signature: 'mixed', err: null, blockTime: 1500 }, { signature: 'failed', err: { x: 1 }, blockTime: 1200 }, { signature: 'create', err: null, blockTime: 1000 }] });
+        if (params[0] === ACC.pumpswapPool) return ok({ result: [] });
+        return ok({ result: [{ signature: 'buySig', memo: `[44] ${M1}:open`, err: null, blockTime: 3000 }, { signature: 'devBuy', memo: `[44] ${M3}:open`, err: null, blockTime: 3100 }, { signature: 'claimSig', memo: null, err: null, blockTime: 2500 }, { signature: 'oldPack', memo: `[44] ${M4}:open`, err: null, blockTime: 500 }] });
+      }
+      if (method === 'getTransaction') {
+        const sig = params[0];
+        if (params[1].encoding === 'json') return ok({ result: sig === 'trade2' ? tradeTx : sig === 'mixed' ? otherCoinTx : { meta: { err: null, logMessages: [] }, transaction: { message: { accountKeys: [] } } } });
+        return ok({ result: claimTx });
+      }
       throw new Error('unexpected rpc ' + method);
     }
     if (url.includes('/api/pack/status')) {
-      const mine = url.includes(M1);
-      return ok({ pack: { wallet: mine ? DEV : 'Stranger1111111111111111111111111111111111', status: 'confirmed', pack_type: 'pokemon_50', transaction_signature: mine ? 'buySig' : 'x', created_at: new Date().toISOString(), token_mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
+      const mine = url.includes(M1) || url.includes(M3); if (url.includes(M4)) throw new Error('pack from before the coin existed must not be looked up');
+      return ok({ pack: { wallet: mine ? DEV : 'Stranger1111111111111111111111111111111111', status: 'confirmed', pack_type: 'pokemon_50', transaction_signature: mine ? (url.includes(M3) ? 'devBuy' : 'buySig') : 'x', created_at: new Date().toISOString(), token_mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
         send: { nft_address: NFT, status: 'confirmed', transaction_signature: 'sendSig', insured_value: 60, prize_tier: 3, to_wallet: DEV }, buyback: [] });
     }
     if (url.includes('arweave')) return ok({ name: 'Test Card PSA 10', image: 'https://img/x.jpg', attributes: [{ trait_type: 'Grade', value: '10' }] });
@@ -59,20 +91,28 @@ const d = R.vaultDeltas(tx, v); assert.ok(Math.abs(d.curve + 0.5) < 1e-9 && Math
     if (url.includes('coingecko')) return ok({ solana: { usd: 100 } });
     throw new Error('unexpected url ' + url);
   };
-  const r = R.createRips({ env: { RIPS_CA: CA, RIPS_DEV_WALLET: DEV, RIPS_EXTRA: M2 }, fetch: fetchMock, log: () => {} });
+  const r = R.createRips({ env: { RIPS_CA: CA, RIPS_DEV_WALLET: DEV, RIPS_EXTRA: M2, RIPS_DEV_PAID: 'devBuy', RIPS_FEE_GAP_MS: '0' }, fetch: fetchMock, log: () => {} });
   await r.refresh(); st = r.status();
+  assert.strictEqual(st.fees.thisCoin.txPending, 3, 'failed tx not queued'); assert.strictEqual(st.fees.thisCoin.complete, false);
+  await r.drainFees(); st = r.status();
+  assert.strictEqual(st.fees.thisCoin.earnedSol, 0.00048182, 'only this coin\'s trade counted'); assert.strictEqual(st.fees.thisCoin.tradesCounted, 1);
+  assert.strictEqual(st.fees.thisCoin.complete, true); assert.strictEqual(st.coin.createdSig, 'create');
   assert.strictEqual(st.meta.lastError, null, st.meta.lastError);
   assert.strictEqual(st.state, 'live');
-  assert.strictEqual(st.fees.claims.length, 1); assert.strictEqual(st.fees.claimedSol, 0.3);
-  assert.strictEqual(st.fees.unclaimedSol, 0.1); assert.strictEqual(st.fees.earnedSol, 0.4); assert.strictEqual(st.fees.earnedUsd, 40);
-  assert.strictEqual(st.packs.list.length, 2); assert.strictEqual(st.packs.opened, 1, 'stranger pack not counted');
-  assert.strictEqual(st.packs.spentUsd, 50); assert.strictEqual(st.packs.insuredValueUsd, 60);
+  assert.strictEqual(st.fees.wallet.claims.length, 1); assert.strictEqual(st.fees.wallet.claimedSinceLaunchSol, 0.3);
+  assert.strictEqual(st.fees.wallet.unclaimedSol, 0.1); assert.ok(/all coins/.test(st.fees.wallet.scope));
+  assert.strictEqual(st.packs.list.length, 3, 'old pack before launch skipped'); assert.strictEqual(st.packs.opened, 2, 'stranger pack not counted');
+  assert.strictEqual(st.packs.spentUsd, 100); assert.strictEqual(st.packs.paidByDevUsd, 50); assert.strictEqual(st.packs.paidFromFeesUsd, 50);
+  assert.strictEqual(st.packs.list.find((p) => p.purchaseSig === 'devBuy').paidBy, 'dev');
+  assert.strictEqual(st.packs.check.ok, false, '$50 of packs from fees > $0.05 of this coin\'s fees'); assert.strictEqual(st.packs.insuredValueUsd, 120);
   const mine = st.packs.list.find((p) => p.memo === M1);
   assert.ok(mine.verified && mine.rarity === 'Uncommon' && mine.card.name === 'Test Card PSA 10' && mine.card.image === 'https://img/x.jpg');
   assert.strictEqual(st.packs.list.find((p) => p.memo === M2).verified, false);
   assert.strictEqual(st.coin.market.symbol, 'RIPS');
   // second refresh is incremental: no double counting
   await r.refresh(); st = r.status();
-  assert.strictEqual(st.fees.claims.length, 1); assert.strictEqual(st.packs.opened, 1);
+  await r.drainFees();
+  assert.strictEqual(st.fees.wallet.claims.length, 1); assert.strictEqual(st.packs.opened, 2); assert.strictEqual(r.status().fees.thisCoin.earnedSol, 0.00048182);
+  r.stop();
   console.log('rips tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -27,19 +27,24 @@ footer{margin-top:30px;font-size:12px;color:var(--mut)}
 <div id="soon" class="soon" hidden>Launching soon. The coin address and dev wallet appear here the moment the coin is live.</div>
 <div id="live" hidden>
   <div class="ca"><b>CA</b> <code id="ca"></code> <button id="cp">Copy</button> <a id="pump" target="_blank" rel="noopener">pump.fun</a> <a id="dex" target="_blank" rel="noopener" hidden>chart</a> <a id="xl" target="_blank" rel="noopener" hidden>X</a></div>
-  <h2>Creator fees (read on-chain)</h2>
+  <h2>This coin's creator fees</h2>
   <div class="grid" id="fees"></div>
-  <p class="mut" id="feeNote"></p>
-  <h2>Packs ripped</h2>
+  <p class="mut" id="feeMethod"></p>
+  <h2>Packs vs fees</h2>
   <div class="grid" id="pk"></div>
+  <p id="check" class="mut"></p>
+  <p class="mut" id="feeNote"></p>
   <h2>Pulls</h2>
   <div class="pulls" id="pulls"></div>
-  <h2>Fee claims</h2><div class="wrap"><table id="claims"></table></div>
+  <h2>Dev wallet: all coins</h2>
+  <p class="mut">pump.fun keeps one creator vault per wallet, shared by every coin this wallet created. These numbers include the dev's other coins and are shown only for transparency. The vault also keeps a small rent reserve (about 0.00065 SOL) that cannot be claimed, so it can read slightly below the fees earned.</p>
+  <div class="grid" id="wal"></div>
+  <h3 style="font-size:15px;margin:14px 0 6px">Fee claims since this coin launched (all coins from this dev wallet)</h3><div class="wrap"><table id="claims"></table></div>
 </div>
 <h2>How it works</h2>
 <ol class="mut">
-<li>Every trade of the coin on pump.fun pays a 0.30% creator fee to the dev's creator vault (pump.fun rules, not ours). The coin was launched from a fresh wallet used only for it, so the vault holds this coin's fees only.</li>
-<li>The dev claims those fees and uses them to open Collector Crypt card packs inside pump.fun.</li>
+<li>Every trade of the coin on pump.fun pays a 0.30% creator fee to the dev's creator vault (pump.fun rules, not ours). The vault is shared with the dev's other coins, so this page adds up this coin's fee from every single trade on-chain instead.</li>
+<li>The dev claims the fees and uses them to open Collector Crypt card packs inside pump.fun. "Packs paid from fees" should never be more than this coin's fees. Packs the dev pays for out of pocket are labelled "paid by dev".</li>
 <li>Each rip is posted on X with its transaction, and this page reads it straight from the chain: pack, card and proof.</li>
 <li>The dev keeps the cards. Holders get no cards, prizes, draws or share of anything. It is a public pack-rip log, nothing more.</li>
 </ol>
@@ -63,15 +68,19 @@ async function load(){
   $('ca').textContent=s.coin.ca;$('pump').href=s.coin.pumpUrl;
   if(s.coin.market?.url){$('dex').href=s.coin.market.url;$('dex').hidden=false}
   if(s.coin.x){$('xl').href=s.coin.x;$('xl').hidden=false}
-  const f=s.fees,p=s.packs,cheapest=(s.shelf||[])[0];
-  const toNext=cheapest&&s.solUsd?Math.max(0,cheapest.priceUsd-(f.unclaimedSol*s.solUsd)):null;
-  $('fees').innerHTML=st(sol(f.earnedSol),'earned in total',usd(f.earnedUsd))+st(sol(f.claimedSol),'claimed by dev',f.claims.length+' claim tx')+st(sol(f.unclaimedSol),'waiting in vault',`<a href="${sa(s.coin.creatorVaults.curve)}" target="_blank" rel="noopener">curve vault</a> · <a href="${sa(s.coin.creatorVaults.amm)}" target="_blank" rel="noopener">PumpSwap vault</a>`)+st(s.coin.market?.vol24hUsd!=null?usd(s.coin.market.vol24hUsd):'—','24h volume',s.coin.market?.mcapUsd?'mcap '+usd(s.coin.market.mcapUsd):'');
-  $('feeNote').textContent=toNext!=null?`Next ${cheapest.name} ($${cheapest.priceUsd}) needs about ${usd(toNext)} more in unclaimed fees, roughly ${usd(toNext/(f.creatorFeePct/100))} of trading volume.`:'';
-  $('pk').innerHTML=st(p.opened,'packs opened by the dev wallet')+st(usd(p.spentUsd),'spent on packs')+st(usd(p.insuredValueUsd),'insured value pulled')+st(p.list.filter(x=>x.soldBack&&x.verified).length,'cards sold back');
+  const f=s.fees,c=f.thisCoin,w=f.wallet,p=s.packs,cheapest=(s.shelf||[])[0];
+  const prog=c.complete?'all trades read':`reading trades: ${c.txPending} tx left`;
+  $('fees').innerHTML=st(sol(c.earnedSol),'earned by this coin',usd(c.earnedUsd)+' at today\'s SOL price')+st(c.tradesCounted,'trades counted',prog)+st(sol(c.curveSol),'bonding curve',sol(c.pumpswapSol)+' on PumpSwap')+st(s.coin.market?.vol24hUsd!=null?usd(s.coin.market.vol24hUsd):'—','24h volume',s.coin.market?.mcapUsd?'mcap '+usd(s.coin.market.mcapUsd):'');
+  $('feeMethod').textContent='How: the creator fee recorded in every trade of this coin (pump.fun and PumpSwap trade events), read one transaction at a time from the public Solana RPC. Exact, not an estimate.'+(s.coin.createdAt?' Coin created '+t(s.coin.createdAt)+'.':'');
+  const left=c.earnedUsd!=null?c.earnedUsd-p.paidFromFeesUsd:null,toNext=cheapest&&left!=null?Math.max(0,cheapest.priceUsd-left):null;
+  $('pk').innerHTML=st(usd(p.paidFromFeesUsd),'packs paid from fees')+st(usd(c.earnedUsd),'this coin\'s fees')+st(usd(p.paidByDevUsd),'packs paid by dev','not fees')+st(usd(p.insuredValueUsd),'insured value pulled',p.opened+' packs · '+p.list.filter(x=>x.soldBack&&x.verified).length+' sold back');
+  $('check').innerHTML=p.check.ok==null?'':p.check.ok?'<b style="color:#7dffa8">Check passes:</b> packs paid from fees ≤ this coin\'s fees.':'<b style="color:#ff8f9f">Check fails:</b> packs paid from fees are higher than this coin\'s fees so far'+(c.complete?'.':' (still reading trades).');
+  $('feeNote').textContent=toNext!=null?`Next ${cheapest.name} ($${cheapest.priceUsd}) needs about ${usd(toNext)} more in fees, roughly ${usd(toNext/(f.creatorFeePct/100))} of trading volume.`:'';
+  $('wal').innerHTML=st(sol(w.unclaimedSol),'waiting in vault',`<a href="${sa(s.coin.creatorVaults.curve)}" target="_blank" rel="noopener">curve vault</a> · <a href="${sa(s.coin.creatorVaults.amm)}" target="_blank" rel="noopener">PumpSwap vault</a>`)+st(sol(w.claimedSinceLaunchSol),'claimed since launch',w.claims.length+' claim tx');
   $('pulls').innerHTML=p.list.length?p.list.map(x=>`<div class="pull">${x.card?.image?`<img loading="lazy" src="${esc(x.card.image)}" alt="${esc(x.card?.name)}">`:''}<div class="b"><div class="n">${esc(x.card?.name||'Card pending')}</div>
-    <div><span class="r-${esc(x.rarity)}">${esc(x.rarity||'—')}</span> · insured ${usd(x.insuredValueUsd)} · pack ${usd(x.priceUsd)}</div><div class="mut">${t(x.boughtAt)}${x.soldBack?' · sold back':''}${x.verified?'':' · <b style="color:#ff8f9f">not from the dev wallet, not counted</b>'}</div>
+    <div><span class="r-${esc(x.rarity)}">${esc(x.rarity||'—')}</span> · insured ${usd(x.insuredValueUsd)} · pack ${usd(x.priceUsd)}</div><div class="mut">${t(x.boughtAt)}${x.soldBack?' · sold back':''}${x.verified?(x.paidBy==='dev'?' · <b style="color:#82e6ff">paid by dev, not fees</b>':' · paid from fees'):' · <b style="color:#ff8f9f">not from the dev wallet, not counted</b>'}</div>
     <div>${x.purchaseSig?`<a href="${sx(x.purchaseSig)}" target="_blank" rel="noopener">pack tx</a>`:''}${x.sendSig&&x.sendSig!=='turbomode'?` · <a href="${sx(x.sendSig)}" target="_blank" rel="noopener">card tx</a>`:''}${x.card?.link?` · <a href="${esc(x.card.link)}" target="_blank" rel="noopener">card</a>`:''}</div></div></div>`).join(''):'<p class="mut">No packs ripped yet. The first one opens when the fees cover the cheapest pack.</p>';
-  $('claims').innerHTML=f.claims.length?'<tr><th>When</th><th>Amount</th><th>From</th><th>Tx</th></tr>'+f.claims.map(c=>`<tr><td>${t(c.at)}</td><td>${sol(c.sol)}</td><td>${esc(c.from)}</td><td><a href="${sx(c.sig)}" target="_blank" rel="noopener">${esc(c.sig.slice(0,10))}…</a></td></tr>`).join(''):'<tr><td class="mut">No claims yet.</td></tr>';
+  $('claims').innerHTML=w.claims.length?'<tr><th>When</th><th>Amount</th><th>From</th><th>Tx</th></tr>'+w.claims.map(c=>`<tr><td>${t(c.at)}</td><td>${sol(c.sol)}</td><td>${esc(c.from)}</td><td><a href="${sx(c.sig)}" target="_blank" rel="noopener">${esc(c.sig.slice(0,10))}…</a></td></tr>`).join(''):'<tr><td class="mut">No claims yet.</td></tr>';
 }
 $('cp').onclick=()=>navigator.clipboard.writeText($('ca').textContent);
 load().catch(e=>$('upd').textContent='Error: '+e.message);setInterval(()=>load().catch(()=>{}),60000);

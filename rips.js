@@ -1,8 +1,15 @@
 // Fee Rips tracker: creator fees (read on-chain) -> Collector Crypt card packs opened by the dev wallet, shown live on /rips.
 // Free sources only: public Solana RPC (no Helius), Collector Crypt public gacha API, DexScreener, CoinGecko.
 // Env: RIPS_CA (coin mint), RIPS_DEV_WALLET (creator wallet), RIPS_EXTRA (comma list of pack memos or purchase tx signatures,
-// manual fallback), RIPS_RPC_URL (default public mainnet RPC), RIPS_REFRESH_MS (default 180000), RIPS_TICKER, RIPS_NAME, RIPS_X_URL.
+// manual fallback; add ":dev" to mark a pack paid by the dev, not by fees), RIPS_DEV_PAID (comma list of memos / purchase sigs paid by
+// the dev, not fees), RIPS_RPC_URL (default public mainnet RPC), RIPS_REFRESH_MS (default 180000), RIPS_FEE_GAP_MS (default 300),
+// RIPS_TICKER, RIPS_NAME, RIPS_X_URL.
+// Per-coin fees: the creator vault is shared by every coin of the dev wallet, so "this coin's fees" is the exact sum of creator_fee in
+// every pump.fun TradeEvent (bonding curve) and coin_creator_fee in every PumpSwap Buy/SellEvent (canonical pool) for this mint,
+// read tx by tx from the public RPC. The pooled vault/claim totals are shown separately, labelled "all coins from this dev wallet".
+const crypto = require('crypto');
 const { PublicKey } = require('@solana/web3.js');
+let bs58 = null; try { const b = require('bs58'); bs58 = b.default || b; } catch {}
 
 const PUMP = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
 const PAMM = new PublicKey('pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
@@ -17,6 +24,44 @@ const TIER = { 1: 'Epic', 2: 'Rare', 3: 'Uncommon', 4: 'Common' };
 const MEMO_RE = /([a-z0-9]{1,24}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):open/;
 const B58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const SIG = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
+const evDisc = (n) => crypto.createHash('sha256').update('event:' + n).digest().subarray(0, 8).toString('hex');
+const D_TRADE = evDisc('TradeEvent'); const D_BUY = evDisc('BuyEvent'); const D_SELL = evDisc('SellEvent');
+const EMIT_CPI = 'e445a52e51cb9a1d'; // anchor event-cpi instruction tag
+
+function coinAccounts(mint) {
+  const m = new PublicKey(mint);
+  const curve = PublicKey.findProgramAddressSync([Buffer.from('bonding-curve'), m.toBuffer()], PUMP)[0];
+  const poolAuth = PublicKey.findProgramAddressSync([Buffer.from('pool-authority'), m.toBuffer()], PUMP)[0];
+  const pool = PublicKey.findProgramAddressSync([Buffer.from('pool'), Buffer.alloc(2), poolAuth.toBuffer(), m.toBuffer(), WSOL.toBuffer()], PAMM)[0];
+  return { bondingCurve: curve.toBase58(), pumpswapPool: pool.toBase58() };
+}
+
+// Creator fees for ONE coin inside one raw ("json" encoding) tx. Events are read from anchor emit_cpi inner instructions and from
+// "Program data:" logs, de-duplicated by payload. Layouts verified on mainnet (24 Oct 2026): creator_fee equals the vault delta.
+//  pump TradeEvent: disc, mint@8, ..., creator@177, creator_fee_bps@209, creator_fee@217
+//  PumpSwap Buy/SellEvent: disc, 14 x u64, pool@120, ..., coin_creator@312, coin_creator_fee_bps@344, coin_creator_fee@352
+function tradeFees(tx, { mint, pool }) {
+  const out = { curveLamports: 0, ammLamports: 0, trades: 0, creators: new Set() };
+  if (!tx || tx.meta?.err) return out;
+  const payloads = new Set();
+  for (const l of tx.meta?.logMessages || []) if (l.startsWith('Program data: ')) payloads.add(Buffer.from(l.slice(14), 'base64').toString('hex'));
+  const msg = tx.transaction?.message || {};
+  const keys = [...(msg.accountKeys || []).map((k) => (typeof k === 'string' ? k : k.pubkey)), ...(tx.meta?.loadedAddresses?.writable || []), ...(tx.meta?.loadedAddresses?.readonly || [])];
+  if (bs58) for (const g of tx.meta?.innerInstructions || []) for (const ix of g.instructions || []) {
+    const pid = ix.programId || keys[ix.programIdIndex]; if (pid !== PUMP.toBase58() && pid !== PAMM.toBase58()) continue;
+    try { const d = Buffer.from(bs58.decode(ix.data)); if (d.subarray(0, 8).toString('hex') === EMIT_CPI) payloads.add(d.subarray(8).toString('hex')); } catch {}
+  }
+  const pk = (b, o) => new PublicKey(b.subarray(o, o + 32)).toBase58();
+  for (const h of payloads) {
+    const b = Buffer.from(h, 'hex'); const disc = h.slice(0, 16);
+    if (disc === D_TRADE && b.length >= 225 && pk(b, 8) === mint) {
+      out.curveLamports += Number(b.readBigUInt64LE(217)); out.trades++; out.creators.add(pk(b, 177));
+    } else if ((disc === D_BUY || disc === D_SELL) && b.length >= 360 && pool && pk(b, 120) === pool) {
+      out.ammLamports += Number(b.readBigUInt64LE(352)); out.trades++; out.creators.add(pk(b, 312));
+    }
+  }
+  return out;
+}
 
 function vaults(dev) {
   const d = new PublicKey(dev);
@@ -59,7 +104,13 @@ function createRips(opts = {}) {
   const V = B58.test(DEV) ? vaults(DEV) : null;
   const st = { startedAt: new Date(now()).toISOString(), lastRefreshAt: null, lastError: null, refreshes: 0, rpcCalls: 0,
     unclaimed: { curveSol: 0, ammSol: 0 }, claims: [], seenSigs: new Set(), retries: new Map(), lastTxError: null, newest: null, memos: new Map(), packs: new Map(), cards: new Map(),
-    market: null, solUsd: null, shelf: null, shelfAt: 0, solAt: 0 };
+    market: null, solUsd: null, shelf: null, shelfAt: 0, solAt: 0,
+    coin: { createdAt: null, createdSig: null, listed: new Set(), queue: [], done: 0, curveLamports: 0, ammLamports: 0, trades: 0, creators: new Set(), newest: {}, backfilled: {}, lastError: null, rateLimited: 0 } };
+  const C = B58.test(CA) ? coinAccounts(CA) : null;
+  const devPaid = new Set(String(env.RIPS_DEV_PAID || '').split(/[\s,]+/).filter(Boolean).map((x) => x.replace(/:(open|dev)$/, '')));
+  for (const raw of String(env.RIPS_EXTRA || '').split(/[\s,]+/)) if (/:dev$/.test(raw)) devPaid.add(raw.replace(/:dev$/, '').replace(/:open$/, ''));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let stopped = false;
   let timer = null; let running = false;
 
   async function j(url, init) { const r = await f(url, { ...init, signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error(`HTTP ${r.status} ${url.split('?')[0]}`); return r.json(); }
@@ -68,7 +119,53 @@ function createRips(opts = {}) {
     const r = await j(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
     if (r.error) throw new Error(`${method}: ${r.error.message}`); return r.result;
   }
+  const getRawTx = (sig) => rpc('getTransaction', [sig, { encoding: 'json', maxSupportedTransactionVersion: 1, commitment: 'confirmed' }]);
   const getTx = (sig) => rpc('getTransaction', [sig, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 1, commitment: 'confirmed' }]);
+
+  // List every signature of the coin's bonding curve and PumpSwap pool (cheap: 1 call per 1000 sigs), queue the new ones.
+  async function listCoinSigs() {
+    for (const [key, addr] of [['curve', C.bondingCurve], ['pool', C.pumpswapPool]]) {
+      const fresh = []; let before;
+      for (let page = 0; page < 500; page++) {
+        const until = st.coin.newest[key];
+        const list = await rpc('getSignaturesForAddress', [addr, { limit: 1000, ...(before ? { before } : {}), ...(until ? { until } : {}), commitment: 'confirmed' }]);
+        if (!list?.length) break;
+        fresh.push(...list); before = list[list.length - 1].signature;
+        if (list.length < 1000) break;
+      }
+      if (fresh.length) st.coin.newest[key] = fresh[0].signature;
+      if (key === 'curve' && !st.coin.createdAt && fresh.length) {
+        const first = fresh[fresh.length - 1]; st.coin.createdSig = first.signature;
+        st.coin.createdAt = first.blockTime ? new Date(first.blockTime * 1000).toISOString() : null;
+      }
+      for (const s of fresh) { if (s.err || st.coin.listed.has(s.signature)) continue; st.coin.listed.add(s.signature); st.coin.queue.push(s.signature); }
+    }
+  }
+  // Read queued txs one by one (gap between calls, backoff on 429) and add this coin's creator fees. Returns how many were read.
+  async function drainFees(max = Infinity, gapMs = Number(env.RIPS_FEE_GAP_MS || 300)) {
+    let n = 0;
+    while (st.coin.queue.length && n < max && !stopped) {
+      const sig = st.coin.queue[0];
+      try {
+        const tx = await getRawTx(sig);
+        if (!tx) { st.coin.queue.push(st.coin.queue.shift()); n++; if (gapMs) await sleep(gapMs); continue; } // not yet available: retry later
+        const r = tradeFees(tx, { mint: CA, pool: C.pumpswapPool });
+        st.coin.curveLamports += r.curveLamports; st.coin.ammLamports += r.ammLamports; st.coin.trades += r.trades; r.creators.forEach((c) => st.coin.creators.add(c));
+        st.coin.queue.shift(); st.coin.done++; n++; st.coin.backoff = 0;
+      } catch (e) {
+        st.coin.lastError = e.message;
+        if (/429|Too many/i.test(e.message)) { st.coin.rateLimited++; st.coin.backoff = (st.coin.backoff || 0) + 1; await sleep(Math.min(60000, 1000 * 2 ** Math.min(6, st.coin.backoff))); }
+        else { st.coin.queue.push(st.coin.queue.shift()); n++; }
+      }
+      if (gapMs) await sleep(gapMs);
+    }
+    return n;
+  }
+  async function feeLoop() {
+    while (!stopped) {
+      try { const n = await drainFees(200); if (!n) await sleep(15000); } catch { await sleep(15000); }
+    }
+  }
 
   let rent0 = null;
   async function readVaults() {
@@ -80,14 +177,17 @@ function createRips(opts = {}) {
 
   // Incremental scan of the dev wallet: pack purchases (memo "<slug>-<uuid>:open") and creator-fee claims (vault balance drops).
   async function scanDev() {
+    if (!st.coin.createdAt) return; // need the coin's creation time first: the wallet is shared with older coins
+    const since = Date.parse(st.coin.createdAt) / 1000;
     const fresh = []; let before;
     for (let page = 0; page < 10; page++) {
       const list = await rpc('getSignaturesForAddress', [DEV, { limit: 100, ...(before ? { before } : {}), ...(st.newest ? { until: st.newest } : {}) }]);
       if (!list?.length) break;
       fresh.push(...list); before = list[list.length - 1].signature;
-      if (list.length < 100) break;
+      if (list.length < 100 || (list[list.length - 1].blockTime || 0) < since) break;
     }
     if (fresh.length) st.newest = fresh[0].signature;
+    for (let i = fresh.length - 1; i >= 0; i--) if ((fresh[i].blockTime || 0) < since) fresh.splice(i, 1); // before this coin existed
     let fetched = 0;
     for (const s of fresh.reverse()) {
       if (st.seenSigs.has(s.signature)) continue; st.seenSigs.add(s.signature);
@@ -105,7 +205,8 @@ function createRips(opts = {}) {
   }
 
   async function manualExtras() {
-    for (const raw of String(env.RIPS_EXTRA || '').split(/[\s,]+/).filter(Boolean)) {
+    for (const raw0 of String(env.RIPS_EXTRA || '').split(/[\s,]+/).filter(Boolean)) {
+      const raw = raw0.replace(/:dev$/, '');
       let memo = memoFrom(raw.endsWith(':open') ? raw : raw + ':open');
       if (memo && st.memos.has(memo)) continue;
       if (!memo && SIG.test(raw)) {
@@ -144,6 +245,7 @@ function createRips(opts = {}) {
         recipient: s.send?.to_wallet || null, insuredValueUsd: s.send?.insured_value ?? null, rarity: TIER[s.send?.prize_tier] || null,
         vrfProof: s.send?.vrf_proof ? true : false, soldBack: (s.buyback || []).some((b) => b.status === 'confirmed' || b.webhook_confirmed),
         delivered: !!delivered };
+      p.paidBy = devPaid.has(m.memo) || (p.purchaseSig && devPaid.has(p.purchaseSig)) ? 'dev' : 'fees';
       p.final = p.delivered && !!p.nft && (now() - Date.parse(p.boughtAt || 0) > 73 * 3600e3); // re-check buybacks for 72h
       if (p.nft) p.card = await card(p.nft);
       st.packs.set(m.memo, p);
@@ -175,7 +277,7 @@ function createRips(opts = {}) {
     try {
       await Promise.all([shelf(), solPrice()]);
       const errs = [];
-      if (configured) for (const step of [readVaults, scanDev, manualExtras, resolvePacks, market]) { try { await step(); } catch (e) { errs.push(`${step.name}: ${e.message}`); } }
+      if (configured) for (const step of [listCoinSigs, readVaults, scanDev, manualExtras, resolvePacks, market]) { try { await step(); } catch (e) { errs.push(`${step.name}: ${e.message}`); } }
       st.lastRefreshAt = new Date(now()).toISOString(); st.lastError = errs.length ? errs.join(' | ') : null; st.refreshes++;
       if (errs.length) log('refresh errors', st.lastError);
     } catch (e) { st.lastError = e.message; log('refresh error', e.message); }
@@ -189,25 +291,39 @@ function createRips(opts = {}) {
     const unclaimedSol = st.unclaimed.curveSol + st.unclaimed.ammSol;
     const priceOf = (t) => (st.shelf || []).find((m) => m.code === t)?.priceUsd ?? (Number(String(t || '').match(/_(\d+)$/)?.[1]) || null);
     const usd = (sol) => (st.solUsd ? +(sol * st.solUsd).toFixed(2) : null);
+    const c = st.coin; const coinSol = (c.curveLamports + c.ammLamports) / 1e9;
+    const spent = (arr) => arr.reduce((s, p) => s + (priceOf(p.packType) || 0), 0);
+    const fromFees = spent(ok.filter((p) => p.paidBy !== 'dev')); const byDev = spent(ok.filter((p) => p.paidBy === 'dev'));
+    const feesUsd = usd(coinSol);
     return {
       state: configured ? 'live' : 'launching_soon',
       statement: 'Creator fees open packs live. The dev keeps the cards. Not financial advice.',
       coin: { ca: configured ? CA : null, devWallet: configured ? DEV : null, ticker: env.RIPS_TICKER || null, name: env.RIPS_NAME || null, x: env.RIPS_X_URL || null,
-        pumpUrl: configured ? `https://pump.fun/coin/${CA}` : null, creatorVaults: configured ? V : null, market: st.market },
-      fees: { creatorFeePct: CREATOR_FEE_PCT, vaultScope: 'pump.fun creator vaults are per creator wallet, not per coin: use a fresh dev wallet for this coin so the numbers are this coin only.', note: 'pump.fun bonding curve: 0.30% of every trade to the creator. After graduation PumpSwap pays 0.30% below 420 SOL market cap, then a tier table (0.95% at 420-1470 SOL, stepping down as it grows).',
-        unclaimedSol: +unclaimedSol.toFixed(6), unclaimedCurveSol: +st.unclaimed.curveSol.toFixed(6), unclaimedPumpswapSol: +st.unclaimed.ammSol.toFixed(6),
-        claimedSol: +claimedSol.toFixed(6), earnedSol: +(claimedSol + unclaimedSol).toFixed(6), earnedUsd: usd(claimedSol + unclaimedSol), claims: [...st.claims].reverse() },
-      packs: { opened: ok.length, spentUsd: ok.reduce((s, p) => s + (priceOf(p.packType) || 0), 0), insuredValueUsd: ok.reduce((s, p) => s + (p.insuredValueUsd || 0), 0),
+        pumpUrl: configured ? `https://pump.fun/coin/${CA}` : null, creatorVaults: configured ? V : null, accounts: configured ? C : null,
+        createdAt: c.createdAt, createdSig: c.createdSig, market: st.market },
+      fees: {
+        creatorFeePct: CREATOR_FEE_PCT,
+        note: 'pump.fun bonding curve: 0.30% of every trade to the creator. After graduation PumpSwap pays 0.30% below 420 SOL market cap, then a tier table (0.95% at 420-1470 SOL, stepping down as it grows).',
+        thisCoin: { scope: 'this coin only', earnedSol: +coinSol.toFixed(9), earnedUsd: feesUsd, curveSol: +(c.curveLamports / 1e9).toFixed(9), pumpswapSol: +(c.ammLamports / 1e9).toFixed(9),
+          tradesCounted: c.trades, txRead: c.done, txPending: c.queue.length, complete: configured && !!c.createdAt && c.queue.length === 0,
+          method: 'Exact: sum of creator_fee in every pump.fun TradeEvent and coin_creator_fee in every PumpSwap Buy/SellEvent for this coin, read from each transaction on the public Solana RPC. USD at the current SOL price.',
+          creatorsSeen: [...c.creators], lastError: c.lastError },
+        wallet: { scope: 'all coins from this dev wallet', note: 'pump.fun keeps one creator vault per wallet, shared by every coin this wallet created, so these numbers include other coins.',
+          unclaimedSol: +unclaimedSol.toFixed(6), unclaimedCurveSol: +st.unclaimed.curveSol.toFixed(6), unclaimedPumpswapSol: +st.unclaimed.ammSol.toFixed(6),
+          claimedSinceLaunchSol: +claimedSol.toFixed(6), claims: [...st.claims].reverse() },
+      },
+      packs: { opened: ok.length, spentUsd: spent(ok), paidFromFeesUsd: fromFees, paidByDevUsd: byDev, insuredValueUsd: ok.reduce((s, p) => s + (p.insuredValueUsd || 0), 0),
+        check: { packsFromFeesUsd: fromFees, thisCoinFeesUsd: feesUsd, ok: feesUsd == null ? null : fromFees <= feesUsd + 0.01, rule: 'Packs paid from fees should never exceed this coin\'s creator fees. Packs paid by the dev are listed but not charged to fees.' },
         list: packs.map(({ final, ...p }) => ({ ...p, priceUsd: priceOf(p.packType) })) },
       shelf: st.shelf, solUsd: st.solUsd,
-      meta: { startedAt: st.startedAt, lastRefreshAt: st.lastRefreshAt, lastError: st.lastError, lastTxError: st.lastTxError, refreshes: st.refreshes, rpcCalls: st.rpcCalls, sources: ['public Solana RPC', 'gacha.collectorcrypt.com', 'DexScreener', 'CoinGecko'], now: new Date(now()).toISOString() },
+      meta: { startedAt: st.startedAt, lastRefreshAt: st.lastRefreshAt, lastError: st.lastError, lastTxError: st.lastTxError, refreshes: st.refreshes, rpcCalls: st.rpcCalls, rateLimited: c.rateLimited, sources: ['public Solana RPC', 'gacha.collectorcrypt.com', 'DexScreener', 'CoinGecko'], now: new Date(now()).toISOString() },
     };
   }
 
   return {
-    refresh, status, configured,
-    start() { refresh(); timer = setInterval(refresh, Number(env.RIPS_REFRESH_MS || 180000)); timer.unref?.(); },
-    stop() { clearInterval(timer); },
+    refresh, status, configured, drainFees,
+    start() { refresh(); timer = setInterval(refresh, Number(env.RIPS_REFRESH_MS || 180000)); timer.unref?.(); if (configured) feeLoop(); },
+    stop() { stopped = true; clearInterval(timer); },
   };
 }
-module.exports = { createRips, vaults, memoFrom, parseCoreAsset, vaultDeltas, CREATOR_FEE_PCT };
+module.exports = { createRips, vaults, coinAccounts, tradeFees, memoFrom, parseCoreAsset, vaultDeltas, CREATOR_FEE_PCT };
