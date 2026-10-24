@@ -649,7 +649,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       const tx = await rpc('getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }]).catch(() => null); if (!tx) continue;
       const keys = tx.transaction.message.accountKeys.map((k) => k.pubkey || k); const i = keys.indexOf(address); if (i < 0) continue;
       const delta = (tx.meta.postBalances[i] - tx.meta.preBalances[i]) / LAMPORTS; if (keys[0] === address || delta <= 0) continue;
-      const src = keys.some((k) => PUMP_PROGRAMS.includes(k)) ? 'pump.fun creator fees (my 50% share)' : cfg.protectedWallets.has(keys[0]) || keys.includes(DEV_WALLET) ? 'transfer from the dev wallet' : 'transfer';
+      const src = keys.some((k) => PUMP_PROGRAMS.includes(k)) ? 'pump.fun creator fees (my 50% share)' : keys[0] === PAYOUT_PIN ? 'transfer from my funder (the wallet my principal goes back to)' : cfg.protectedWallets.has(keys[0]) || keys.includes(DEV_WALLET) ? 'transfer from the dev wallet' : 'transfer';
       const f = { at: new Date((tx.blockTime || now() / 1000) * 1000).toISOString(), sol: r6(delta), from: keys[0], source: src, tx: s.signature };
       const isStart = s.signature === cfg.startFundTx || (st.liveStartedAt && f.at < st.liveStartedAt);
       if (cfg.mode === 'live' && !isStart && !/creator fees/.test(src)) st.capitalIn = r6(st.capitalIn + f.sol); // capital, not earnings: it raises my baseline, not my signal
