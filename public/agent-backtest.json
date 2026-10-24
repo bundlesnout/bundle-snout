@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-24T17:44:51.228Z",
+ "generatedAt": "2026-10-24T17:49:25.365Z",
  "data": {
   "files": [
    "trades1.jsonl"
@@ -85,7 +85,7 @@
     "params": "20/15/15",
     "enabled": true,
     "inSamplePositive": false,
-    "picked": "defaults (best in-sample combo 50/15/15 looked like luck: only 0% of the grid profitable)",
+    "picked": "kept defaults: none of the 80 exit combos was profitable in-sample",
     "bestInSample": "50/15/15",
     "inSample": {
      "n": 59,
@@ -150,7 +150,7 @@
     "params": "50/12/5",
     "enabled": true,
     "inSamplePositive": true,
-    "picked": "best in-sample (≥15 trades, ≥20% of the grid profitable)",
+    "picked": "tuned: best in-sample combo, with ≥20% of the grid profitable",
     "bestInSample": "50/12/5",
     "inSample": {
      "n": 37,
@@ -215,7 +215,7 @@
     "params": "20/12/10",
     "enabled": true,
     "inSamplePositive": false,
-    "picked": "defaults (best in-sample combo 30/15/10 looked like luck: only 0% of the grid profitable)",
+    "picked": "kept defaults: none of the 80 exit combos was profitable in-sample",
     "bestInSample": "30/15/10",
     "inSample": {
      "n": 42,
@@ -280,7 +280,7 @@
     "params": "30/15/15",
     "enabled": true,
     "inSamplePositive": false,
-    "picked": "defaults (too few in-sample trades)",
+    "picked": "kept defaults: too few in-sample trades to tune",
     "bestInSample": null,
     "inSample": {
      "n": 12,

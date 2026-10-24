@@ -35,7 +35,7 @@
  },
  "priorNote": "in-sample outcomes per arm; the agent counts them at ≤0.5× weight, ≤15 pseudo-trades",
  "source": "backtest in-sample 2026-10-24T16:29→17:06Z (trades1.jsonl)",
- "generatedAt": "2026-10-24T17:44:51.228Z",
+ "generatedAt": "2026-10-24T17:49:25.365Z",
  "arms": {
   "dip": {
    "tp": 20,

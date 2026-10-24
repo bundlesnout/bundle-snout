@@ -77,7 +77,7 @@ const statsCI = (pnls) => ({ ...stats(pnls), ci90AvgPct: boot(pnls) });
     // profitable in-sample) and the best combo beats the defaults; one lucky corner of the grid is not an edge
     const robust = !!best && posShare >= 0.2 && best.s.netSol > 0 && best.s.netSol > defIS.netSol;
     const pick = robust ? best.key : defKey; const [tp, sl, hold] = pick.split('/').map(Number);
-    const picked = !best ? 'defaults (too few in-sample trades)' : robust ? 'best in-sample (≥15 trades, ≥20% of the grid profitable)' : `defaults (best in-sample combo ${best.key} looked like luck: only ${r1(posShare * 100)}% of the grid profitable)`;
+    const picked = !best ? 'kept defaults: too few in-sample trades to tune' : robust ? 'tuned: best in-sample combo, with ≥20% of the grid profitable' : best.s.netSol <= 0 ? 'kept defaults: none of the 80 exit combos was profitable in-sample' : `kept defaults: the best in-sample combo (${best.key}) looked like luck, only ${r1(posShare * 100)}% of the grid was profitable`;
     const enabled = true; const inSamplePositive = score(IS, pick).netSol > 0; // one short sample is too little to switch an arm off: the live bandit decides
     chosen[k] = { tp, sl, hold, enabled, inSamplePositive };
     // what the in-sample half says about this arm (with the exits picked above) becomes a down-weighted prior for the bandit
