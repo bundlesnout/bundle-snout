@@ -1,6 +1,41 @@
 {
- "source": "backtest in-sample 2026-10-24T16:29→16:40Z (bt-dry.jsonl)",
- "generatedAt": "2026-10-24T16:52:28.093Z",
+ "priors": {
+  "dip": {
+   "n": 59,
+   "w": 16,
+   "sumW": 383.6973351294573,
+   "sumW2": 11136.049754378695,
+   "sumL": 669.8319152482792,
+   "sumL2": 11163.558516358516
+  },
+  "momentum": {
+   "n": 37,
+   "w": 13,
+   "sumW": 433.1737796329638,
+   "sumW2": 23332.43356810704,
+   "sumL": 287.80093216339435,
+   "sumL2": 3607.3672544616506
+  },
+  "breakout": {
+   "n": 42,
+   "w": 9,
+   "sumW": 205.22810659813553,
+   "sumW2": 4691.6949548668745,
+   "sumL": 437.2916851182495,
+   "sumL2": 6456.482863118046
+  },
+  "fresh": {
+   "n": 12,
+   "w": 1,
+   "sumW": 30.942986203815607,
+   "sumW2": 957.468395209523,
+   "sumL": 166.95509301315775,
+   "sumL2": 2737.1107698511933
+  }
+ },
+ "priorNote": "in-sample outcomes per arm; the agent counts them at ≤0.5× weight, ≤15 pseudo-trades",
+ "source": "backtest in-sample 2026-10-24T16:29→17:06Z (trades1.jsonl)",
+ "generatedAt": "2026-10-24T17:44:51.228Z",
  "arms": {
   "dip": {
    "tp": 20,
@@ -10,9 +45,9 @@
    "inSamplePositive": false
   },
   "momentum": {
-   "tp": 20,
-   "sl": 15,
-   "hold": 15,
+   "tp": 50,
+   "sl": 12,
+   "hold": 5,
    "enabled": true,
    "inSamplePositive": true
   },

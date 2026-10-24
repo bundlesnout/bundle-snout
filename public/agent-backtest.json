@@ -1,23 +1,23 @@
 {
- "generatedAt": "2026-10-24T16:52:28.093Z",
+ "generatedAt": "2026-10-24T17:44:51.228Z",
  "data": {
   "files": [
-   "bt-dry.jsonl"
+   "trades1.jsonl"
   ],
-  "trades": 40575,
-  "coins": 1564,
+  "trades": 127035,
+  "coins": 4206,
   "from": "2026-10-24T16:29:08.169Z",
-  "to": "2026-10-24T16:51:32.901Z",
-  "minutes": 22.4
+  "to": "2026-10-24T17:44:07.687Z",
+  "minutes": 75
  },
  "split": {
   "inSample": [
    "2026-10-24T16:29:08.169Z",
-   "2026-10-24T16:40:20.535Z"
+   "2026-10-24T17:06:37.928Z"
   ],
   "outOfSample": [
-   "2026-10-24T16:40:20.535Z",
-   "2026-10-24T16:51:32.901Z"
+   "2026-10-24T17:06:37.928Z",
+   "2026-10-24T17:44:07.687Z"
   ]
  },
  "assumptions": {
@@ -52,172 +52,228 @@
   {
    "arm": "dip",
    "label": "Dip catcher",
-   "signals": 45,
-   "evaluated": 19,
+   "signals": 133,
+   "evaluated": 103,
    "defaults": {
     "params": "20/15/15",
     "inSample": {
-     "n": 19,
-     "wins": 6,
-     "winRate": 31.6,
-     "netSol": -0.0169,
-     "avgPct": -4.4,
-     "maxDDSol": 0.036
+     "n": 59,
+     "wins": 16,
+     "winRate": 27.1,
+     "netSol": -0.0575,
+     "avgPct": -4.8,
+     "maxDDSol": 0.0736,
+     "ci90AvgPct": [
+      -8.7,
+      -0.6
+     ]
     },
     "outOfSample": {
-     "n": 0,
-     "wins": 0,
-     "winRate": null,
-     "netSol": 0,
-     "avgPct": null,
-     "maxDDSol": 0
+     "n": 44,
+     "wins": 15,
+     "winRate": 34.1,
+     "netSol": -0.0249,
+     "avgPct": -2.8,
+     "maxDDSol": 0.0524,
+     "ci90AvgPct": [
+      -7.8,
+      2.3
+     ]
     }
    },
    "chosen": {
     "params": "20/15/15",
     "enabled": true,
     "inSamplePositive": false,
-    "picked": "defaults (best in-sample combo 50/15/3 looked like luck: only 1.3% of the grid profitable)",
-    "bestInSample": "50/15/3",
+    "picked": "defaults (best in-sample combo 50/15/15 looked like luck: only 0% of the grid profitable)",
+    "bestInSample": "50/15/15",
     "inSample": {
-     "n": 19,
-     "wins": 6,
-     "winRate": 31.6,
-     "netSol": -0.0169,
-     "avgPct": -4.4,
-     "maxDDSol": 0.036
+     "n": 59,
+     "wins": 16,
+     "winRate": 27.1,
+     "netSol": -0.0575,
+     "avgPct": -4.8,
+     "maxDDSol": 0.0736,
+     "ci90AvgPct": [
+      -8.7,
+      -0.6
+     ]
     },
     "outOfSample": {
-     "n": 0,
-     "wins": 0,
-     "winRate": null,
-     "netSol": 0,
-     "avgPct": null,
-     "maxDDSol": 0
+     "n": 44,
+     "wins": 15,
+     "winRate": 34.1,
+     "netSol": -0.0249,
+     "avgPct": -2.8,
+     "maxDDSol": 0.0524,
+     "ci90AvgPct": [
+      -7.8,
+      2.3
+     ]
     }
    },
-   "inSampleCombosPositivePct": 1.3
+   "inSampleCombosPositivePct": 0
   },
   {
    "arm": "momentum",
    "label": "Crowd rider",
-   "signals": 28,
-   "evaluated": 11,
+   "signals": 65,
+   "evaluated": 50,
    "defaults": {
     "params": "20/15/15",
     "inSample": {
-     "n": 11,
-     "wins": 6,
-     "winRate": 54.5,
-     "netSol": 0.0113,
-     "avgPct": 5.1,
-     "maxDDSol": 0.0129
+     "n": 37,
+     "wins": 15,
+     "winRate": 40.5,
+     "netSol": -0.0042,
+     "avgPct": -0.6,
+     "maxDDSol": 0.0311,
+     "ci90AvgPct": [
+      -5.3,
+      4.5
+     ]
     },
     "outOfSample": {
-     "n": 0,
-     "wins": 0,
-     "winRate": null,
-     "netSol": 0,
-     "avgPct": null,
-     "maxDDSol": 0
+     "n": 13,
+     "wins": 5,
+     "winRate": 38.5,
+     "netSol": -0.0056,
+     "avgPct": -2.1,
+     "maxDDSol": 0.011,
+     "ci90AvgPct": [
+      -11.1,
+      7
+     ]
     }
    },
    "chosen": {
-    "params": "20/15/15",
+    "params": "50/12/5",
     "enabled": true,
     "inSamplePositive": true,
-    "picked": "defaults (too few in-sample trades)",
-    "bestInSample": null,
+    "picked": "best in-sample (≥15 trades, ≥20% of the grid profitable)",
+    "bestInSample": "50/12/5",
     "inSample": {
-     "n": 11,
-     "wins": 6,
-     "winRate": 54.5,
-     "netSol": 0.0113,
-     "avgPct": 5.1,
-     "maxDDSol": 0.0129
+     "n": 37,
+     "wins": 13,
+     "winRate": 35.1,
+     "netSol": 0.0292,
+     "avgPct": 3.9,
+     "maxDDSol": 0.0199,
+     "ci90AvgPct": [
+      -3.1,
+      11.7
+     ]
     },
     "outOfSample": {
-     "n": 0,
-     "wins": 0,
-     "winRate": null,
-     "netSol": 0,
-     "avgPct": null,
-     "maxDDSol": 0
+     "n": 13,
+     "wins": 4,
+     "winRate": 30.8,
+     "netSol": 0.0045,
+     "avgPct": 1.7,
+     "maxDDSol": 0.0089,
+     "ci90AvgPct": [
+      -9.9,
+      15.4
+     ]
     }
    },
-   "inSampleCombosPositivePct": 90
+   "inSampleCombosPositivePct": 43.8
   },
   {
    "arm": "breakout",
    "label": "Breakout",
-   "signals": 28,
-   "evaluated": 8,
+   "signals": 89,
+   "evaluated": 73,
    "defaults": {
     "params": "20/12/10",
     "inSample": {
-     "n": 8,
-     "wins": 1,
-     "winRate": 12.5,
-     "netSol": -0.0142,
-     "avgPct": -8.8,
-     "maxDDSol": 0.0161
+     "n": 42,
+     "wins": 9,
+     "winRate": 21.4,
+     "netSol": -0.0466,
+     "avgPct": -5.5,
+     "maxDDSol": 0.0486,
+     "ci90AvgPct": [
+      -9.4,
+      -1.4
+     ]
     },
     "outOfSample": {
-     "n": 0,
-     "wins": 0,
-     "winRate": null,
-     "netSol": 0,
-     "avgPct": null,
-     "maxDDSol": 0
+     "n": 30,
+     "wins": 7,
+     "winRate": 23.3,
+     "netSol": -0.0384,
+     "avgPct": -6.4,
+     "maxDDSol": 0.0438,
+     "ci90AvgPct": [
+      -11.8,
+      -0.4
+     ]
     }
    },
    "chosen": {
     "params": "20/12/10",
     "enabled": true,
     "inSamplePositive": false,
-    "picked": "defaults (too few in-sample trades)",
-    "bestInSample": null,
+    "picked": "defaults (best in-sample combo 30/15/10 looked like luck: only 0% of the grid profitable)",
+    "bestInSample": "30/15/10",
     "inSample": {
-     "n": 8,
-     "wins": 1,
-     "winRate": 12.5,
-     "netSol": -0.0142,
-     "avgPct": -8.8,
-     "maxDDSol": 0.0161
+     "n": 42,
+     "wins": 9,
+     "winRate": 21.4,
+     "netSol": -0.0466,
+     "avgPct": -5.5,
+     "maxDDSol": 0.0486,
+     "ci90AvgPct": [
+      -9.4,
+      -1.4
+     ]
     },
     "outOfSample": {
-     "n": 0,
-     "wins": 0,
-     "winRate": null,
-     "netSol": 0,
-     "avgPct": null,
-     "maxDDSol": 0
+     "n": 30,
+     "wins": 7,
+     "winRate": 23.3,
+     "netSol": -0.0384,
+     "avgPct": -6.4,
+     "maxDDSol": 0.0438,
+     "ci90AvgPct": [
+      -11.8,
+      -0.4
+     ]
     }
    },
-   "inSampleCombosPositivePct": 12.5
+   "inSampleCombosPositivePct": 0
   },
   {
    "arm": "fresh",
    "label": "Early crowd",
-   "signals": 8,
-   "evaluated": 1,
+   "signals": 35,
+   "evaluated": 23,
    "defaults": {
     "params": "30/15/15",
     "inSample": {
-     "n": 1,
-     "wins": 0,
-     "winRate": 0,
-     "netSol": -0.0035,
-     "avgPct": -17.2,
-     "maxDDSol": 0.0035
+     "n": 12,
+     "wins": 1,
+     "winRate": 8.3,
+     "netSol": -0.0273,
+     "avgPct": -11.3,
+     "maxDDSol": 0.0273,
+     "ci90AvgPct": [
+      -16.5,
+      -3.8
+     ]
     },
     "outOfSample": {
-     "n": 0,
-     "wins": 0,
-     "winRate": null,
-     "netSol": 0,
-     "avgPct": null,
-     "maxDDSol": 0
+     "n": 11,
+     "wins": 2,
+     "winRate": 18.2,
+     "netSol": -0.0117,
+     "avgPct": -5.3,
+     "maxDDSol": 0.0226,
+     "ci90AvgPct": [
+      -16,
+      7
+     ]
     }
    },
    "chosen": {
@@ -227,508 +283,528 @@
     "picked": "defaults (too few in-sample trades)",
     "bestInSample": null,
     "inSample": {
-     "n": 1,
-     "wins": 0,
-     "winRate": 0,
-     "netSol": -0.0035,
-     "avgPct": -17.2,
-     "maxDDSol": 0.0035
+     "n": 12,
+     "wins": 1,
+     "winRate": 8.3,
+     "netSol": -0.0273,
+     "avgPct": -11.3,
+     "maxDDSol": 0.0273,
+     "ci90AvgPct": [
+      -16.5,
+      -3.8
+     ]
     },
     "outOfSample": {
-     "n": 0,
-     "wins": 0,
-     "winRate": null,
-     "netSol": 0,
-     "avgPct": null,
-     "maxDDSol": 0
+     "n": 11,
+     "wins": 2,
+     "winRate": 18.2,
+     "netSol": -0.0117,
+     "avgPct": -5.3,
+     "maxDDSol": 0.0226,
+     "ci90AvgPct": [
+      -16,
+      7
+     ]
     }
    },
    "inSampleCombosPositivePct": 0
   }
  ],
  "system": {
-  "note": "real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass)",
+  "note": "real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass). withInSampleParams = what is deployed (in-sample exits + in-sample priors); withoutPriors = same exits, bandit starts blank; withDefaults = hand-set exits, blank bandit; doing nothing = 0 SOL",
   "withInSampleParams": {
    "seeds": 20,
-   "medianNetSol": -0.0045,
-   "meanNetSol": -0.0032,
-   "minNetSol": -0.0107,
-   "maxNetSol": 0.0033,
-   "profitableSeedsPct": 30,
-   "avgTrades": 7.7,
-   "avgWinRate": 23.6,
-   "avgMaxDDSol": 0.0055
+   "medianNetSol": -0.0058,
+   "meanNetSol": -0.0068,
+   "minNetSol": -0.014,
+   "maxNetSol": -0.0025,
+   "profitableSeedsPct": 0,
+   "avgTrades": 17.7,
+   "avgWinRate": 13.9,
+   "avgMaxDDSol": 0.01
+  },
+  "withoutPriors": {
+   "seeds": 20,
+   "medianNetSol": -0.0151,
+   "meanNetSol": -0.0148,
+   "minNetSol": -0.0258,
+   "maxNetSol": 0.0005,
+   "profitableSeedsPct": 5,
+   "avgTrades": 23.1,
+   "avgWinRate": 14.2,
+   "avgMaxDDSol": 0.0197
   },
   "withDefaults": {
    "seeds": 20,
-   "medianNetSol": -0.0041,
-   "meanNetSol": -0.0032,
-   "minNetSol": -0.0119,
-   "maxNetSol": 0.0025,
-   "profitableSeedsPct": 30,
-   "avgTrades": 7.6,
-   "avgWinRate": 23.1,
-   "avgMaxDDSol": 0.0056
+   "medianNetSol": -0.0138,
+   "meanNetSol": -0.013,
+   "minNetSol": -0.0236,
+   "maxNetSol": 0.0003,
+   "profitableSeedsPct": 5,
+   "avgTrades": 21.4,
+   "avgWinRate": 18.1,
+   "avgMaxDDSol": 0.0157
   },
+  "baselineNoTrading": 0,
   "runs": [
    {
     "seed": 1,
-    "n": 7,
-    "wins": 3,
-    "winRate": 42.9,
-    "netSol": 0.002,
-    "avgPct": -0.1,
-    "maxDDSol": 0.0038,
-    "sitOut": 19,
-    "scans": 7,
+    "n": 18,
+    "wins": 1,
+    "winRate": 5.6,
+    "netSol": -0.0106,
+    "avgPct": -10.9,
+    "maxDDSol": 0.0106,
+    "sitOut": 85,
+    "scans": 18,
     "weights": {
-     "dip": 0.192,
-     "momentum": 0.198,
-     "breakout": 0.217,
-     "fresh": 0.393
+     "dip": 0.08,
+     "momentum": 0.733,
+     "breakout": 0.07,
+     "fresh": 0.117
     },
     "byArm": {
-     "dip": 3,
-     "momentum": 2,
-     "breakout": 1,
+     "dip": 2,
+     "momentum": 10,
+     "breakout": 5,
      "fresh": 1
     }
    },
    {
     "seed": 2,
-    "n": 8,
+    "n": 15,
     "wins": 2,
-    "winRate": 25,
-    "netSol": -0.0053,
-    "avgPct": -6.2,
-    "maxDDSol": 0.0078,
-    "sitOut": 20,
-    "scans": 8,
+    "winRate": 13.3,
+    "netSol": -0.0052,
+    "avgPct": -5.3,
+    "maxDDSol": 0.0085,
+    "sitOut": 100,
+    "scans": 15,
     "weights": {
-     "dip": 0.183,
-     "momentum": 0.182,
-     "breakout": 0.228,
-     "fresh": 0.407
-    },
-    "byArm": {
-     "dip": 4,
-     "momentum": 1,
-     "breakout": 2,
-     "fresh": 1
-    }
-   },
-   {
-    "seed": 3,
-    "n": 8,
-    "wins": 2,
-    "winRate": 25,
-    "netSol": -0.0045,
-    "avgPct": -5.1,
-    "maxDDSol": 0.0048,
-    "sitOut": 19,
-    "scans": 8,
-    "weights": {
-     "dip": 0.197,
-     "momentum": 0.18,
-     "breakout": 0.232,
-     "fresh": 0.392
-    },
-    "byArm": {
-     "dip": 1,
-     "momentum": 2,
-     "breakout": 2,
-     "fresh": 3
-    }
-   },
-   {
-    "seed": 4,
-    "n": 7,
-    "wins": 2,
-    "winRate": 28.6,
-    "netSol": 0.0025,
-    "avgPct": -3.6,
-    "maxDDSol": 0.003,
-    "sitOut": 23,
-    "scans": 7,
-    "weights": {
-     "dip": 0.178,
-     "momentum": 0.183,
-     "breakout": 0.245,
-     "fresh": 0.393
-    },
-    "byArm": {
-     "dip": 3,
-     "momentum": 0,
-     "breakout": 1,
-     "fresh": 3
-    }
-   },
-   {
-    "seed": 5,
-    "n": 5,
-    "wins": 0,
-    "winRate": 0,
-    "netSol": -0.0076,
-    "avgPct": -16.4,
-    "maxDDSol": 0.0076,
-    "sitOut": 28,
-    "scans": 5,
-    "weights": {
-     "dip": 0.228,
-     "momentum": 0.152,
-     "breakout": 0.202,
-     "fresh": 0.418
-    },
-    "byArm": {
-     "dip": 1,
-     "momentum": 1,
-     "breakout": 2,
-     "fresh": 1
-    }
-   },
-   {
-    "seed": 6,
-    "n": 8,
-    "wins": 3,
-    "winRate": 37.5,
-    "netSol": 0.0006,
-    "avgPct": -2.1,
-    "maxDDSol": 0.0024,
-    "sitOut": 24,
-    "scans": 8,
-    "weights": {
-     "dip": 0.147,
-     "momentum": 0.25,
-     "breakout": 0.223,
-     "fresh": 0.38
-    },
-    "byArm": {
-     "dip": 1,
-     "momentum": 3,
-     "breakout": 4,
-     "fresh": 0
-    }
-   },
-   {
-    "seed": 7,
-    "n": 6,
-    "wins": 0,
-    "winRate": 0,
-    "netSol": -0.0078,
-    "avgPct": -16.9,
-    "maxDDSol": 0.0078,
-    "sitOut": 33,
-    "scans": 6,
-    "weights": {
-     "dip": 0.238,
-     "momentum": 0.167,
-     "breakout": 0.215,
-     "fresh": 0.38
+     "dip": 0.072,
+     "momentum": 0.76,
+     "breakout": 0.057,
+     "fresh": 0.112
     },
     "byArm": {
      "dip": 2,
-     "momentum": 2,
-     "breakout": 1,
-     "fresh": 1
-    }
-   },
-   {
-    "seed": 8,
-    "n": 7,
-    "wins": 1,
-    "winRate": 14.3,
-    "netSol": -0.0059,
-    "avgPct": -7.6,
-    "maxDDSol": 0.0062,
-    "sitOut": 29,
-    "scans": 7,
-    "weights": {
-     "dip": 0.202,
-     "momentum": 0.203,
-     "breakout": 0.23,
-     "fresh": 0.365
-    },
-    "byArm": {
-     "dip": 4,
-     "momentum": 1,
-     "breakout": 0,
-     "fresh": 2
-    }
-   },
-   {
-    "seed": 9,
-    "n": 7,
-    "wins": 1,
-    "winRate": 14.3,
-    "netSol": -0.0032,
-    "avgPct": -8.2,
-    "maxDDSol": 0.0061,
-    "sitOut": 32,
-    "scans": 7,
-    "weights": {
-     "dip": 0.195,
-     "momentum": 0.182,
-     "breakout": 0.258,
-     "fresh": 0.365
-    },
-    "byArm": {
-     "dip": 4,
-     "momentum": 1,
-     "breakout": 1,
-     "fresh": 1
-    }
-   },
-   {
-    "seed": 10,
-    "n": 10,
-    "wins": 4,
-    "winRate": 40,
-    "netSol": 0.0033,
-    "avgPct": -0.2,
-    "maxDDSol": 0.0029,
-    "sitOut": 25,
-    "scans": 10,
-    "weights": {
-     "dip": 0.168,
-     "momentum": 0.223,
-     "breakout": 0.213,
-     "fresh": 0.395
-    },
-    "byArm": {
-     "dip": 2,
-     "momentum": 1,
-     "breakout": 5,
-     "fresh": 2
-    }
-   },
-   {
-    "seed": 11,
-    "n": 8,
-    "wins": 1,
-    "winRate": 12.5,
-    "netSol": -0.0064,
-    "avgPct": -10.5,
-    "maxDDSol": 0.0064,
-    "sitOut": 26,
-    "scans": 8,
-    "weights": {
-     "dip": 0.175,
-     "momentum": 0.175,
-     "breakout": 0.258,
-     "fresh": 0.392
-    },
-    "byArm": {
-     "dip": 5,
-     "momentum": 2,
-     "breakout": 0,
-     "fresh": 1
-    }
-   },
-   {
-    "seed": 12,
-    "n": 8,
-    "wins": 2,
-    "winRate": 25,
-    "netSol": -0.005,
-    "avgPct": -5.2,
-    "maxDDSol": 0.0064,
-    "sitOut": 27,
-    "scans": 8,
-    "weights": {
-     "dip": 0.192,
-     "momentum": 0.195,
-     "breakout": 0.202,
-     "fresh": 0.412
-    },
-    "byArm": {
-     "dip": 1,
-     "momentum": 2,
-     "breakout": 4,
-     "fresh": 1
-    }
-   },
-   {
-    "seed": 13,
-    "n": 8,
-    "wins": 2,
-    "winRate": 25,
-    "netSol": -0.0028,
-    "avgPct": -5.7,
-    "maxDDSol": 0.0041,
-    "sitOut": 25,
-    "scans": 8,
-    "weights": {
-     "dip": 0.168,
-     "momentum": 0.187,
-     "breakout": 0.233,
-     "fresh": 0.412
-    },
-    "byArm": {
-     "dip": 2,
-     "momentum": 2,
+     "momentum": 9,
      "breakout": 3,
      "fresh": 1
     }
    },
    {
-    "seed": 14,
-    "n": 7,
+    "seed": 3,
+    "n": 15,
     "wins": 2,
-    "winRate": 28.6,
-    "netSol": 0.0022,
-    "avgPct": -2.1,
-    "maxDDSol": 0.0031,
-    "sitOut": 23,
-    "scans": 7,
+    "winRate": 13.3,
+    "netSol": -0.0052,
+    "avgPct": -5.5,
+    "maxDDSol": 0.0093,
+    "sitOut": 86,
+    "scans": 15,
     "weights": {
-     "dip": 0.203,
-     "momentum": 0.21,
-     "breakout": 0.23,
-     "fresh": 0.357
+     "dip": 0.027,
+     "momentum": 0.813,
+     "breakout": 0.048,
+     "fresh": 0.112
     },
     "byArm": {
-     "dip": 3,
-     "momentum": 1,
+     "dip": 2,
+     "momentum": 11,
+     "breakout": 2,
+     "fresh": 0
+    }
+   },
+   {
+    "seed": 4,
+    "n": 18,
+    "wins": 2,
+    "winRate": 11.1,
+    "netSol": -0.0068,
+    "avgPct": -5.6,
+    "maxDDSol": 0.0101,
+    "sitOut": 73,
+    "scans": 18,
+    "weights": {
+     "dip": 0.093,
+     "momentum": 0.743,
+     "breakout": 0.037,
+     "fresh": 0.127
+    },
+    "byArm": {
+     "dip": 4,
+     "momentum": 11,
      "breakout": 2,
      "fresh": 1
     }
    },
    {
-    "seed": 15,
-    "n": 8,
-    "wins": 2,
-    "winRate": 25,
-    "netSol": -0.0003,
-    "avgPct": -6,
-    "maxDDSol": 0.0041,
-    "sitOut": 22,
-    "scans": 8,
+    "seed": 5,
+    "n": 19,
+    "wins": 3,
+    "winRate": 15.8,
+    "netSol": -0.0078,
+    "avgPct": -6.9,
+    "maxDDSol": 0.0111,
+    "sitOut": 91,
+    "scans": 19,
     "weights": {
-     "dip": 0.18,
-     "momentum": 0.19,
-     "breakout": 0.238,
-     "fresh": 0.392
+     "dip": 0.028,
+     "momentum": 0.79,
+     "breakout": 0.052,
+     "fresh": 0.13
+    },
+    "byArm": {
+     "dip": 5,
+     "momentum": 10,
+     "breakout": 3,
+     "fresh": 1
+    }
+   },
+   {
+    "seed": 6,
+    "n": 20,
+    "wins": 2,
+    "winRate": 10,
+    "netSol": -0.0117,
+    "avgPct": -11.1,
+    "maxDDSol": 0.0117,
+    "sitOut": 103,
+    "scans": 20,
+    "weights": {
+     "dip": 0.075,
+     "momentum": 0.752,
+     "breakout": 0.04,
+     "fresh": 0.133
+    },
+    "byArm": {
+     "dip": 7,
+     "momentum": 9,
+     "breakout": 3,
+     "fresh": 1
+    }
+   },
+   {
+    "seed": 7,
+    "n": 15,
+    "wins": 3,
+    "winRate": 20,
+    "netSol": -0.0055,
+    "avgPct": -5.6,
+    "maxDDSol": 0.0099,
+    "sitOut": 74,
+    "scans": 15,
+    "weights": {
+     "dip": 0.102,
+     "momentum": 0.698,
+     "breakout": 0.053,
+     "fresh": 0.147
     },
     "byArm": {
      "dip": 2,
-     "momentum": 2,
+     "momentum": 10,
+     "breakout": 3,
+     "fresh": 0
+    }
+   },
+   {
+    "seed": 8,
+    "n": 15,
+    "wins": 2,
+    "winRate": 13.3,
+    "netSol": -0.0025,
+    "avgPct": -3.3,
+    "maxDDSol": 0.0067,
+    "sitOut": 57,
+    "scans": 15,
+    "weights": {
+     "dip": 0.092,
+     "momentum": 0.723,
+     "breakout": 0.087,
+     "fresh": 0.098
+    },
+    "byArm": {
+     "dip": 2,
+     "momentum": 13,
+     "breakout": 0,
+     "fresh": 0
+    }
+   },
+   {
+    "seed": 9,
+    "n": 20,
+    "wins": 3,
+    "winRate": 15,
+    "netSol": -0.0089,
+    "avgPct": -7.8,
+    "maxDDSol": 0.0123,
+    "sitOut": 87,
+    "scans": 20,
+    "weights": {
+     "dip": 0.03,
+     "momentum": 0.792,
+     "breakout": 0.073,
+     "fresh": 0.105
+    },
+    "byArm": {
+     "dip": 4,
+     "momentum": 13,
      "breakout": 2,
+     "fresh": 1
+    }
+   },
+   {
+    "seed": 10,
+    "n": 19,
+    "wins": 4,
+    "winRate": 21.1,
+    "netSol": -0.0049,
+    "avgPct": -3.2,
+    "maxDDSol": 0.0082,
+    "sitOut": 92,
+    "scans": 19,
+    "weights": {
+     "dip": 0.14,
+     "momentum": 0.698,
+     "breakout": 0.047,
+     "fresh": 0.115
+    },
+    "byArm": {
+     "dip": 7,
+     "momentum": 11,
+     "breakout": 1,
+     "fresh": 0
+    }
+   },
+   {
+    "seed": 11,
+    "n": 20,
+    "wins": 1,
+    "winRate": 5,
+    "netSol": -0.014,
+    "avgPct": -12.1,
+    "maxDDSol": 0.014,
+    "sitOut": 90,
+    "scans": 20,
+    "weights": {
+     "dip": 0.042,
+     "momentum": 0.577,
+     "breakout": 0.063,
+     "fresh": 0.318
+    },
+    "byArm": {
+     "dip": 4,
+     "momentum": 10,
+     "breakout": 3,
+     "fresh": 3
+    }
+   },
+   {
+    "seed": 12,
+    "n": 16,
+    "wins": 1,
+    "winRate": 6.3,
+    "netSol": -0.0063,
+    "avgPct": -7.6,
+    "maxDDSol": 0.0098,
+    "sitOut": 106,
+    "scans": 16,
+    "weights": {
+     "dip": 0.065,
+     "momentum": 0.747,
+     "breakout": 0.062,
+     "fresh": 0.127
+    },
+    "byArm": {
+     "dip": 2,
+     "momentum": 12,
+     "breakout": 1,
+     "fresh": 1
+    }
+   },
+   {
+    "seed": 13,
+    "n": 19,
+    "wins": 2,
+    "winRate": 10.5,
+    "netSol": -0.009,
+    "avgPct": -8.4,
+    "maxDDSol": 0.0123,
+    "sitOut": 75,
+    "scans": 19,
+    "weights": {
+     "dip": 0.083,
+     "momentum": 0.685,
+     "breakout": 0.072,
+     "fresh": 0.16
+    },
+    "byArm": {
+     "dip": 2,
+     "momentum": 14,
+     "breakout": 3,
+     "fresh": 0
+    }
+   },
+   {
+    "seed": 14,
+    "n": 20,
+    "wins": 4,
+    "winRate": 20,
+    "netSol": -0.0039,
+    "avgPct": -3.2,
+    "maxDDSol": 0.0072,
+    "sitOut": 92,
+    "scans": 20,
+    "weights": {
+     "dip": 0.072,
+     "momentum": 0.677,
+     "breakout": 0.042,
+     "fresh": 0.21
+    },
+    "byArm": {
+     "dip": 5,
+     "momentum": 12,
+     "breakout": 1,
+     "fresh": 2
+    }
+   },
+   {
+    "seed": 15,
+    "n": 16,
+    "wins": 2,
+    "winRate": 12.5,
+    "netSol": -0.0058,
+    "avgPct": -5.6,
+    "maxDDSol": 0.0103,
+    "sitOut": 84,
+    "scans": 16,
+    "weights": {
+     "dip": 0.048,
+     "momentum": 0.853,
+     "breakout": 0.045,
+     "fresh": 0.053
+    },
+    "byArm": {
+     "dip": 3,
+     "momentum": 10,
+     "breakout": 1,
      "fresh": 2
     }
    },
    {
     "seed": 16,
-    "n": 9,
+    "n": 20,
     "wins": 4,
-    "winRate": 44.4,
-    "netSol": 0.0011,
-    "avgPct": 2.3,
-    "maxDDSol": 0.0043,
-    "sitOut": 21,
-    "scans": 9,
+    "winRate": 20,
+    "netSol": -0.0074,
+    "avgPct": -5.8,
+    "maxDDSol": 0.0107,
+    "sitOut": 70,
+    "scans": 20,
     "weights": {
-     "dip": 0.188,
-     "momentum": 0.202,
-     "breakout": 0.208,
-     "fresh": 0.402
+     "dip": 0.087,
+     "momentum": 0.685,
+     "breakout": 0.095,
+     "fresh": 0.133
     },
     "byArm": {
-     "dip": 4,
-     "momentum": 0,
-     "breakout": 4,
+     "dip": 7,
+     "momentum": 10,
+     "breakout": 2,
      "fresh": 1
     }
    },
    {
     "seed": 17,
-    "n": 9,
+    "n": 18,
     "wins": 3,
-    "winRate": 33.3,
-    "netSol": -0.0049,
-    "avgPct": -4.8,
-    "maxDDSol": 0.006,
-    "sitOut": 20,
-    "scans": 9,
+    "winRate": 16.7,
+    "netSol": -0.0075,
+    "avgPct": -5.7,
+    "maxDDSol": 0.0118,
+    "sitOut": 98,
+    "scans": 18,
     "weights": {
-     "dip": 0.155,
-     "momentum": 0.187,
-     "breakout": 0.257,
-     "fresh": 0.402
+     "dip": 0.077,
+     "momentum": 0.748,
+     "breakout": 0.078,
+     "fresh": 0.097
     },
     "byArm": {
-     "dip": 6,
-     "momentum": 2,
+     "dip": 4,
+     "momentum": 10,
      "breakout": 1,
-     "fresh": 0
+     "fresh": 3
     }
    },
    {
     "seed": 18,
-    "n": 8,
-    "wins": 1,
-    "winRate": 12.5,
-    "netSol": -0.0107,
-    "avgPct": -11.4,
-    "maxDDSol": 0.0107,
-    "sitOut": 30,
-    "scans": 8,
+    "n": 18,
+    "wins": 3,
+    "winRate": 16.7,
+    "netSol": -0.0044,
+    "avgPct": -2.9,
+    "maxDDSol": 0.0083,
+    "sitOut": 70,
+    "scans": 18,
     "weights": {
-     "dip": 0.177,
-     "momentum": 0.178,
-     "breakout": 0.222,
-     "fresh": 0.423
-    },
-    "byArm": {
-     "dip": 5,
-     "momentum": 2,
-     "breakout": 0,
-     "fresh": 1
-    }
-   },
-   {
-    "seed": 19,
-    "n": 8,
-    "wins": 2,
-    "winRate": 25,
-    "netSol": -0.006,
-    "avgPct": -6.5,
-    "maxDDSol": 0.0063,
-    "sitOut": 28,
-    "scans": 8,
-    "weights": {
-     "dip": 0.192,
-     "momentum": 0.182,
-     "breakout": 0.218,
-     "fresh": 0.408
+     "dip": 0.155,
+     "momentum": 0.73,
+     "breakout": 0.038,
+     "fresh": 0.077
     },
     "byArm": {
      "dip": 4,
-     "momentum": 2,
+     "momentum": 12,
      "breakout": 2,
      "fresh": 0
     }
    },
    {
-    "seed": 20,
-    "n": 8,
-    "wins": 1,
-    "winRate": 12.5,
-    "netSol": -0.0054,
-    "avgPct": -12.8,
-    "maxDDSol": 0.0054,
-    "sitOut": 26,
-    "scans": 8,
+    "seed": 19,
+    "n": 15,
+    "wins": 2,
+    "winRate": 13.3,
+    "netSol": -0.0053,
+    "avgPct": -6.7,
+    "maxDDSol": 0.0089,
+    "sitOut": 67,
+    "scans": 15,
     "weights": {
-     "dip": 0.21,
-     "momentum": 0.208,
-     "breakout": 0.245,
-     "fresh": 0.337
+     "dip": 0.057,
+     "momentum": 0.73,
+     "breakout": 0.078,
+     "fresh": 0.135
     },
     "byArm": {
      "dip": 3,
-     "momentum": 3,
-     "breakout": 1,
+     "momentum": 11,
+     "breakout": 0,
      "fresh": 1
+    }
+   },
+   {
+    "seed": 20,
+    "n": 17,
+    "wins": 3,
+    "winRate": 17.6,
+    "netSol": -0.0036,
+    "avgPct": -3.6,
+    "maxDDSol": 0.008,
+    "sitOut": 80,
+    "scans": 17,
+    "weights": {
+     "dip": 0.037,
+     "momentum": 0.725,
+     "breakout": 0.04,
+     "fresh": 0.198
+    },
+    "byArm": {
+     "dip": 3,
+     "momentum": 10,
+     "breakout": 2,
+     "fresh": 2
     }
    }
   ]
@@ -737,6 +813,7 @@
   "Short sample (one recording session): results are noisy and say little about the future.",
   "The live scanner rejects most coins; it cannot be replayed offline, so the system replay trades coins the live agent would refuse.",
   "Fills use the observed curve after a 5 s delay; real fills can be worse (slippage, priority-fee races, failed txs).",
-  "Exit params were picked on the in-sample half only; the out-of-sample numbers are the honest ones."
+  "Exit params were picked on the in-sample half only; the out-of-sample numbers are the honest ones.",
+  "ci90AvgPct is a bootstrap 90% interval for the average % per trade: if it includes 0, this sample cannot distinguish an edge from luck."
  ]
 }
