@@ -9,7 +9,11 @@
 const fs = require('fs'); const path = require('path');
 const M = require('../mind'); const { buyFill, sellValue } = require('../scalp');
 const files = process.argv.slice(2).filter((x) => !x.startsWith('--')); const SEEDS = Number(process.env.BT_SEEDS || 20);
-const LATENCY = 5000, SIZE = 0.02, FEE = { feePct: 1.75, txFeeSol: 0.0001 };
+// cost model: BT_COST=old -> the previous assumption (PumpPortal: 1.75%/side, 0.0001 SOL/tx, no edge-vs-cost gate);
+// default -> the live executor's model (exec.js): direct curve 1.25%/side + fitted/capped network fee per tx.
+const E = require('../exec'); const OLD = process.env.BT_COST === 'old';
+if (OLD) Object.assign(process.env, { AGENT_ROUTE: 'pumpportal', AGENT_TX_FEE_SOL: '0.0001', AGENT_MAX_COST_SHARE: '100', AGENT_CURVE_FEE_PCT: '1.25' });
+const LATENCY = 5000, SIZE = 0.02, FEE = OLD ? { feePct: 1.75, txFeeSol: 0.0001 } : { feePct: 1.25, txFeeSol: (E.networkSol('buy') + E.networkSol('sell')) / 2 };
 const GRID = { tp: [10, 15, 20, 30, 50], sl: [8, 12, 15, 25], hold: [3, 5, 10, 15] };
 const r1 = (x) => Math.round(x * 10) / 10, r4 = (x) => Math.round(x * 1e4) / 1e4;
 const solCurve = (t) => t.vs >= 29.9 && t.vs <= 130 && t.vt > 250e6 && t.vt <= 1.0731e9;
@@ -108,7 +112,7 @@ const statsCI = (pnls) => ({ ...stats(pnls), ci90AvgPct: boot(pnls) });
   const iso = (t) => new Date(t).toISOString();
   const outJ = { generatedAt: new Date().toISOString(), data: { files: files.map((f) => path.basename(f)), trades: rows.length, coins: byMint.size, from: iso(tStart), to: iso(tEnd), minutes: r1((tEnd - tStart) / 60e3) },
     split: { inSample: [iso(tStart), iso(tSplit)], outOfSample: [iso(tSplit), iso(tEnd)] },
-    assumptions: { sizeSol: SIZE, feesPerSidePct: FEE.feePct, txFeeSol: FEE.txFeeSol, entryLatencyMs: LATENCY, grid: GRID, oneEntryPerCoinPerArm: true },
+    assumptions: { costModel: OLD ? 'old (PumpPortal 1.75%/side)' : 'direct route (exec.js)', sizeSol: SIZE, feesPerSidePct: FEE.feePct, txFeeSol: FEE.txFeeSol, entryLatencyMs: LATENCY, grid: GRID, oneEntryPerCoinPerArm: true },
     perArm, system: { note: 'real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass). withInSampleParams = what is deployed (in-sample exits + in-sample priors); withoutInstincts = deployed setup with survival scaling and reward/pain switched off (ablation); withoutPriors = same exits, bandit starts blank; withDefaults = hand-set exits, blank bandit; doing nothing = 0 SOL', withInSampleParams: summ(sysRuns.chosen), withoutInstincts: summ(sysRuns.noInstincts), withoutPriors: summ(sysRuns.noPrior), withDefaults: summ(sysRuns.defaults), baselineNoTrading: 0, runs: sysRuns.chosen },
     caveats: ['Short sample (one recording session): results are noisy and say little about the future.', 'The live scanner rejects most coins; it cannot be replayed offline, so the system replay trades coins the live agent would refuse.', 'Fills use the observed curve after a 5 s delay; real fills can be worse (slippage, priority-fee races, failed txs).', 'Exit params were picked on the in-sample half only; the out-of-sample numbers are the honest ones.', 'ci90AvgPct is a bootstrap 90% interval for the average % per trade: if it includes 0, this sample cannot distinguish an edge from luck.'] };
   const OUT = process.env.BT_OUT_DIR; if (OUT) fs.mkdirSync(OUT, { recursive: true });

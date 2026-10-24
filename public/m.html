@@ -41,10 +41,10 @@ h2 span{letter-spacing:0;text-transform:none;font-weight:600}
 .bar{height:9px;background:#1a1a2a;border-radius:99px;overflow:hidden;margin:6px 0 3px}.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#7c4dff,#3fd68f);border-radius:99px;transition:width .6s}
 .now{font-size:15px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .chart{position:relative}.chart canvas{display:block;width:100%;height:110px}
-.chart .ov{position:absolute;right:4px;top:0;text-align:right;font-variant-numeric:tabular-nums}
+@media(min-width:600px){.chart{flex:1;display:flex;flex-direction:column}.chart canvas{flex:1;height:auto;min-height:120px}}
 .feed{flex:1;min-height:0;display:flex;flex-direction:column}
 .feed ul{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1;min-height:0}
-.feed li{display:grid;grid-template-columns:42px 50px 1fr auto;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums}
+.feed li{display:grid;grid-template-columns:40px 52px 1fr auto;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums}
 .feed li:first-child{border-top:0}
 .feed .t{color:var(--mu);font-size:12.5px}.feed .k{font-weight:800;font-size:12px;border-radius:6px;padding:1px 0;text-align:center}
 .k.BUY{background:#12304f;color:var(--b)}.k.SELL{background:#3a1f2a;color:#ffb3ae}.k.FUND,.k.IN{background:#123a29;color:var(--g)}.k.PAYOUT{background:#3a2f10;color:var(--y)}.k.WALLET{background:#22223a;color:var(--mu)}
@@ -82,8 +82,8 @@ footer{display:flex;gap:14px;flex-wrap:wrap;font-size:14px;padding:4px 2px}
     </section>
     <section class="chart" id="chartBox">
       <h2><span id="chTitle">Price</span><span id="chSub"></span></h2>
+      <div class="row" style="margin-bottom:2px"><span class="mid" id="chBig"></span><span class="sub" id="chSmall"></span></div>
       <canvas id="cv"></canvas>
-      <div class="ov" style="top:26px"><div class="mid" id="chBig"></div><div class="sub" id="chSmall"></div></div>
     </section>
   </div>
   <div class="col feedcol">
@@ -128,7 +128,7 @@ const sgn = (x, d = 4) => (n(x) == null ? '–' : `${x > 0 ? '+' : ''}${Number(x
 const pct = (x) => (n(x) == null ? '' : `${x > 0 ? '+' : ''}${Number(x).toFixed(1)}%`);
 const cls = (x) => (n(x) == null || x === 0 ? '' : x > 0 ? 'pos' : 'neg');
 const ago = (iso) => { if (!iso) return ''; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
-const hhmm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+const hhmm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '');
 const usd = (x) => (x >= 1e6 ? `$${(x / 1e6).toFixed(2)}M` : x >= 1e3 ? `$${(x / 1e3).toFixed(1)}k` : `$${Math.round(x)}`);
 let lastOk = 0, fails = 0, busy = false, lastData = null;
 
@@ -164,7 +164,7 @@ function render(d) {
   const start = n(pay?.start ?? pay?.startSol) || START, target = n(pay?.goal ?? pay?.targetSol) || TARGET;
   const cur = live ? n(pay?.treasurySol) ?? n(w.sol) : n(w.sol);
   const done = !!(pay && (pay.done || pay.status === 'done'));
-  const gp = done ? 100 : cur == null ? 0 : Math.max(0, Math.min(100, (cur / target) * 100));
+  const gp = done ? 100 : cur == null ? 0 : Math.max(0, Math.min(100, ((cur - start) / (target - start)) * 100)); // 0% at the start, 100% when doubled
   $('goalbar').style.width = `${gp}%`;
   $('goalnow').textContent = done ? 'Risk-free ✓ principal returned' : `Risk-free goal ${gp.toFixed(0)}%`;
   $('goaltarget').textContent = `${sol(cur, 3)} / ${target.toFixed(3)}`;
@@ -178,10 +178,10 @@ function render(d) {
   const buy = c ? (d.feed || []).find((f) => f.kind === 'BUY' && f.mint === c.mint && f.price) : null;
   if (c) {
     $('chTitle').innerHTML = `${pos ? 'Holding' : 'Watching'} <b style="color:var(--tx)">$${esc(c.symbol || c.mint.slice(0, 6))}</b>`;
-    $('chSub').textContent = `5 min · ${ago(c.lastAt)}`;
+    $('chSub').textContent = `last trade ${ago(c.lastAt)}`;
     const ch = c.points.length > 1 ? (c.points[c.points.length - 1][1] / c.points[0][1] - 1) * 100 : null;
-    if (pos) { $('chBig').textContent = pct(pos.pnlPct); $('chBig').className = 'mid ' + cls(pos.pnlPct); $('chSmall').textContent = `${sol(pos.costSol)} in`; }
-    else { $('chBig').textContent = pct(ch); $('chBig').className = 'mid ' + cls(ch); $('chSmall').textContent = d.solUsd ? `MC ${usd(c.mcSol * d.solUsd)}` : ''; }
+    if (pos) { $('chBig').textContent = pct(pos.pnlPct); $('chBig').className = 'mid ' + cls(pos.pnlPct); $('chSmall').textContent = `position · ${sol(pos.costSol)} in`; }
+    else { $('chBig').textContent = pct(ch); $('chBig').className = 'mid ' + cls(ch); $('chSmall').textContent = `5-min move${d.solUsd ? ` · MC ${usd(c.mcSol * d.solUsd)}` : ''}`; }
     drawChart(c, pos && buy ? buy.price : null);
   } else { $('chTitle').textContent = 'Price'; $('chSub').textContent = ''; $('chBig').textContent = ''; $('chSmall').textContent = ''; drawChart(null); }
   // transactions feed

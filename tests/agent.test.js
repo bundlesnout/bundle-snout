@@ -129,5 +129,59 @@ function dipMint(t0) {
   assert.ok(evOf(withP) < evOf(blank) - 3, 'a losing backtest lowers the belief');
   const pa = mk(analyze, { params: { arms: {}, priors: { dip: losing } } }); assert.ok(pa.st.bandit._prior.dip && pa.status().mind.arms.find((x) => x.arm === 'dip').priorTrades === 15);
   const pa2 = mk(analyze, { params: { arms: {}, priors: { dip: M.statOf([30, 30]) } } }); pa2._test.restore(pa._test.snapshot()); assert.strictEqual(pa2.st.bandit._prior.dip.n, 2, 'boot prior wins over a stored one');
+
+  // 16) cost model: paper trades carry a per-trade cost breakdown; the edge gate counts the full round trip
+  const E = require('../exec');
+  const rtD = E.roundTrip(0.01, { route: 'direct' }), rtP = E.roundTrip(0.01, { route: 'pumpportal' });
+  assert.ok(rtD.totalPct < rtP.totalPct - 0.9, 'direct beats PumpPortal by ~1 pt'); assert.strictEqual(rtD.breakdown.rentLostPct, 0);
+  assert.ok(sell.costs && sell.costs.roundTrip.totalSol > 0 && sell.costs.route === 'direct', 'sell has cost breakdown');
+  assert.ok(a.st.trades.find((x) => x.side === 'BUY').costs.slippageTolPct <= 2.5);
+  const sp = E.slippagePolicy({ side: 'buy', impactPct: 0.05, volPct: 0 }); assert.ok(sp.ok && sp.tolPct === 0.55, JSON.stringify(sp));
+  assert.strictEqual(E.slippagePolicy({ side: 'buy', impactPct: 0.5, volPct: 3 }).ok, false, 'too volatile: skip');
+  assert.strictEqual(E.slippagePolicy({ side: 'sell', impactPct: 0.1, forced: true, attempt: 1 }).tolPct, 6, 'forced exits escalate');
+  assert.ok(a.status().execution.roundTripPct.direct['0.01'].totalPct > 2);
+  process.env.AGENT_MAX_COST_SHARE = '0.05'; const sk = mk(); delete process.env.AGENT_MAX_COST_SHARE; await sk.start(); train(sk, 'dip', 30, 18); scans0 = scans; const mS = dipMint(t); mints.set('CoinS', mS); sk.onTrade({ mint: 'CoinS', vs: mS.vs, vt: mS.vt }, mS); await settle();
+  assert.strictEqual(scans, scans0, 'thin edge vs costs: no scan'); assert.strictEqual(sk.st.totals.costSkips, 1, 'cost skip counted');
+
+  // 17) principal payout (paper simulation): fires once at 2x, only to the pinned address; baseline moves to the post-payout treasury
+  process.env.AGENT_PAYOUT_ADDRESS = '76FHD3T6iu1GMJNyUqShKxHepu85kD3tkg1s6QXq4HLm';
+  const pz = mk(); await pz.start(); assert.strictEqual(pz.status().payout.status, 'waiting'); assert.strictEqual(pz.status().payout.goal, 0.2);
+  pz.st.paperCash = 0.19; pz._test.safeTick(); await settle(); assert.ok(!pz.st.payout, 'not before the goal');
+  pz.st.paperCash = 0.21; pz._test.safeTick(); await settle();
+  assert.strictEqual(pz.st.payout.status, 'done'); assert.strictEqual(pz.st.payout.sol, 0.1); assert.ok(Math.abs(pz.st.paperCash - 0.11) < 1e-9);
+  assert.ok(pz.st.decisions.some((d) => d.action === 'PAYOUT' && /Principal returned — I'm now running on my own profits/.test(d.reason)));
+  assert.ok(Math.abs(pz.st.paperStart - 0.11) < 1e-9, 'baseline = post-payout treasury'); assert.ok(pz._test.vit().signal >= 0, 'no phantom loss after payout');
+  pz.st.paperCash = 0.5; pz._test.safeTick(); await settle(); assert.strictEqual(pz.st.decisions.filter((d) => d.action === 'PAYOUT').length, 1, 'only once');
+  process.env.AGENT_PAYOUT_ADDRESS = 'Someone1111111111111111111111111111111111111'; const pw = mk(); await pw.start(); pw.st.paperCash = 0.5; pw._test.safeTick(); await settle();
+  assert.ok(!pw.st.payout && pw.status().payout.status === 'blocked', 'any other address is refused');
+  delete process.env.AGENT_PAYOUT_ADDRESS;
+  // 18) going live archives the paper record (labeled) and never mixes it into the live record; start-fund tx = baseline
+  process.env.AGENT_MODE = 'live'; process.env.AGENT_PUBLIC_KEY = 'Agent1111111111111111111111111111111111111';
+  const lv = mk(analyze, {}); lv._test.restore(a._test.snapshot());
+  assert.ok(lv.st.paperArchive && /Paper trading/.test(lv.st.paperArchive.label) && lv.st.paperArchive.closedTrades >= 1); assert.strictEqual(lv.st.trades.length, 0, 'live record starts fresh');
+  assert.strictEqual(lv.st.bandit.dip.all.n, 31, 'what it learned carries over');
+  process.env.AGENT_START_FUND_TX = 's1'; const lf = mk(analyze, { rpc }); await lf._test.scanFunding();
+  assert.strictEqual(lf.st.capitalIn, 0, 'starting deposit is the baseline, not extra capital'); assert.ok(lf.st.fundings.some((f) => /starting treasury/.test(f.counts)));
+  delete process.env.AGENT_START_FUND_TX; delete process.env.AGENT_MODE; delete process.env.AGENT_PUBLIC_KEY;
+
+  // 19) LIVE payout with a mocked RPC: simulate first, send once, persist 'sending' before sending, baseline after
+  { const { Keypair } = require('@solana/web3.js'); const bs = require('bs58'); const kpT = Keypair.generate();
+    process.env.AGENT_MODE = 'live'; process.env.AGENT_SECRET_KEY = (bs.default || bs).encode(kpT.secretKey); process.env.AGENT_PAYOUT_ADDRESS = '76FHD3T6iu1GMJNyUqShKxHepu85kD3tkg1s6QXq4HLm';
+    process.env.AGENT_PAYOUT_SOL = '0.185814381'; process.env.AGENT_LIVE_START_SOL = '0.185814381';
+    let lam = 0.38e9; const sent = []; const calls = [];
+    const rpcL = async (m, p) => { calls.push(m);
+      if (m === 'getBalance') return { value: lam }; if (m === 'getLatestBlockhash') return { value: { blockhash: '11111111111111111111111111111111' } };
+      if (m === 'simulateTransaction') return { value: { err: null, accounts: [{ lamports: lam - 185814381 - 5000 }], unitsConsumed: 150 } };
+      if (m === 'sendTransaction') { sent.push(p[0]); lam -= 185814381 + 5000; return 'sig'; }
+      if (m === 'getSignatureStatuses') return { value: [{ confirmationStatus: 'confirmed', err: null }] };
+      if (m === 'getSignaturesForAddress') return []; return null; };
+    process.env.AGENT_PAYOUT_POLL_MS = '0'; const lp = mk(analyze, { rpc: rpcL }); delete process.env.AGENT_PAYOUT_POLL_MS; delete process.env.AGENT_SECRET_KEY; delete process.env.AGENT_MODE;
+    lp.st.liveBalance = 0.30; lp.st.liveBaseline = 0.185814381; lp._test.safeTick(); await settle(400); assert.strictEqual(sent.length, 0, 'below goal: nothing sent');
+    lp.st.liveBalance = 0.38; lp._test.safeTick(); await settle(400);
+    assert.strictEqual(sent.length, 1, 'payout sent once'); assert.ok(calls.indexOf('simulateTransaction') < calls.indexOf('sendTransaction'), 'simulated before sending');
+    assert.strictEqual(lp.st.payout.status, 'done'); assert.strictEqual(lp.st.payout.lamports, 185814381); assert.strictEqual(lp.st.payout.to, '76FHD3T6iu1GMJNyUqShKxHepu85kD3tkg1s6QXq4HLm');
+    assert.ok(Math.abs(lp.st.liveBaseline - lam / 1e9) < 1e-6, 'new baseline = post-payout wallet'); assert.strictEqual(lp.st.capitalIn, 0);
+    lp.st.liveBalance = 0.9; lp._test.safeTick(); await settle(400); assert.strictEqual(sent.length, 1, 'never twice');
+    for (const k of ['AGENT_PAYOUT_ADDRESS', 'AGENT_PAYOUT_SOL', 'AGENT_LIVE_START_SOL']) delete process.env[k]; }
   console.log('agent tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });

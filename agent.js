@@ -6,25 +6,31 @@
 // * Hard limits: size cap, per-arm TP/SL/time stop, max open positions, daily loss limit, kill switch, hibernation.
 // * HARD RULES: never trades its own coin (AGENT_EXCLUDE_CA), never trades coins created by protected wallets
 //   (the dev wallet), never sends SOL anywhere except through buy/sell swaps it verifies by simulation.
-// * AGENT_MODE=paper (default): simulated fills on the real curve with live-equivalent fees. AGENT_MODE=live: real swaps
-//   via PumpPortal's Local Transaction API (tx built by PumpPortal, verified + simulated + signed locally, sent via our RPC).
+// * AGENT_MODE=paper (default): simulated fills on the real curve with the live cost model. AGENT_MODE=live: real swaps
+//   built locally on the pump.fun curve / PumpSwap pool (exec.js, no aggregator fee), PumpPortal Local API only as a
+//   fallback (+0.5%/side); every tx is verified + simulated + signed locally and sent via our RPC.
+// * Principal return: when free SOL reaches AGENT_PAYOUT_GOAL_MULT x the start, the starting SOL goes back once to the
+//   one pinned payout address (simulated first, logged in public), then I keep trading on profits only.
 const crypto = require('crypto'); const zlib = require('zlib'); const fs = require('fs'); const path = require('path');
-const { Keypair, VersionedTransaction, Transaction, TransactionInstruction, PublicKey } = require('@solana/web3.js');
+const { Keypair, VersionedTransaction, Transaction, TransactionInstruction, PublicKey, SystemProgram } = require('@solana/web3.js');
 const bs58m = require('bs58'); const bs58 = bs58m.default || bs58m;
 const { features, scalpLevels, buyFill, sellValue } = require('./scalp');
 const M = require('./mind');
 const VT = require('./vitals');
+const E = require('./exec');
 
 const num = (k, d) => (process.env[k] != null && process.env[k] !== '' ? Number(process.env[k]) : d);
 const csv = (k) => (process.env[k] || '').split(',').map((x) => x.trim()).filter(Boolean);
 const DEV_WALLET = '9piBCsKoxYEs3MaE1eV6ZAEfGbyWDqEv23mRYo71X7ys'; // the dev's main wallet: never touched, its coins never traded
+// the only address principal can ever be returned to (the funder's wallet); AGENT_PAYOUT_ADDRESS must equal it
+const PAYOUT_PIN = '76FHD3T6iu1GMJNyUqShKxHepu85kD3tkg1s6QXq4HLm';
 const PUMP_PROGRAMS = ['6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P', 'pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ', 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA'];
 function loadParams() { try { return JSON.parse(fs.readFileSync(process.env.AGENT_PARAMS_FILE || path.join(__dirname, 'agent-params.json'), 'utf8')); } catch { return null; } }
 const ACFG = () => ({
   mode: (process.env.AGENT_MODE || 'paper').toLowerCase() === 'live' ? 'live' : 'paper',
   enabled: process.env.AGENT_ENABLED !== '0',
   exclude: new Set([...csv('AGENT_EXCLUDE_CA'), ...csv('RIPS_CA'), ...csv('AGENT_COIN_CA')]),
-  protectedWallets: new Set([DEV_WALLET, ...csv('RIPS_DEV_WALLET'), ...csv('AGENT_PROTECTED_WALLETS')]),
+  protectedWallets: new Set([DEV_WALLET, PAYOUT_PIN, ...csv('RIPS_DEV_WALLET'), ...csv('AGENT_PROTECTED_WALLETS')]),
   maxTradeSol: num('AGENT_MAX_TRADE_SOL', 0.02),
   sizePct: num('AGENT_SIZE_PCT', 20),            // hard cap: % of free balance per trade
   minTradeSol: num('AGENT_MIN_TRADE_SOL', 0.005),
@@ -37,9 +43,16 @@ const ACFG = () => ({
   minProg: num('AGENT_MIN_PROGRESS', 2), maxProg: num('AGENT_MAX_PROGRESS', 85),
   maxScansPerDay: num('AGENT_MAX_SCANS_PER_DAY', 150), scanGapSec: num('AGENT_SCAN_GAP_SEC', 60),
   paperStartSol: num('AGENT_PAPER_START_SOL', 0.1),
-  feePct: num('AGENT_FEE_PCT', 1.75),             // per side: pump.fun 1.25% (0.95 protocol + 0.30 creator) + PumpPortal Local API 0.5%
-  txFeeSol: num('AGENT_TX_FEE_SOL', 0.0001),      // base 0.000005 + priority fee, per tx
-  slippagePct: num('AGENT_SLIPPAGE_PCT', 15), priorityFeeSol: num('AGENT_PRIORITY_FEE_SOL', 0.00005),
+  // execution cost model (exec.js): route 'direct' = pump.fun curve / PumpSwap built locally, no aggregator fee
+  route: (process.env.AGENT_ROUTE || 'direct') === 'pumpportal' ? 'pumpportal' : 'direct', fallbackRoute: 'pumpportal',
+  curveFeePct: num('AGENT_CURVE_FEE_PCT', 1.25),  // pump.fun on-chain FeeConfig today: 0.95 protocol + 0.30 creator (read live per trade)
+  get feePct() { return this.curveFeePct + (E.ROUTE_FEE_PCT[this.route] || 0); }, // per side, used by paper fills + bandit priors
+  txFeeSol: num('AGENT_TX_FEE_SOL', E.networkSol('buy')), // base 5000 lamports + priority (CU fitted, price = recent median, capped)
+  maxCostShare: num('AGENT_MAX_COST_SHARE', 0.75), // skip when the round-trip cost would eat more than this share of the expected gross edge
+  maxImpactPct: num('AGENT_MAX_IMPACT_PCT', 0.5),  // size down so my own buy moves the price at most this much
+  priorityFeeSol: num('AGENT_PRIORITY_FEE_SOL', 0.00002), // PumpPortal fallback only
+  payout: { address: process.env.AGENT_PAYOUT_ADDRESS || null, sol: num('AGENT_PAYOUT_SOL', 0), mult: num('AGENT_PAYOUT_GOAL_MULT', 2) },
+  startFundTx: process.env.AGENT_START_FUND_TX || null, payoutPollMs: num('AGENT_PAYOUT_POLL_MS', 2000),
   ride: { minBuyers: num('AGENT_RIDE_MIN_BUYERS', 12), minBuySol: num('AGENT_RIDE_MIN_BUY_SOL', 3), minNet: num('AGENT_RIDE_MIN_NET_SOL', 1.5), maxLoop: 0.25, maxSame: 0.3, maxBot: 0.2 },
   kellyFraction: num('AGENT_KELLY_FRACTION', 0.25), ddSoftPct: num('AGENT_DD_SOFT_PCT', 10), ddHibernatePct: num('AGENT_DD_HIBERNATE_PCT', 35),
   workingCapitalSol: num('AGENT_WORKING_CAPITAL_SOL', 0.1),
@@ -110,7 +123,7 @@ function cleanSummary(rep) {
 }
 const shortFail = (x) => x.replace(/\s*\(.*?\)\s*/g, ' ').trim();
 
-function createAgent({ scalper = null, store = null, log = console.log, now = () => Date.now(), analyze = null, cleanCheck = null, radarCfg = null, rpc = null, setCreditTag = () => 'other', fetchFn = (...a) => fetch(...a), params = undefined, quiet = false, instincts = true } = {}) {
+function createAgent({ scalper = null, store = null, log = console.log, now = () => Date.now(), analyze = null, cleanCheck = null, radarCfg = null, rpc = null, setCreditTag = () => 'other', fetchFn = (...a) => fetch(...a), params = undefined, quiet = false, instincts = true, executor = null } = {}) {
   const cfg = ACFG();
   if (!analyze) ({ analyze, rpc, setCreditTag } = require('./analyzer'));
   if (!cleanCheck) { const r = require('./radar'); cleanCheck = r.cleanCheck; radarCfg = radarCfg || r.CFG(); }
@@ -129,7 +142,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     totals: { trades: 0, wins: 0, realizedSol: 0, signals: 0, sitOut: 0, scans: 0, rejected: 0, scanErrors: 0, liveErrors: 0 }, saves: 0, lastSaveAt: null, lastSaveError: null, lastDecisionAt: null,
     bandit: Object.assign(M.newBandit(), { _prior: priors }), regime: M.newRegime(), peak: cfg.paperStartSol, streak: 0, hibernateDay: null,
     equityHist: [], weightsHist: [], weights: null, dayStats: M.newDay(cfg.paperStartSol), diaries: [], fundings: [], fundSeen: [], eurPerSol: null, eurAt: null,
-    affect: VT.newAffect(t0), limbo: null, revivals: [], life: 1, vitalKey: null, privilege: null, liveBaseline: null, capitalIn: 0,
+    affect: VT.newAffect(t0), limbo: null, revivals: [], life: 1, vitalKey: null, privilege: null, liveBaseline: null, capitalIn: 0, payout: null, paperArchive: null, liveStartedAt: null, volAccPaid: false,
     lastThinkAt: 0, lastSitOutLogAt: 0, lastEqAt: 0, lastWAt: 0, lastRegAt: 0, lastFundAt: 0, lastEurAt: 0,
   };
   if (cfg.mode === 'live') {
@@ -205,6 +218,10 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     }
     if (d !== st.scansDay) { st.scansDay = d; st.scansToday = 0; }
   };
+  const routeFee = () => E.ROUTE_FEE_PCT[cfg.route] || 0;
+  const costAt = (size, vs, vt) => E.roundTrip(size, { vs, vt, route: cfg.route, curveFeePct: cfg.curveFeePct });
+  // recent price volatility (% move over the last ~10 s of trades): feeds the slippage buffer
+  const volPctOf = (m, t) => { const w = (m?.trades || []).filter((x) => x.at >= t - 10e3); if (w.length < 2) return 0; const ps = w.map((x) => x.vs / x.vt); return r1(((Math.max(...ps) / Math.min(...ps)) - 1) * 100); };
   const freeBalance = () => (cfg.mode === 'live' ? (st.liveBalance ?? 0) : st.paperCash);
   const excluded = (mint) => cfg.exclude.has(mint);
   const valueOf = (pos, vs, vt) => (cfg.mode === 'live'
@@ -299,6 +316,15 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       }
       return;
     }
+    // full round-trip cost at the size I would bet (pump.fun fees + route fee + my own price impact + network fees;
+    // token-account rent comes back in the sell tx). The edge I expect must clearly beat it, not just match it.
+    const estSize = sizeFor(best.smp, best.pol).size || cfg.minTradeSol;
+    const rt = costAt(estSize, m.vs, m.vt); cb.costPct = rt.totalPct;
+    const gross = best.smp.ev + rt.totalPct;
+    if (rt.totalPct > cfg.maxCostShare * gross) {
+      cand(tr.mint, symNow, { ...cb, verdict: 'pass', why: `${armLabel(best.arm).toLowerCase()} setup, but a round trip costs ${rt.totalPct}%, more than ${Math.round(cfg.maxCostShare * 100)}% of the ${r1(gross)}% gross edge I expect` });
+      st.totals.costSkips = (st.totals.costSkips || 0) + 1; st.dayStats.costSkips = (st.dayStats.costSkips || 0) + 1; st.seen[tr.mint] = t + cfg.sitOutMin * 60e3; return;
+    }
     // credit pacing for the scanner (Helius): allowance grows through the Madrid day
     const [hh, mm] = new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Europe/Madrid', hour12: false }).split(':').map(Number);
     const allowance = Math.min(cfg.maxScansPerDay, 10 + cfg.maxScansPerDay * ((hh * 60 + mm) / 1440));
@@ -333,31 +359,39 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       const cur = scalper?.mints?.get(mint) || m;
       if (cur.complete) return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: `${sym(s, mint)} graduated while I was scanning it.` });
       const z = sizeFor(sg.smp, sg.pol || pol(sg.arm));
+      if (z.size && cur.vs) z.size = r4(Math.min(z.size, (cfg.maxImpactPct / 100) * cur.vs)); // keep my own price impact small vs the curve's depth
       if (!z.size) return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: `${sym(s, mint)} is clean, but my sizing rules leave no room for a trade right now.` });
       const ap = arms[sg.arm];
       const reason = M.V.buy({ sym: sym(s, mint), facts: sg.facts, arm: sg.arm, s: sg.smp, size: z.size, regime: st.regime.label, clean: cleanSummary(rep), ap }) + (z.ddMult < 1 ? ` Betting ${Math.round(z.ddMult * 100)}% of normal size because I'm in drawdown.` : '') + (z.survivalMult < 1 ? ` Survival sizing ×${z.survivalMult} (signal ${vit().signal}%, pain ${pol().pain}).` : '') + ` (Rules: TP +${ap.tp}% / SL -${ap.sl}% / max ${ap.hold} min.)`;
       cand(mint, s, { verdict: 'bought', why: `scanner clean, edge +${r1(sg.smp.ev)}%: bought ${z.size} SOL` });
-      await openPosition({ mint, symbol: s, size: z.size, vs: cur.vs, vt: cur.vt, reason, signal: sg.arm, progress: sg.f.progress, belief: { p: r4(sg.smp.p), ev: r1(sg.smp.ev), kelly: r4(sg.smp.kelly) } });
+      await openPosition({ mint, symbol: s, size: z.size, vs: cur.vs, vt: cur.vt, reason, signal: sg.arm, progress: sg.f.progress, belief: { p: r4(sg.smp.p), ev: r1(sg.smp.ev), kelly: r4(sg.smp.kelly) }, volPct: volPctOf(cur, now()), dev: rep.dev?.wallet || rep.curve?.creatorOnCurve || null });
     } finally { busy = false; ACT.scanning = null; ACT.lastScanEndAt = now(); }
   }
 
-  async function openPosition({ mint, symbol, size, vs, vt, reason, signal: kind = 'dip', progress, belief = null }) {
+  async function openPosition({ mint, symbol, size, vs, vt, reason, signal: kind = 'dip', progress, belief = null, volPct = 0, dev = null }) {
     if (excluded(mint)) throw new Error('refusing to trade excluded coin');
     const ap = arms[kind] || { tp: cfg.tpPct, sl: cfg.slPct, hold: cfg.maxHoldMin };
-    const base = { mint, symbol, kind, arm: kind, regime: regimeNow(), tp: ap.tp, sl: ap.sl, hold: ap.hold, belief, openAt: now(), lastAt: now(), progress, reason };
+    const base = { mint, symbol, kind, arm: kind, regime: regimeNow(), tp: ap.tp, sl: ap.sl, hold: ap.hold, belief, openAt: now(), lastAt: now(), progress, reason, dev, entryVs: vs, entryVt: vt };
     let pos;
     if (cfg.mode === 'paper') {
-      const fill = buyFill(vs, vt, size, cfg);
-      pos = { ...base, id: crypto.randomUUID().slice(0, 8), solIn: fill.solIn, tok: fill.tok, cost: r6(fill.cost), entryPrice: vs / vt, vs, vt, tx: null };
-      st.paperCash = r6(st.paperCash - fill.cost);
+      const bq = E.buyQuote(vs, vt, size, { curveFeePct: cfg.curveFeePct, routeFeePct: routeFee(), netSol: cfg.txFeeSol });
+      const slip = E.slippagePolicy({ side: 'buy', impactPct: bq.impactPct, volPct });
+      if (!slip.ok) return decide({ action: 'SKIP', mint, symbol, signal: kind, reason: `${sym(symbol, mint)}: I'd need ${slip.wantedPct}% slippage tolerance (impact + recent volatility), above my ${slip.capPct}% cap. Not buying into that.` });
+      const once = st.volAccPaid ? 0 : E.NET().volAccRentLamports / LAMPORTS; st.volAccPaid = true; // pump.fun creates a small per-wallet account on the first buy, once
+      const cost = size + cfg.txFeeSol; // the one-time account is a wallet cost, not this trade's: it would skew what I learn
+      pos = { ...base, id: crypto.randomUUID().slice(0, 8), solIn: bq.solIn, tok: bq.tok, cost: r6(cost), entryPrice: vs / vt, vs, vt, tx: null,
+        costs: { route: cfg.route, venue: 'pump.fun curve', buy: { pumpFeeSol: r6(bq.fees.curveSol), routeFeeSol: r6(bq.fees.routeSol), networkSol: r6(cfg.txFeeSol), impactPct: r1(bq.impactPct * 100) / 100, slippageTolPct: slip.tolPct, oneTimeAccountSol: r6(once) } } };
+      st.paperCash = r6(st.paperCash - cost - once);
     } else {
       let res;
-      try { res = await liveSwap('buy', mint, size); } catch (e) { st.totals.liveErrors++; return decide({ action: 'ERROR', mint, symbol, reason: `My buy failed, nothing spent: ${e.message.slice(0, 160)}` }); }
-      pos = { ...base, id: res.sig.slice(0, 8), solIn: size, tok: res.tokDelta, cost: r6(-res.solDelta), entryPrice: (-res.solDelta) / Math.max(res.tokDelta, 1e-9), vs, vt, tx: res.sig, ata: res.ata, tokenProgram: res.tokenProgram };
+      try { res = await liveSwap('buy', mint, size, null, { volPct }); } catch (e) { st.totals.liveErrors++; return decide({ action: e.skip ? 'SKIP' : 'ERROR', mint, symbol, reason: e.skip ? `${sym(symbol, mint)}: ${e.message}` : `My buy failed, nothing spent: ${e.message.slice(0, 160)}` }); }
+      const once = st.volAccPaid ? 0 : E.NET().volAccRentLamports / LAMPORTS; st.volAccPaid = true; // first buy also opens pump.fun's per-wallet account, once
+      if (once && res.costs) res.costs.oneTimeAccountSol = r6(once);
+      pos = { ...base, id: res.sig.slice(0, 8), solIn: size, tok: res.tokDelta, cost: r6(-res.solDelta - once), entryPrice: (-res.solDelta) / Math.max(res.tokDelta, 1e-9), vs, vt, tx: res.sig, ata: res.ata, tokenProgram: res.tokenProgram, costs: { route: res.route, venue: res.venue, buy: res.costs } };
       refreshBalance();
     }
     st.positions.push(pos); st.dayStats.opened = (st.dayStats.opened || 0) + 1;
-    pushTrade({ side: 'BUY', mint, symbol, arm: kind, sol: pos.cost, tok: r1(pos.tok), reason, tx: pos.tx, posId: pos.id });
+    pushTrade({ side: 'BUY', mint, symbol, arm: kind, sol: pos.cost, tok: r1(pos.tok), reason, tx: pos.tx, posId: pos.id, costs: pos.costs ? { route: pos.costs.route, venue: pos.costs.venue, ...pos.costs.buy } : null });
     decide({ action: 'BUY', mint, symbol, signal: kind, reason });
     await save(true);
   }
@@ -377,11 +411,16 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   async function closePosition(pos, why) {
     pos.closing = true;
     let proceeds, tx = null;
-    if (cfg.mode === 'paper') { proceeds = valueOf(pos, pos.vs, pos.vt); st.paperCash = r6(st.paperCash + proceeds); }
-    else {
-      try { const res = await liveSwap('sell', pos.mint, '100%', pos); proceeds = res.solDelta; tx = res.sig; }
+    let sellCosts = null; const forced = !/^take profit/.test(why);
+    if (cfg.mode === 'paper') {
+      proceeds = valueOf(pos, pos.vs, pos.vt); st.paperCash = r6(st.paperCash + proceeds);
+      const sq = E.sellQuote(pos.vs + pos.solIn, pos.vt - pos.tok, pos.tok, { curveFeePct: cfg.curveFeePct, routeFeePct: routeFee(), netSol: cfg.txFeeSol });
+      const slip = E.slippagePolicy({ side: 'sell', impactPct: sq.impactPct || 0, forced, attempt: 0 });
+      sellCosts = { pumpFeeSol: r6(sq.fees?.curveSol || 0), routeFeeSol: r6(sq.fees?.routeSol || 0), networkSol: r6(cfg.txFeeSol), impactPct: r1((sq.impactPct || 0) * 100) / 100, slippageTolPct: slip.tolPct, rentBack: 'token account closed in the sell tx' };
+    } else {
+      try { const res = await liveSwap('sell', pos.mint, 'all', pos, { forced, attempt: pos.sellErrors || 0, volPct: 0 }); proceeds = res.solDelta; tx = res.sig; sellCosts = res.costs; }
       catch (e) { st.totals.liveErrors++; pos.closing = false; pos.sellErrors = (pos.sellErrors || 0) + 1; decide({ action: 'ERROR', mint: pos.mint, symbol: pos.symbol, reason: `My sell failed (${why}), I'll retry: ${e.message.slice(0, 140)}` }); return; }
-      closeTokenAccount(pos).catch((e) => out('[agent] close ATA ' + e.message));
+      closeTokenAccount(pos).catch((e) => out('[agent] close ATA ' + e.message)); // no-op when the sell tx already closed it
       refreshBalance();
     }
     const pnl = r6(proceeds - pos.cost); const pnlPct = pos.cost ? (pnl / pos.cost) * 100 : 0; rollDay();
@@ -396,7 +435,11 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const rec = { sym: sym(pos.symbol, pos.mint), pct: r1(pnlPct), arm: pos.arm };
     if (!D.best || pnlPct > D.best.pct) D.best = rec; if (!D.worst || pnlPct < D.worst.pct) D.worst = rec;
     const held = r1((now() - pos.openAt) / 60e3);
-    pushTrade({ side: 'SELL', mint: pos.mint, symbol: pos.symbol, arm: pos.arm, sol: r6(proceeds), pnlSol: pnl, pnlPct: r1(pnlPct), reason: why, tx, posId: pos.id, heldMin: held });
+    const b = pos.costs?.buy || {}; const sc = sellCosts || {};
+    const rtSol = r6((b.pumpFeeSol || 0) + (b.routeFeeSol || 0) + (b.networkSol || 0) + (b.oneTimeAccountSol || 0) + (sc.pumpFeeSol || 0) + (sc.routeFeeSol || 0) + (sc.networkSol || 0));
+    const costs = { route: pos.costs?.route || cfg.route, venue: sc.venue || pos.costs?.venue || 'pump.fun curve', ...sc, roundTrip: { feesSol: r6((b.pumpFeeSol || 0) + (sc.pumpFeeSol || 0)), routeFeesSol: r6((b.routeFeeSol || 0) + (sc.routeFeeSol || 0)), networkSol: r6((b.networkSol || 0) + (sc.networkSol || 0)), oneTimeSol: r6(b.oneTimeAccountSol || 0), totalSol: rtSol, totalPct: pos.cost ? r1((rtSol / pos.cost) * 1000) / 10 : null, impactBuyPct: b.impactPct ?? null, impactSellPct: sc.impactPct ?? null } };
+    st.totals.costsSol = r6((st.totals.costsSol || 0) + rtSol);
+    pushTrade({ side: 'SELL', mint: pos.mint, symbol: pos.symbol, arm: pos.arm, sol: r6(proceeds), pnlSol: pnl, pnlPct: r1(pnlPct), reason: why, tx, posId: pos.id, heldMin: held, costs });
     const args = { sym: sym(pos.symbol, pos.mint), pnl: (pnl >= 0 ? '+' : '') + r4(pnl), p: (pnlPct >= 0 ? '+' : '') + r1(pnlPct) + '%', why: why[0].toUpperCase() + why.slice(1), held };
     decide({ action: 'SELL', mint: pos.mint, symbol: pos.symbol, signal: pos.arm, reason: pnl > 0 ? M.V.sellWin(args) : M.V.sellLoss(args) });
     think(fe.event.kind === 'pain' ? VT.VV.hurt(fe.event) : VT.VV.relief(fe.event), fe.event.kind, { arm: pos.arm });
@@ -425,8 +468,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const fn = M.V.idle[Math.floor(R() * M.V.idle.length)]; think(fn(c), 'reflection');
   }
 // ---- live execution (PumpPortal Local Transaction API; we sign locally, nothing custodial)
-  async function buildPortalTx(action, mint, amount, pubkey = address) {
-    const body = { publicKey: pubkey, action, mint, amount, denominatedInSol: action === 'buy' ? 'true' : 'false', slippage: cfg.slippagePct, priorityFee: cfg.priorityFeeSol, pool: 'auto' };
+  async function buildPortalTx(action, mint, amount, pubkey = address, slippagePct = 3) {
+    const body = { publicKey: pubkey, action, mint, amount, denominatedInSol: action === 'buy' ? 'true' : 'false', slippage: slippagePct, priorityFee: cfg.priorityFeeSol, pool: 'auto' };
     const r = await fetchFn('https://pumpportal.fun/api/trade-local', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
     if (r.status !== 200) throw new Error(`PumpPortal HTTP ${r.status}: ${(await r.text()).slice(0, 120)}`);
     const tx = VersionedTransaction.deserialize(new Uint8Array(await r.arrayBuffer()));
@@ -442,7 +485,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const sim = await rpc('simulateTransaction', [Buffer.from(tx.serialize()).toString('base64'), { encoding: 'base64', sigVerify: false, replaceRecentBlockhash: true, commitment: 'confirmed', accounts: { encoding: 'base64', addresses: [pubkey] } }]);
     const v = sim.value; if (v.err) { const e = new Error('simulation failed: ' + JSON.stringify(v.err) + ' ' + (v.logs || []).filter((l) => /error|insufficient/i.test(l)).slice(-2).join(' | ')); e.sim = v; e.preLamports = pre; throw e; }
     const post = v.accounts?.[0]?.lamports ?? pre; const out = (pre - post) / LAMPORTS;
-    const bound = action === 'buy' ? amountSol * 1.06 + 0.0035 : 0.0035;
+    const bound = action === 'buy' ? amountSol * 1.06 + 0.004 : action === 'payout' ? amountSol + 0.00002 : 0.0035; // buy: + token account + one-time pump account rent + fees
     if (out > bound) throw new Error(`simulated SOL outflow ${out} > bound ${bound}`);
     return { pre, post, out, units: v.unitsConsumed, logs: v.logs };
   }
@@ -471,14 +514,36 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     }
     throw new Error('confirmed tx not readable ' + sig);
   }
-  async function liveSwap(action, mint, amount) {
+  // Cheapest route first: tx built locally on the pump.fun curve / PumpSwap pool (no aggregator fee, token account
+  // closed in the same sell tx, CU limit fitted, priority = recent median capped at AGENT_MAX_PRIORITY_LAMPORTS).
+  // Fallback: PumpPortal Local API (+0.5%/side) when the direct build fails (cashback coins, migration edge cases).
+  // Both paths: fee payer + mint checked, mainnet simulation guard on the SOL outflow, then signed + sent.
+  let ex = executor;
+  const EX = () => (ex ||= E.createExecutor({ rpcUrl: process.env.RPC_URL || 'https://api.mainnet-beta.solana.com' }));
+  async function liveSwap(action, mint, amount, pos = null, slip = {}) {
     if (cfg.mode !== 'live' || !kp) throw new Error('not in live mode');
     if (excluded(mint)) throw new Error('refusing: agent\'s own coin');
-    const tx = await buildPortalTx(action, mint, amount);
+    let tx = null, route = cfg.route, venue = null, costs = null, directErr = null;
+    if (cfg.route === 'direct') {
+      try {
+        const b = await EX().build({ side: action, mint, user: address, amount: action === 'buy' ? Number(amount) : 'all', slip });
+        if (action === 'buy' && b.slippage && !b.slippage.ok) { const e = new Error(`I'd need ${b.slippage.wantedPct}% slippage tolerance, above my ${b.slippage.capPct}% cap. Skipping.`); e.skip = true; throw e; }
+        const keys = b.tx.message.staticAccountKeys.map((k) => k.toBase58()); if (keys[0] !== address || !keys.includes(mint)) throw new Error('direct tx failed its own account check');
+        tx = b.tx; venue = b.venue;
+        const net = (5000 + b.priorityLamports) / LAMPORTS; const gross = action === 'buy' ? Number(amount) : b.expectedSol || 0; const fee = gross * (b.feeBps / 1e4);
+        costs = { pumpFeeSol: r6(fee), routeFeeSol: 0, networkSol: r6(net), priorityLamports: b.priorityLamports, cuLimit: b.cuLimit, impactPct: b.impactPct, slippageTolPct: b.slippage?.tolPct, feeBps: b.feeBps, rentBack: action === 'sell' ? 'token account closed in this tx' : undefined };
+      } catch (e) { if (e.skip) throw e; directErr = e.message; }
+    }
+    if (!tx) {
+      route = cfg.fallbackRoute; venue = 'PumpPortal (pool auto)';
+      const tol = action === 'buy' ? E.slippagePolicy({ side: 'buy', ...slip }).tolPct : E.slippagePolicy({ side: 'sell', ...slip }).tolPct;
+      tx = await buildPortalTx(action, mint, action === 'sell' ? '100%' : amount, address, Math.max(1, Math.ceil(tol)));
+      costs = { pumpFeeSol: null, routeFeeSol: action === 'buy' ? r6(Number(amount) * 0.005) : null, networkSol: r6(cfg.priorityFeeSol + 0.000005), slippageTolPct: Math.max(1, Math.ceil(tol)), fallbackBecause: directErr ? directErr.slice(0, 100) : 'route set to pumpportal' };
+    }
     tx.sign([kp]);
     await simulateGuard(tx, action, action === 'buy' ? Number(amount) : 0);
     const sig = await sendAndConfirm(tx);
-    return { sig, ...(await txDeltas(sig, mint)) };
+    return { sig, route, venue, costs, ...(await txDeltas(sig, mint)) };
   }
   // Recover the ~0.002 SOL token-account rent after a full sell (SPL / Token-2022 CloseAccount = instruction 9).
   async function closeTokenAccount(pos) {
@@ -512,7 +577,69 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     }
   }
 
-    // ---- funding: SOL that arrives in my wallet from someone else (dev transfers, pump.fun creator-fee distributions)
+    // ---- principal return. Goal = AGENT_PAYOUT_GOAL_MULT x my starting treasury (SOL + open positions at market
+  // value, for the progress bar). The transfer itself fires only on realized free SOL >= the goal, exactly once,
+  // exactly AGENT_PAYOUT_SOL, only to the pinned funder address; simulated before signing; logged in public.
+  // After it, my baseline is the post-payout treasury, so vitals/limbo don't read the return as a loss.
+  let payBusy = false;
+  function payoutPlan() {
+    const p = cfg.payout; if (!p.address) return null;
+    const live = cfg.mode === 'live'; const start = live ? (cfg.liveStartSol ?? st.liveBaseline) : st.paperStart;
+    const principal = live ? p.sol : st.paperStart; if (!(start > 0) || !(principal > 0)) return null;
+    const problems = [];
+    if (p.address !== PAYOUT_PIN) problems.push('payout address is not the pinned funder wallet');
+    if (address && p.address === address) problems.push('payout address is my own wallet');
+    if (p.address === DEV_WALLET) problems.push('payout address is the dev wallet');
+    if (live && principal > start + 1e-9) problems.push('payout amount is larger than the starting treasury');
+    return { address: p.address, principal: Math.round(principal * LAMPORTS) / LAMPORTS, start: Math.round(start * LAMPORTS) / LAMPORTS, goal: Math.round(start * p.mult * LAMPORTS) / LAMPORTS, mult: p.mult, problems };
+  }
+  function payoutStatus() {
+    const pl = payoutPlan(); const done = st.payout?.status === 'done';
+    if (!pl && !st.payout) return null;
+    const eq = equity(); const free = freeBalance();
+    return { ...(pl || {}), status: st.payout?.status || (pl?.problems.length ? 'blocked' : 'waiting'), done, mode: cfg.mode, treasurySol: eq, freeSol: r6(free),
+      progressPct: done ? 100 : pl && eq != null ? r1(Math.min(100, (eq / pl.goal) * 100)) : null, payout: st.payout,
+      rule: pl ? `When my free SOL reaches ${pl.goal} SOL (${pl.mult}x my ${pl.start} SOL start), I send exactly ${pl.principal} SOL back to ${pl.address.slice(0, 4)}…${pl.address.slice(-4)}, once. Progress counts open positions at market value; the transfer waits for realized SOL.` : null };
+  }
+  function finishPayout(rec, after) {
+    st.payout = { ...rec, status: 'done', doneAt: new Date(now()).toISOString(), treasuryAfterSol: r6(after) };
+    if (cfg.mode === 'paper') { st.paperStart = r6(after); st.peak = r6(after); } else { st.liveBaseline = r6(after); st.capitalIn = 0; st.peak = r6(after); }
+    st.affect = VT.newAffect(now()); st.vitalKey = null;
+    decide({ action: 'PAYOUT', reason: `Principal returned — I'm now running on my own profits. ${rec.sol} SOL went back to ${rec.to.slice(0, 4)}…${rec.to.slice(-4)}${rec.simulated ? ' (paper simulation)' : ''}${rec.tx ? ' · tx ' + rec.tx : ''}. My new baseline is the ${r6(after)} SOL I kept.` });
+    think(`Principal returned — I'm now running on my own profits. From here every SOL I hold is one I earned.`, 'payout', rec.tx ? { tx: rec.tx } : {});
+    dirty = true; save(true).catch(() => {});
+  }
+  async function checkPayout() {
+    if (st.payout?.status === 'done') return;
+    const pl = payoutPlan(); if (!pl || pl.problems.length) return;
+    if (cfg.mode === 'live' && st.payout?.status === 'sending') { // restart / timeout mid-send: never resend before knowing the first one's fate
+      const s0 = (await rpc('getSignatureStatuses', [[st.payout.tx], { searchTransactionHistory: true }])).value[0];
+      if (s0 && !s0.err && (s0.confirmationStatus === 'confirmed' || s0.confirmationStatus === 'finalized')) { await refreshBalance(); return finishPayout(st.payout, st.liveBalance); }
+      if (s0?.err || now() - Date.parse(st.payout.at) > 3 * 60e3) { st.payout = { ...st.payout, status: 'retry', failedTx: st.payout.tx, why: s0?.err ? 'failed on-chain' : 'expired unconfirmed' }; dirty = true; }
+      return;
+    }
+    const free = freeBalance(); if (free < pl.goal) return;
+    if (cfg.mode === 'paper') { const rec = { mode: 'paper', simulated: true, sol: pl.principal, to: pl.address, at: new Date(now()).toISOString(), goal: pl.goal }; st.paperCash = r6(st.paperCash - pl.principal); return finishPayout(rec, equity()); }
+    if (!kp || !rpc) return;
+    const lam = Math.round(pl.principal * LAMPORTS);
+    const { value } = await rpc('getLatestBlockhash', [{ commitment: 'confirmed' }]);
+    const tx = new Transaction({ feePayer: kp.publicKey, recentBlockhash: value.blockhash }).add(SystemProgram.transfer({ fromPubkey: kp.publicKey, toPubkey: new PublicKey(pl.address), lamports: lam }));
+    if (tx.instructions.length !== 1 || tx.instructions[0].keys[1].pubkey.toBase58() !== PAYOUT_PIN) throw new Error('payout tx failed its own check');
+    tx.sign(kp);
+    const g = await simulateGuard(tx, 'payout', pl.principal);
+    const sig = bs58.encode(tx.signature);
+    st.payout = { mode: 'live', status: 'sending', sol: pl.principal, lamports: lam, to: pl.address, tx: sig, at: new Date(now()).toISOString(), goal: pl.goal, simulatedOutSol: r6(g.out) };
+    await save(true).catch(() => {});
+    await rpc('sendTransaction', [tx.serialize().toString('base64'), { encoding: 'base64', maxRetries: 3 }], 1);
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, cfg.payoutPollMs));
+      const s1 = (await rpc('getSignatureStatuses', [[sig]])).value[0];
+      if (s1?.err) { st.payout = { ...st.payout, status: 'retry', failedTx: sig, why: 'failed on-chain' }; dirty = true; return; }
+      if (s1 && (s1.confirmationStatus === 'confirmed' || s1.confirmationStatus === 'finalized')) { await refreshBalance(); return finishPayout(st.payout, st.liveBalance ?? free - pl.principal); }
+    }
+  }
+
+  // ---- funding: SOL that arrives in my wallet from someone else (dev transfers, pump.fun creator-fee distributions)
   async function scanFunding() {
     if (!address || !rpc) return;
     const sigs = await rpc('getSignaturesForAddress', [address, { limit: 25 }]);
@@ -524,8 +651,9 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       const delta = (tx.meta.postBalances[i] - tx.meta.preBalances[i]) / LAMPORTS; if (keys[0] === address || delta <= 0) continue;
       const src = keys.some((k) => PUMP_PROGRAMS.includes(k)) ? 'pump.fun creator fees (my 50% share)' : cfg.protectedWallets.has(keys[0]) || keys.includes(DEV_WALLET) ? 'transfer from the dev wallet' : 'transfer';
       const f = { at: new Date((tx.blockTime || now() / 1000) * 1000).toISOString(), sol: r6(delta), from: keys[0], source: src, tx: s.signature };
-      if (cfg.mode === 'live' && !/creator fees/.test(src)) st.capitalIn = r6(st.capitalIn + f.sol); // capital, not earnings: it raises my baseline, not my signal
-      f.counts = /creator fees/.test(src) ? 'income: raises my signal' : 'capital: raises my baseline, not my signal';
+      const isStart = s.signature === cfg.startFundTx || (st.liveStartedAt && f.at < st.liveStartedAt);
+      if (cfg.mode === 'live' && !isStart && !/creator fees/.test(src)) st.capitalIn = r6(st.capitalIn + f.sol); // capital, not earnings: it raises my baseline, not my signal
+      f.counts = isStart ? 'starting treasury: this is my baseline' : /creator fees/.test(src) ? 'income: raises my signal' : 'capital: raises my baseline, not my signal';
       st.fundings.unshift(f); st.fundings.length = Math.min(st.fundings.length, cfg.keep.fundings); think(M.V.funding({ sol: f.sol, src }), 'funding', { tx: f.tx });
     }
     if (st.fundSeen.length > 300) st.fundSeen.splice(0, st.fundSeen.length - 300); dirty = true;
@@ -548,6 +676,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     rollDay();
     if (t - st.lastRegAt >= 60e3) { st.lastRegAt = t; const ch = M.regimeUpdate(st.regime, t); if (ch) think(M.V.regime({ ...ch, heat: st.regime.heat, lpm: st.regime.launchesPerMin }), 'regime'); st.dayStats.regimes[st.regime.label] = (st.dayStats.regimes[st.regime.label] || 0) + 1; }
     if (cfg.mode === 'live' && st.liveBaseline == null && st.liveBalance != null) st.liveBaseline = cfg.liveStartSol ?? st.liveBalance;
+    if (cfg.mode === 'live' && !st.liveStartedAt) st.liveStartedAt = new Date(t).toISOString();
+    if (!payBusy) { payBusy = true; checkPayout().catch((e) => noteError('payout', e)).finally(() => { payBusy = false; }); }
     dd(); checkVitals(); pushEquity(); updateWeights(); reflect();
     if (rpc && t - st.lastFundAt >= 15 * 60e3) { st.lastFundAt = t; scanFunding().catch(() => {}); }
     if (t - st.lastEurAt >= 30 * 60e3) { st.lastEurAt = t; refreshEur(); }
@@ -555,17 +685,30 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   }
   function snapshot() {
     const j = { v: 2, mode: cfg.mode, bornAt: st.bornAt, paperCash: st.paperCash, paperStart: st.paperStart, positions: st.positions.map(({ closing, ...p }) => p), trades: st.trades, decisions: st.decisions.slice(0, 30), thoughts: st.thoughts.slice(0, 50), seen: st.seen, day: st.day, dayPnl: st.dayPnl, scansDay: st.scansDay, scansToday: st.scansToday, totals: st.totals,
-      bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn,
+      bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn, payout: st.payout, paperArchive: st.paperArchive, liveStartedAt: st.liveStartedAt, volAccPaid: st.volAccPaid,
       activity: { log: ACT.log.slice(0, 30), downtimes: ACT.downtimes.slice(0, 20), dayKey: ACT.dayKey, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday }, savedAt: new Date(now()).toISOString() };
     return 'gz:' + zlib.gzipSync(JSON.stringify(j)).toString('base64');
   }
   function restore(raw) {
     let j; try { j = raw.startsWith('gz:') ? JSON.parse(zlib.gunzipSync(Buffer.from(raw.slice(3), 'base64')).toString()) : JSON.parse(raw); } catch { return; }
     if (!j || (j.v !== 1 && j.v !== 2)) return;
-    if (j.mode !== cfg.mode) { st.restoredFrom = `${j.mode} state ignored (now ${cfg.mode})`; if (j.mode === 'paper' && cfg.mode === 'live') return; }
+    if (j.mode !== cfg.mode) {
+      st.restoredFrom = `${j.mode} state ignored (now ${cfg.mode})`;
+      if (j.mode === 'paper' && cfg.mode === 'live') {
+        // going live: the paper record stays visible, labeled, but never mixes with the live record. Only what I
+        // learned (bandit beliefs, market regime) carries over; cash, trades, equity and vitals start from the wallet.
+        const closed = (j.trades || []).filter((x) => x.side === 'SELL');
+        st.paperArchive = j.paperArchive || { label: 'Paper trading (simulated, before going live)', archivedAt: new Date(now()).toISOString(), bornAt: j.bornAt, paperStart: j.paperStart, paperCashEnd: j.paperCash,
+          totals: j.totals, closedTrades: closed.length, wins: closed.filter((x) => x.pnlSol > 0).length, netSol: r6(closed.reduce((a, x) => a + (x.pnlSol || 0), 0)), trades: (j.trades || []).slice(0, 60), diaries: (j.diaries || []).slice(0, 10) };
+        if (j.bandit) for (const k of M.ARM_KEYS) if (j.bandit[k]) st.bandit[k] = { ...st.bandit[k], ...j.bandit[k] };
+        if (j.regime) st.regime = { ...st.regime, ...j.regime };
+        st.restoredFrom = 'paper state archived (labeled); live record starts fresh from the wallet balance';
+        return;
+      }
+    }
     Object.assign(st, { paperCash: j.paperCash ?? st.paperCash, paperStart: j.paperStart ?? st.paperStart, positions: j.positions || [], trades: j.trades || [], decisions: j.decisions || [], seen: j.seen || {}, day: j.day || st.day, dayPnl: j.dayPnl || 0, scansDay: j.scansDay || st.scansDay, scansToday: j.scansToday || 0, totals: { ...st.totals, ...(j.totals || {}) } });
     if (j.v === 2) {
-      for (const k of ['bornAt', 'thoughts', 'peak', 'streak', 'hibernateDay', 'equityHist', 'weightsHist', 'weights', 'dayStats', 'diaries', 'fundings', 'fundSeen', 'eurPerSol', 'affect', 'limbo', 'revivals', 'life', 'vitalKey', 'privilege', 'liveBaseline', 'capitalIn']) if (j[k] != null) st[k] = j[k];
+      for (const k of ['bornAt', 'thoughts', 'peak', 'streak', 'hibernateDay', 'equityHist', 'weightsHist', 'weights', 'dayStats', 'diaries', 'fundings', 'fundSeen', 'eurPerSol', 'affect', 'limbo', 'revivals', 'life', 'vitalKey', 'privilege', 'liveBaseline', 'capitalIn', 'payout', 'paperArchive', 'liveStartedAt', 'volAccPaid']) if (j[k] != null) st[k] = j[k];
       if (j.bandit) for (const k of M.ARM_KEYS) if (j.bandit[k]) st.bandit[k] = { ...st.bandit[k], ...j.bandit[k] };
       if (j.regime) st.regime = { ...st.regime, ...j.regime };
     } else st.peak = Math.max(st.paperCash, st.paperStart);
@@ -600,6 +743,20 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     try { await store.put(snapshot()); st.saves++; st.lastSaveAt = new Date(t).toISOString(); st.lastSaveError = null; } catch (e) { st.lastSaveError = e.message; dirty = true; }
   }
 
+  function execution() {
+    const sp = E.SLIP(); const n = E.NET();
+    const table = {}; for (const route of ['direct', 'pumpportal']) table[route] = Object.fromEntries([0.01, 0.02].map((z) => [z, costAt0(z, route)]));
+    return {
+      route: cfg.route, fallback: cfg.fallbackRoute,
+      why: 'Direct = I build the swap myself on the pump.fun curve (buy_exact_quote_in_v3 / sell_v3) or the PumpSwap pool: no aggregator fee. PumpPortal (+0.5% per side) is only my fallback.',
+      fees: { pumpFunPerSidePct: cfg.curveFeePct, routeFeePerSidePct: { direct: 0, pumpportal: 0.5, 'jupiter /order': '0.1–0.5' }, note: 'pump.fun fee = 0.95% protocol + 0.30% creator on the curve today, read from the on-chain FeeConfig for each trade; PumpSwap tiers fall with market cap.' },
+      network: { baseFeeLamports: n.baseFeeLamports, priority: 'recent median for the pump program, compute units fitted by simulation', maxPriorityLamportsPerTx: n.maxPriorityLamports, jitoTip: 0, tokenAccountRent: 'refunded: the sell tx closes the account', oneTimeAccountSol: n.volAccRentLamports / LAMPORTS },
+      slippage: { rule: `tolerance = my own price impact + ${sp.bufferPct}% + ${sp.volMult}x the last 10 s volatility, at least ${sp.minPct}%`, buyCapPct: sp.buyCapPct, sellCapPct: sp.sellCapPct, forcedExitStepsPct: sp.forcedSteps, skipIf: 'a buy that would need more than the cap is skipped', mev: 'tight tolerance leaves a sandwich bot less than its own pump.fun fees, so it is not worth attacking my size' },
+      edgeGate: `skip when the round trip costs more than ${Math.round(cfg.maxCostShare * 100)}% of the gross edge I expect; size capped so my buy moves the price <= ${cfg.maxImpactPct}%`,
+      roundTripPct: table, costsPaidSol: st.totals.costsSol || 0, costSkips: st.totals.costSkips || 0,
+    };
+  }
+  const costAt0 = (z, route) => { const r = E.roundTrip(z, { route, curveFeePct: cfg.curveFeePct }); return { totalPct: r.totalPct, ...r.breakdown }; };
   function status() {
     const t = now(); const solUsd = scalper?.solUsd?.() || null;
     const open = st.positions.map((p) => ({ mint: p.mint, symbol: p.symbol, kind: p.kind, arm: p.arm, costSol: p.cost, valueSol: p.value ?? null, pnlPct: p.pnlPct ?? null, openedAt: new Date(p.openAt).toISOString(), ageMin: r1((t - p.openAt) / 60e3), exits: { tp: p.tp, sl: p.sl, holdMin: p.hold }, reason: p.reason, tx: p.tx }));
@@ -623,10 +780,12 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       vitals: vitalsStatus(),
       bodyFund: { ...fund(), basis: cfg.mode === 'live' ? 'on-chain wallet balance + open positions' : 'real on-chain wallet balance only (paper P&L never counts)', workingCapitalSol: cfg.workingCapitalSol, purchases, paperEquitySol: cfg.mode === 'paper' ? eq : null },
       fundings: st.fundings, fundingTotalSol: r6(st.fundings.reduce((a, f) => a + f.sol, 0)), feeSplit: FEE_SPLIT(), diaryDays: st.diaries.length,
-      rules: { maxTradeSol: cfg.maxTradeSol, sizePctOfBalance: cfg.sizePct, minTradeSol: cfg.minTradeSol, reserveSol: cfg.reserveSol, maxOpen: cfg.maxOpen, takeProfitPct: cfg.tpPct, stopLossPct: cfg.slPct, maxHoldMin: cfg.maxHoldMin, dailyLossLimitSol: cfg.dailyLossSol, coinCooldownMin: cfg.cooldownMin, curveProgressPct: [cfg.minProg, cfg.maxProg], feesPerSidePct: cfg.feePct, txFeeSol: cfg.txFeeSol, slippagePct: cfg.slippagePct,
+      rules: { maxTradeSol: cfg.maxTradeSol, sizePctOfBalance: cfg.sizePct, minTradeSol: cfg.minTradeSol, reserveSol: cfg.reserveSol, maxOpen: cfg.maxOpen, takeProfitPct: cfg.tpPct, stopLossPct: cfg.slPct, maxHoldMin: cfg.maxHoldMin, dailyLossLimitSol: cfg.dailyLossSol, coinCooldownMin: cfg.cooldownMin, curveProgressPct: [cfg.minProg, cfg.maxProg], feesPerSidePct: cfg.feePct, txFeeSol: cfg.txFeeSol, maxCostShareOfEdge: cfg.maxCostShare, maxImpactPct: cfg.maxImpactPct,
         signals: Object.fromEntries(M.ARM_KEYS.map((k) => [k, `${arms[k].idea} (exits +${arms[k].tp}% / -${arms[k].sl}% / ${arms[k].hold} min${arms[k].enabled ? '' : ', disabled'})`])),
         scannerGate: 'no multi-wallet bundle txs, no dev-paid creation-block buys, creation block <10% supply, early wallets <10%, dev holds <10% and has not sold, top-10 <30%, risk not HIGH, not Mayhem Mode, SOL-quoted curve, not created by the dev wallet',
         neverTrades: [...cfg.exclude], protectedWallets: [...cfg.protectedWallets] },
+      execution: execution(),
+      payout: payoutStatus(), paperArchive: st.paperArchive ? { ...st.paperArchive, trades: st.paperArchive.trades.slice(0, 30) } : null,
       positions: open, trades: st.trades, decisions: st.decisions,
       stream: scalper?.streamInfo?.() || null, persistence: store ? { backend: store.name, saves: st.saves, lastSaveAt: st.lastSaveAt, lastSaveError: st.lastSaveError } : { backend: 'memory' },
       lastDecisionAt: st.lastDecisionAt, activity: activity(),

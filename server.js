@@ -160,8 +160,8 @@ function mobileView(s) {
   };
 }
 function chartsOf(s) {
-  const want = []; for (const p of s.positions || []) want.push([p.mint, p.symbol, 'position']);
-  for (const c of s.activity?.candidates || []) if (want.length < 2 && !want.some((w) => w[0] === c.mint)) want.push([c.mint, c.symbol, 'watching']);
+  const want = []; for (const p of s.positions || []) want.push([p.mint, p.symbol || createdSyms.get(p.mint), 'position']);
+  for (const c of s.activity?.candidates || []) if (want.length < 2 && !want.some((w) => w[0] === c.mint)) want.push([c.mint, c.symbol || String(c.label || '').replace(/^\$/, '') || createdSyms.get(c.mint), 'watching']);
   return want.map((w) => chartOf(...w)).filter(Boolean).slice(0, 2);
 }
 // every transaction: ALMA's buys/sells (paper or live) + every on-chain wallet movement (funding, payout, swaps) not already listed
