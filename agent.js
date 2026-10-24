@@ -115,13 +115,14 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   const kp = parseSecret(process.env.AGENT_SECRET_KEY);
   const address = kp ? kp.publicKey.toBase58() : (process.env.AGENT_PUBLIC_KEY || null);
   let purchases = []; try { purchases = JSON.parse(process.env.AGENT_PURCHASES || '[]'); } catch {}
+  const priors = {}; for (const k of M.ARM_KEYS) { const pr = M.makePrior(P?.priors?.[k]); if (pr) priors[k] = pr; }
   const t0 = now();
   const st = {
     startedAt: new Date(t0).toISOString(), bornAt: new Date(t0).toISOString(), restoredFrom: null, halted: null,
     paperCash: cfg.paperStartSol, paperStart: cfg.paperStartSol, liveBalance: null, liveBalanceAt: null,
     positions: [], trades: [], decisions: [], thoughts: [], seen: {}, day: madridDay(t0), dayPnl: 0, scansDay: madridDay(t0), scansToday: 0, lastScanAt: 0,
     totals: { trades: 0, wins: 0, realizedSol: 0, signals: 0, sitOut: 0, scans: 0, rejected: 0, scanErrors: 0, liveErrors: 0 }, saves: 0, lastSaveAt: null, lastSaveError: null, lastDecisionAt: null,
-    bandit: M.newBandit(), regime: M.newRegime(), peak: cfg.paperStartSol, streak: 0, hibernateDay: null,
+    bandit: Object.assign(M.newBandit(), { _prior: priors }), regime: M.newRegime(), peak: cfg.paperStartSol, streak: 0, hibernateDay: null,
     equityHist: [], weightsHist: [], weights: null, dayStats: M.newDay(cfg.paperStartSol), diaries: [], fundings: [], fundSeen: [], eurPerSol: null, eurAt: null,
     lastThinkAt: 0, lastSitOutLogAt: 0, lastEqAt: 0, lastWAt: 0, lastRegAt: 0, lastFundAt: 0, lastEurAt: 0,
   };

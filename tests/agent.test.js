@@ -117,5 +117,14 @@ function dipMint(t0) {
   // 14) v1 state migrates: its closed trades seed the bandit
   const v1 = JSON.stringify({ v: 1, mode: 'paper', paperCash: 0.09, paperStart: 0.1, trades: [{ side: 'SELL', mint: 'Mx', pnlPct: -20 }, { side: 'BUY', mint: 'Mx', reason: 'organic-demand momentum' }] });
   const mg = mk(); mg._test.restore(v1); assert.strictEqual(mg.st.bandit.momentum.all.n, 1); assert.strictEqual(mg.st.migratedTrades, 1);
+  // 15) backtest priors: down-weighted, capped, regime-agnostic, never persisted over a newer backtest
+  const losing = M.statOf(Array.from({ length: 100 }, (_, i) => (i % 5 ? -16 : 20))); const pr = M.makePrior(losing);
+  assert.ok(Math.abs(pr.scale * pr.n - M.PRIOR_MAX_N) < 1e-9, 'prior capped at PRIOR_MAX_N pseudo-trades');
+  assert.strictEqual(M.makePrior(M.statOf([5, -3])).scale, M.PRIOR_WEIGHT); assert.strictEqual(M.makePrior(null), null);
+  const ap = M.armParams({}).dip; const blank = M.newBandit(); const withP = Object.assign(M.newBandit(), { _prior: { dip: pr } });
+  const evOf = (b) => { const x = M.belief(b, 'dip', 'hot', ap, 1.75); const p = x.a / (x.a + x.b); return p * x.meanW - (1 - p) * x.meanL; };
+  assert.ok(evOf(withP) < evOf(blank) - 3, 'a losing backtest lowers the belief');
+  const pa = mk(analyze, { params: { arms: {}, priors: { dip: losing } } }); assert.ok(pa.st.bandit._prior.dip && pa.status().mind.arms.find((x) => x.arm === 'dip').priorTrades === 15);
+  const pa2 = mk(analyze, { params: { arms: {}, priors: { dip: M.statOf([30, 30]) } } }); pa2._test.restore(pa._test.snapshot()); assert.strictEqual(pa2.st.bandit._prior.dip.n, 2, 'boot prior wins over a stored one');
   console.log('agent tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });

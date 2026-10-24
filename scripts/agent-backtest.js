@@ -30,6 +30,12 @@ function feed(mints, tr) {
 const stats = (pnls) => { let eq = 0, pk = 0, dd = 0; for (const p of pnls) { eq += p.sol; pk = Math.max(pk, eq); dd = Math.max(dd, pk - eq); }
   const w = pnls.filter((p) => p.sol > 0).length; return { n: pnls.length, wins: w, winRate: pnls.length ? r1((w / pnls.length) * 100) : null, netSol: r4(eq), avgPct: pnls.length ? r1(pnls.reduce((a, p) => a + p.pct, 0) / pnls.length) : null, maxDDSol: r4(dd) }; };
 
+// bootstrap 90% interval for the mean % per trade: if it straddles 0 the sample cannot tell an edge from luck
+const boot = (pnls, B = 2000) => { if (pnls.length < 5) return null; const R = M.rng(12345), xs = pnls.map((p) => p.pct), n = xs.length, means = [];
+  for (let b = 0; b < B; b++) { let s = 0; for (let i = 0; i < n; i++) s += xs[Math.floor(R() * n)]; means.push(s / n); }
+  means.sort((a, b) => a - b); return [r1(means[Math.floor(B * 0.05)]), r1(means[Math.floor(B * 0.95)])]; };
+const statsCI = (pnls) => ({ ...stats(pnls), ci90AvgPct: boot(pnls) });
+
 (async () => {
   const rows = load(); if (rows.length < 1000) throw new Error('not enough data: ' + rows.length);
   const tStart = rows[0].at, tEnd = rows[rows.length - 1].at, tSplit = tStart + (tEnd - tStart) / 2;
@@ -57,10 +63,10 @@ const stats = (pnls) => { let eq = 0, pk = 0, dd = 0; for (const p of pnls) { eq
     return { at: ft, res };
   }
   const sims = events.map((ev) => ({ ...ev, sim: simulate(ev) })).filter((e) => e.sim && e.sim.at + 15 * 60e3 <= tEnd); // only trades whose longest hold fits in the data
-  const perArm = [], chosen = {};
+  const perArm = [], chosen = {}, priors = {};
   for (const k of M.ARM_KEYS) {
     const evs = sims.filter((e) => e.arm === k); const IS = evs.filter((e) => e.at < tSplit && e.sim.at < tSplit), OOS = evs.filter((e) => e.at >= tSplit);
-    const score = (set, key) => stats(set.map((e) => e.sim.res[key]));
+    const score = (set, key) => stats(set.map((e) => e.sim.res[key])); const scoreCI = (set, key) => statsCI(set.map((e) => e.sim.res[key]));
     const defKey = `${GRID.tp.includes(arms[k].tp) ? arms[k].tp : 20}/${GRID.sl.includes(arms[k].sl) ? arms[k].sl : 15}/${GRID.hold.includes(arms[k].hold) ? arms[k].hold : 15}`;
     const keys = Object.keys(evs[0]?.sim.res || {});
     let best = null; for (const key of keys) { const s = score(IS, key); if (s.n >= 15 && (!best || s.netSol > best.s.netSol)) best = { key, s }; }
@@ -74,16 +80,18 @@ const stats = (pnls) => { let eq = 0, pk = 0, dd = 0; for (const p of pnls) { eq
     const picked = !best ? 'defaults (too few in-sample trades)' : robust ? 'best in-sample (≥15 trades, ≥20% of the grid profitable)' : `defaults (best in-sample combo ${best.key} looked like luck: only ${r1(posShare * 100)}% of the grid profitable)`;
     const enabled = true; const inSamplePositive = score(IS, pick).netSol > 0; // one short sample is too little to switch an arm off: the live bandit decides
     chosen[k] = { tp, sl, hold, enabled, inSamplePositive };
-    perArm.push({ arm: k, label: arms[k].label, signals: events.filter((e) => e.arm === k).length, evaluated: evs.length, defaults: { params: defKey, inSample: score(IS, defKey), outOfSample: score(OOS, defKey) },
-      chosen: { params: pick, enabled, inSamplePositive, picked, bestInSample: best ? best.key : null, inSample: score(IS, pick), outOfSample: score(OOS, pick) }, inSampleCombosPositivePct: r1(posShare * 100) });
+    // what the in-sample half says about this arm (with the exits picked above) becomes a down-weighted prior for the bandit
+    if (IS.length) priors[k] = M.statOf(IS.map((e) => e.sim.res[pick].pct));
+    perArm.push({ arm: k, label: arms[k].label, signals: events.filter((e) => e.arm === k).length, evaluated: evs.length, defaults: { params: defKey, inSample: scoreCI(IS, defKey), outOfSample: scoreCI(OOS, defKey) },
+      chosen: { params: pick, enabled, inSamplePositive, picked, bestInSample: best ? best.key : null, inSample: scoreCI(IS, pick), outOfSample: scoreCI(OOS, pick) }, inSampleCombosPositivePct: r1(posShare * 100) });
   }
   // ---- 2) system replay with the real agent code
   process.env.AGENT_MODE = 'paper'; process.env.AGENT_ENABLED = '1'; delete process.env.AGENT_SECRET_KEY;
   const { createAgent } = require('../agent'); const { cleanCheck, CFG } = require('../radar');
   const cleanRep = { isPumpFun: true, curve: { quote: 'SOL', mayhemMode: false, creatorOnCurve: 'x' }, bundle: { multiWalletTxs: 0, sameSlotPaidByDev: 0, rightAfterCreateWallets: 0, rightAfterCreatePct: 0, sameSlotPctSupply: 0, earlyStillHoldPct: 0 }, dev: { wallet: 'x', hasSold: false, holdingPctSupply: 1 }, holders: { top10Pct: 10 }, risk: { level: 'BAJO' } };
-  async function system(seed, params) {
+  async function system(seed, params, pri) {
     process.env.AGENT_SEED = String(seed); let t = tStart; const mm = new Map();
-    const scalper = { mints: mm, symbol: () => null }; const ag = createAgent({ scalper, now: () => t, analyze: async () => cleanRep, cleanCheck, radarCfg: CFG(), rpc: null, quiet: true, params: { source: 'backtest', arms: params }, fetchFn: async () => ({ json: async () => ({}) }) });
+    const scalper = { mints: mm, symbol: () => null }; const ag = createAgent({ scalper, now: () => t, analyze: async () => cleanRep, cleanCheck, radarCfg: CFG(), rpc: null, quiet: true, params: { source: 'backtest', arms: params, priors: pri }, fetchFn: async () => ({ json: async () => ({}) }) });
     ag.cfg.enabled = false; let nextTick = t + 5000;
     for (const tr of rows) {
       t = tr.at; if (!ag.cfg.enabled && t >= tSplit) { ag.cfg.enabled = true; ag.st.peak = ag.equity(); }
@@ -94,17 +102,17 @@ const stats = (pnls) => { let eq = 0, pk = 0, dd = 0; for (const p of pnls) { eq
     const sells = ag.st.trades.filter((x) => x.side === 'SELL');
     return { seed, ...stats(sells.reverse().map((x) => ({ sol: x.pnlSol, pct: x.pnlPct }))), sitOut: ag.st.totals.sitOut, scans: ag.st.totals.scans, weights: ag.st.weights, byArm: Object.fromEntries(M.ARM_KEYS.map((k) => [k, ag.st.bandit[k].all.n])) };
   }
-  const sysRuns = { chosen: [], defaults: [] };
-  for (let s = 1; s <= SEEDS; s++) { sysRuns.chosen.push(await system(s, chosen)); sysRuns.defaults.push(await system(s, {})); }
+  const sysRuns = { chosen: [], noPrior: [], defaults: [] };
+  for (let s = 1; s <= SEEDS; s++) { sysRuns.chosen.push(await system(s, chosen, priors)); sysRuns.noPrior.push(await system(s, chosen, null)); sysRuns.defaults.push(await system(s, {}, null)); }
   const summ = (runs) => { const v = runs.map((r) => r.netSol).sort((a, b) => a - b); return { seeds: runs.length, medianNetSol: v[Math.floor(v.length / 2)], meanNetSol: r4(v.reduce((a, x) => a + x, 0) / v.length), minNetSol: v[0], maxNetSol: v[v.length - 1], profitableSeedsPct: r1((v.filter((x) => x > 0).length / v.length) * 100), avgTrades: r1(runs.reduce((a, r) => a + r.n, 0) / runs.length), avgWinRate: r1(runs.reduce((a, r) => a + (r.winRate || 0), 0) / runs.length), avgMaxDDSol: r4(runs.reduce((a, r) => a + r.maxDDSol, 0) / runs.length) }; };
   const iso = (t) => new Date(t).toISOString();
   const outJ = { generatedAt: new Date().toISOString(), data: { files: files.map((f) => path.basename(f)), trades: rows.length, coins: byMint.size, from: iso(tStart), to: iso(tEnd), minutes: r1((tEnd - tStart) / 60e3) },
     split: { inSample: [iso(tStart), iso(tSplit)], outOfSample: [iso(tSplit), iso(tEnd)] },
     assumptions: { sizeSol: SIZE, feesPerSidePct: FEE.feePct, txFeeSol: FEE.txFeeSol, entryLatencyMs: LATENCY, grid: GRID, oneEntryPerCoinPerArm: true },
-    perArm, system: { note: 'real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass)', withInSampleParams: summ(sysRuns.chosen), withDefaults: summ(sysRuns.defaults), runs: sysRuns.chosen },
-    caveats: ['Short sample (one recording session): results are noisy and say little about the future.', 'The live scanner rejects most coins; it cannot be replayed offline, so the system replay trades coins the live agent would refuse.', 'Fills use the observed curve after a 5 s delay; real fills can be worse (slippage, priority-fee races, failed txs).', 'Exit params were picked on the in-sample half only; the out-of-sample numbers are the honest ones.'] };
+    perArm, system: { note: 'real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass). withInSampleParams = what is deployed (in-sample exits + in-sample priors); withoutPriors = same exits, bandit starts blank; withDefaults = hand-set exits, blank bandit; doing nothing = 0 SOL', withInSampleParams: summ(sysRuns.chosen), withoutPriors: summ(sysRuns.noPrior), withDefaults: summ(sysRuns.defaults), baselineNoTrading: 0, runs: sysRuns.chosen },
+    caveats: ['Short sample (one recording session): results are noisy and say little about the future.', 'The live scanner rejects most coins; it cannot be replayed offline, so the system replay trades coins the live agent would refuse.', 'Fills use the observed curve after a 5 s delay; real fills can be worse (slippage, priority-fee races, failed txs).', 'Exit params were picked on the in-sample half only; the out-of-sample numbers are the honest ones.', 'ci90AvgPct is a bootstrap 90% interval for the average % per trade: if it includes 0, this sample cannot distinguish an edge from luck.'] };
   const OUT = process.env.BT_OUT_DIR; if (OUT) fs.mkdirSync(OUT, { recursive: true });
   fs.writeFileSync(OUT ? path.join(OUT, 'agent-backtest.json') : path.join(__dirname, '..', 'public', 'agent-backtest.json'), JSON.stringify(outJ, null, 1));
-  fs.writeFileSync(OUT ? path.join(OUT, 'agent-params.json') : path.join(__dirname, '..', 'agent-params.json'), JSON.stringify({ source: `backtest in-sample ${iso(tStart).slice(0, 16)}→${iso(tSplit).slice(11, 16)}Z (${files.map((f) => path.basename(f)).join(',')})`, generatedAt: outJ.generatedAt, arms: chosen }, null, 1));
-  console.log(JSON.stringify({ data: outJ.data, perArm: perArm.map((a) => ({ arm: a.arm, signals: a.signals, def: [a.defaults.inSample, a.defaults.outOfSample].map((s) => `${s.n}t ${s.winRate}% ${s.netSol}`), chosen: a.chosen.params, en: a.chosen.enabled, ch: [a.chosen.inSample, a.chosen.outOfSample].map((s) => `${s.n}t ${s.winRate}% ${s.netSol}`), posCombos: a.inSampleCombosPositivePct })), system: { chosen: outJ.system.withInSampleParams, defaults: outJ.system.withDefaults } }, null, 1));
+  fs.writeFileSync(OUT ? path.join(OUT, 'agent-params.json') : path.join(__dirname, '..', 'agent-params.json'), JSON.stringify({ priors, priorNote: `in-sample outcomes per arm; the agent counts them at ≤${M.PRIOR_WEIGHT}× weight, ≤${M.PRIOR_MAX_N} pseudo-trades`, source: `backtest in-sample ${iso(tStart).slice(0, 16)}→${iso(tSplit).slice(11, 16)}Z (${files.map((f) => path.basename(f)).join(',')})`, generatedAt: outJ.generatedAt, arms: chosen }, null, 1));
+  console.log(JSON.stringify({ data: outJ.data, perArm: perArm.map((a) => ({ arm: a.arm, signals: a.signals, def: [a.defaults.inSample, a.defaults.outOfSample].map((s) => `${s.n}t ${s.winRate}% ${s.netSol}`), chosen: a.chosen.params, en: a.chosen.enabled, ch: [a.chosen.inSample, a.chosen.outOfSample].map((s) => `${s.n}t ${s.winRate}% ${s.netSol}`), posCombos: a.inSampleCombosPositivePct })), system: { deployed: outJ.system.withInSampleParams, noPrior: outJ.system.withoutPriors, defaults: outJ.system.withDefaults } }, null, 1));
 })().catch((e) => { console.error(e); process.exit(1); });

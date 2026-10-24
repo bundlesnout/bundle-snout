@@ -63,11 +63,18 @@ const emptyStat = () => ({ n: 0, w: 0, sumW: 0, sumW2: 0, sumL: 0, sumL2: 0 });
 function newBandit() { const b = {}; for (const k of ARM_KEYS) b[k] = { all: emptyStat(), cold: emptyStat(), normal: emptyStat(), hot: emptyStat() }; return b; }
 function addStat(s, pct) { s.n++; if (pct > 0) { s.w++; s.sumW += pct; s.sumW2 += pct * pct; } else { const l = -pct; s.sumL += l; s.sumL2 += l * l; } }
 function recordOutcome(bandit, arm, regime, pct) { if (!bandit[arm]) return; addStat(bandit[arm].all, pct); if (bandit[arm][regime]) addStat(bandit[arm][regime], pct); }
+// Offline evidence counts at most PRIOR_MAX_N pseudo-trades, at PRIOR_WEIGHT each: backtest trades skip the live
+// scanner gate and see idealised fills, so they are a hint, not proof. Live trades soon outweigh them.
+const PRIOR_WEIGHT = 0.5, PRIOR_MAX_N = 15;
+function makePrior(stat) { if (!stat || !stat.n) return null; return { ...stat, scale: Math.min(PRIOR_WEIGHT, PRIOR_MAX_N / stat.n) }; }
+function statOf(pcts) { const s = emptyStat(); for (const p of pcts) addStat(s, p); return s; }
 const POOL = 0.35; // how much the other regimes' evidence counts toward this regime's belief (partial pooling)
 // Posterior pieces for an arm in a regime. Priors: win odds Beta(2,2); avg win ≈ TP, avg loss ≈ SL + round-trip fees (2 pseudo-trades each).
 function belief(bandit, arm, regime, ap, feePct) {
   const A = bandit[arm]?.all || emptyStat(), Rg = bandit[arm]?.[regime] || emptyStat();
-  const mix = (k) => Rg[k] + POOL * (A[k] - Rg[k]);
+  // optional offline prior (bandit._prior, from the backtest's in-sample half): regime-agnostic, down-weighted pseudo-trades
+  const Pr = bandit._prior?.[arm], ps = Pr ? Pr.scale : 0;
+  const mix = (k) => Rg[k] + POOL * (A[k] - Rg[k]) + (Pr ? ps * (Pr[k] || 0) : 0);
   const n = mix('n'), w = mix('w'), l = n - w;
   const pw = 2, mW0 = ap.tp, mL0 = ap.sl + 2 * feePct;
   const nW = w + pw, nL = l + pw;
@@ -90,7 +97,8 @@ function armTable(bandit, regime, arms, feePct) {
   return ARM_KEYS.map((k) => { const b = belief(bandit, k, regime, arms[k], feePct); const p = b.a / (b.a + b.b); const A = bandit[k].all;
     return { arm: k, label: arms[k].label, idea: arms[k].idea, enabled: arms[k].enabled, exits: { tp: arms[k].tp, sl: arms[k].sl, holdMin: arms[k].hold },
       trades: A.n, wins: A.w, winRate: A.n ? r1((A.w / A.n) * 100) : null, avgWinPct: A.w ? r1(A.sumW / A.w) : null, avgLossPct: A.n - A.w ? r1(A.sumL / (A.n - A.w)) : null,
-      beliefWinPct: r1(p * 100), beliefEvPct: r1(p * b.meanW - (1 - p) * b.meanL), regimeTrades: b.n }; });
+      beliefWinPct: r1(p * 100), beliefEvPct: r1(p * b.meanW - (1 - p) * b.meanL), regimeTrades: b.n,
+      priorTrades: bandit._prior?.[k] ? r1(bandit._prior[k].n * bandit._prior[k].scale) : 0 }; });
 }
 
 // ---------------------------------------------------------------- sizing
@@ -218,4 +226,4 @@ function diaryEntry({ day, dayNo, d, fund, weights, arms, mode }) {
 const newDay = (eq) => ({ opened: 0, trades: 0, wins: 0, pnl: 0, signals: 0, scans: 0, rejected: 0, sitOut: 0, rejects: {}, regimes: {}, best: null, worst: null, startEq: eq, endEq: eq });
 
 module.exports = { ARMS, ARM_KEYS, armParams, armSignals, rng, beta, newBandit, recordOutcome, belief, sampleArm, armWeights, armTable, kellySize,
-  newRegime, regimeObserve, regimeUpdate, regimeKey, REGIME_MULT, ddState, mood, BODY, bodyFund, V, pick, diaryEntry, newDay };
+  makePrior, statOf, PRIOR_WEIGHT, PRIOR_MAX_N, newRegime, regimeObserve, regimeUpdate, regimeKey, REGIME_MULT, ddState, mood, BODY, bodyFund, V, pick, diaryEntry, newDay };
