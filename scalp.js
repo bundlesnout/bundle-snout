@@ -122,7 +122,7 @@ function buildVariants(cfg) {
 const vSummary = (v) => ({ key: v.key, kind: v.kind, trades: v.n, winRate: v.n ? r1((v.wins / v.n) * 100) : null, netSol: r6(v.net), avgWin: v.wins ? r6(v.sumWin / v.wins) : null,
   avgLoss: v.n - v.wins ? r6(v.sumLoss / (v.n - v.wins)) : null, maxDrawdownSol: r6(v.maxDD), open: v.open, exits: v.reasons });
 
-function createScalper({ store = null, symbolOf = () => null, log = console.log, WS = WebSocket, now = () => Date.now() } = {}) {
+function createScalper({ store = null, symbolOf = () => null, log = console.log, WS = WebSocket, now = () => Date.now(), onTradeHook = null } = {}) {
   const cfg = SCFG();
   const variants = buildVariants(cfg);
   const groups = new Map(); for (const v of variants.values()) { const g = v.kind === 'ride' ? 'RIDE' : `${v.rule}-${v.level}`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(v); }
@@ -235,6 +235,7 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
     // fills waiting for "the next trade after latency"
     for (let i = pendingEntries.length - 1; i >= 0; i--) { const e = pendingEntries[i]; if (e.mint === tr.mint && t >= e.at) { pendingEntries.splice(i, 1); if (!m.complete) openPositions(e, m); } }
     checkExits(tr.mint, m, true);
+    if (onTradeHook) { try { onTradeHook(tr, m); } catch (e) { log('[scalp] trade hook error ' + e.message); } } // AI trader agent shares this stream
     if (t - m.lastEval >= 2000 && !m.complete) { m.lastEval = t; evaluate(tr.mint, m, t); }
   }
   function evaluate(mint, m, t) {
@@ -295,6 +296,7 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
       connect(); log(`[scalp] paper trader on ${cfg.wsUrl}: ${variants.size} variants, fee ${cfg.feePct}%/side + ${cfg.txFeeSol} SOL/tx, latency ${cfg.latencyMs} ms, SOL $${st.solUsd}`);
     },
     stop() { stopped = true; timers.forEach(clearInterval); try { ws?.close(); } catch {} },
+    solUsd: () => st.solUsd, symbol: (m) => symOf(m), streamInfo: () => ({ connected: st.ws.connected, lastAt: st.ws.lastAt, pausedUntil: st.ws.pausedUntil, mintsTracked: mints.size }),
     save: () => save(true), resolveSymbols, onTrade, onMessage, tick, variants, logs,
     status() {
       const prim = variants.get(cfg.primary), rp = variants.get(cfg.ridePrimary);

@@ -39,7 +39,7 @@ const createdSyms = new Map(); // mint -> symbol, fed by the radar's PumpPortal 
 let scalper = null;
 if (process.env.SCALP_ENABLED !== '0') {
   const { createScalper, renderEnvStore } = require('./scalp');
-  scalper = createScalper({ store: renderEnvStore(), symbolOf: (m) => createdSyms.get(m) });
+  scalper = createScalper({ store: renderEnvStore(), symbolOf: (m) => createdSyms.get(m), onTradeHook: (tr, m) => agent?.onTrade(tr, m) });
   scalper.start().catch((e) => console.error('[scalp] start failed', e.message));
 }
 const onWsEvent = (j) => { if (j.txType === 'create' && j.mint && j.symbol) { createdSyms.set(j.mint, j.symbol); if (createdSyms.size > 20000) createdSyms.delete(createdSyms.keys().next().value); } };
@@ -83,6 +83,15 @@ app.get('/scalp', (_, res) => res.sendFile(path.join(__dirname, 'public', 'scalp
 app.get('/api/scalp/status', (_, res) => { res.set('cache-control', 'no-store'); res.json(scalper ? scalper.status() : { disabled: true }); });
 app.get('/api/scalp/trades', (_, res) => { res.set('cache-control', 'no-store'); res.json(scalper ? scalper.trades() : { disabled: true }); });
 app.get('/api/scalp/variant/:key', (req, res) => { const v = scalper?.variant(req.params.key); v ? res.json(v) : res.sendStatus(404); });
+// ---- SpaniardDev AI Trader Agent (/agent): autonomous, public, rule-based; AGENT_MODE=paper (default) | live. Rides the scalper's stream.
+var agent = null;
+if (process.env.AGENT_BOOT !== '0' && scalper) {
+  const { createAgent } = require('./agent'); const { renderEnvStore: envStore } = require('./scalp');
+  agent = createAgent({ scalper, store: envStore('AGENT_STATE') });
+  agent.start().catch((e) => console.error('[agent] start failed', e.message));
+}
+app.get('/agent', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent.html')));
+app.get('/api/agent', (_, res) => { res.set('cache-control', 'no-store'); res.json(agent ? agent.status() : { disabled: true }); });
 // ---- Fee Rips tracker (/rips): creator fees -> Collector Crypt packs, read on-chain from the public RPC (0 Helius credits)
 let rips = null;
 if (process.env.RIPS_ENABLED !== '0') { rips = require('./rips').createRips(); rips.start(); }
@@ -98,7 +107,7 @@ app.get('/api/rips/live', (_, res) => { res.set('cache-control', 'no-store'); re
 app.get('/dev', (_, res) => res.sendFile(path.join(__dirname, 'public', 'dev.html')));
 require('./tankloop').register(app); // $TANKLOOP landing (/tankloop), CA via env TANKLOOP_CA
 app.get('/api/rips/status', (_, res) => { res.set('cache-control', 'no-store'); res.json(rips ? rips.status() : { disabled: true }); });
-for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} process.exit(0); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} try { await agent?.save(); } catch {} process.exit(0); });
 app.get('/api/radar/status', (_, res) => {
   res.set('cache-control', 'no-store');
   res.json({ radar: radar ? radar.status() : { running: false, disabled: true }, state: store.status(), keepalive, uptimeSec: Math.round(process.uptime()), now: new Date().toISOString() });

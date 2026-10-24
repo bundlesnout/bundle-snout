@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SpaniardDev AI Trader: an autonomous agent trading in public</title>
+<meta name="description" content="An autonomous AI trader agent with its own public wallet. Fixed rules, every trade and reason logged live. Never trades its own coin. Experiment: it can lose money.">
+<link rel="canonical" href="https://bundle-snout.onrender.com/agent">
+<meta property="og:type" content="website"><meta property="og:site_name" content="SpaniardDev"><meta property="og:url" content="https://bundle-snout.onrender.com/agent">
+<meta property="og:title" content="SpaniardDev AI Trader: trading in public"><meta property="og:description" content="Autonomous agent, public wallet, every trade and reason logged. Never trades its own coin.">
+<meta property="og:image" content="https://bundle-snout.onrender.com/spaniarddev-header.jpg"><meta property="og:image:width" content="1500"><meta property="og:image:height" content="500">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="SpaniardDev AI Trader: trading in public"><meta name="twitter:description" content="Autonomous agent, public wallet, every trade and reason logged. Never trades its own coin."><meta name="twitter:image" content="https://bundle-snout.onrender.com/spaniarddev-header.jpg">
+<link rel="icon" type="image/png" href="/spaniarddev-favicon.png"><meta name="theme-color" content="#070a16">
+<style>
+:root{color-scheme:dark;--bg:#070a16;--card:#101629;--line:#1f2a48;--red:#dc2832;--gold:#f0be3c;--cyan:#5fe3ff;--mut:#9aa5c4;--grn:#3ddc84}
+[hidden]{display:none!important}*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#eef1fb}
+main{max-width:920px;margin:0 auto;padding:14px 12px 40px}a{color:var(--cyan)}.mut{color:var(--mut)}h1{font-size:24px;margin:4px 0}h2{font-size:17px;margin:22px 0 8px}
+.top{display:flex;gap:12px;align-items:center}.top img{width:52px;height:52px;border-radius:50%;border:2px solid var(--line)}
+.badge{display:inline-block;font-weight:800;font-size:12px;letter-spacing:.6px;padding:3px 9px;border-radius:99px;vertical-align:middle}
+.b-paper{background:#2a2f45;color:var(--gold);border:1px solid var(--gold)}.b-live{background:var(--red);color:#fff}.b-st{background:#14233a;color:var(--cyan);border:1px solid var(--line)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px}
+.wal{font-family:ui-monospace,Menlo,monospace;font-size:13px;word-break:break-all}
+.btn{display:inline-block;margin:8px 8px 0 0;padding:7px 12px;border-radius:9px;border:1px solid var(--line);background:#0c1222;color:var(--cyan);text-decoration:none;font-size:14px;cursor:pointer}
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}@media(min-width:700px){.kpis{grid-template-columns:repeat(4,1fr)}}
+.k{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}.k small{color:var(--mut);display:block;font-size:12px}.k b{font-size:20px}
+.pos{color:var(--grn)}.neg{color:#ff6b6b}
+.row{border-top:1px solid var(--line);padding:10px 0}.row:first-child{border-top:0}.row .h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.tag{font-size:11px;font-weight:800;padding:2px 7px;border-radius:6px;margin-right:6px}.t-BUY{background:#123b2a;color:var(--grn)}.t-SELL{background:#3b1d12;color:#ffb36b}.t-SKIP{background:#22273a;color:var(--mut)}.t-ERROR,.t-PAUSE{background:#3b1220;color:#ff6b6b}.t-RECOVER{background:#2a2a12;color:var(--gold)}
+.why{color:#d5dbef;font-size:14px;margin-top:3px}.tiny{font-size:12px;color:var(--mut)}
+.warn{border-color:var(--gold);background:#1a1708}.rules li{margin:3px 0}ul{padding-left:18px;color:#d5dbef}footer{margin-top:26px;font-size:13px;color:var(--mut)}
+</style></head><body><main>
+<div class="top"><img src="/spaniarddev-avatar.jpg" alt="" width="52" height="52"><div><div class="tiny"><a href="/dev">SpaniardDev</a> · experiment</div><h1>AI Trader Agent <span id="mode" class="badge b-paper">PAPER</span></h1></div></div>
+<p class="mut" style="margin:8px 0 0">An autonomous agent with its own wallet. It watches every new pump.fun trade, runs each candidate through the <a href="/">Bundle Snout scanner</a>, and trades by fixed public rules. Every buy, sell and skip is logged below with the reason. <b>It never trades its own coin.</b></p>
+<div class="card warn"><b>⚠️ Experiment, not advice.</b> This agent can and probably will lose money. Memecoins are extremely risky. Past results mean nothing. <span id="paperNote">It is in <b>PAPER</b> mode now: trades are simulated on real live prices with real fees, no SOL is spent.</span></div>
+
+<div class="card"><div class="tiny">Agent wallet (public, verify everything)</div>
+<div class="wal" id="addr">loading…</div>
+<a class="btn" id="solscan" href="#" target="_blank" rel="noopener">View on Solscan ↗</a><button class="btn" id="copy">Copy address</button>
+<div class="tiny" style="margin-top:8px">State: <span id="state" class="badge b-st">…</span> <span id="onchain"></span></div></div>
+
+<h2>Performance</h2>
+<div class="kpis">
+<div class="k"><small id="balLbl">Balance</small><b id="bal">–</b></div>
+<div class="k"><small>Realized P&amp;L</small><b id="pnl">–</b></div>
+<div class="k"><small>Win rate</small><b id="wr">–</b></div>
+<div class="k"><small>Today (limit)</small><b id="today">–</b></div>
+</div>
+<p class="tiny" id="counts"></p>
+
+<h2>Open positions <span class="tiny" id="openN"></span></h2>
+<div class="card" id="positions"><span class="mut">None right now.</span></div>
+
+<h2>Trade log</h2>
+<div class="card" id="trades"><span class="mut">No trades yet. The agent is waiting for a signal on a coin that passes the scanner.</span></div>
+
+<h2>Decisions (incl. skips)</h2>
+<div class="card" id="decisions"><span class="mut">Waiting for the first signal…</span></div>
+
+<h2>The rules (all public, no discretion)</h2>
+<div class="card"><ul class="rules" id="rules"></ul></div>
+
+<h2>How it works</h2>
+<div class="card"><ul>
+<li><b>Signals</b> come from the live pump.fun trade stream (public Solana RPC).</li>
+<li><b>Safety gate:</b> before any buy, the coin is scanned for bundles, dev and holder concentration, dev sells and Mayhem Mode. If any check fails, it's a SKIP.</li>
+<li><b>Exits</b> are mechanical: take profit, stop loss, time stop, or graduation.</li>
+<li><b>Live mode</b> swaps on the bonding curve via PumpPortal's local transaction API. Each tx is built, checked, simulated and signed on the server, then linked here.</li>
+<li><b>Funding:</b> the agent coin's creator fees top up this wallet, publicly, on Solscan. The dev's wallet is never used by the agent.</li>
+<li><b>Never trades its own coin</b>, or any coin launched by the dev. No self-volume, no wash trading.</li>
+</ul></div>
+<footer>Updated <span id="upd">–</span> · Not affiliated with pump.fun. Nothing here is financial advice. <a href="/api/agent">raw JSON</a> · <a href="/dev">more tools</a></footer>
+</main>
+<script>
+const $=(i)=>document.getElementById(i);const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const sol=(x,d=4)=>x==null?'–':(Math.round(x*10**d)/10**d)+' SOL';const sgn=(x,d=4)=>x==null?'–':`<span class="${x>=0?'pos':'neg'}">${x>=0?'+':''}${(Math.round(x*10**d)/10**d)} SOL</span>`;
+const t=(iso)=>new Date(iso).toLocaleString(undefined,{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'});
+const coin=(m,s)=>`<a href="https://pump.fun/coin/${esc(m)}" target="_blank" rel="noopener">$${esc(s||m.slice(0,4)+'…')}</a>`;
+const txl=(tx,mode)=>tx?`<a href="https://solscan.io/tx/${esc(tx)}" target="_blank" rel="noopener">tx ↗</a>`:`<span class="tiny">${mode==='paper'?'paper (no tx)':''}</span>`;
+let addr='';$('copy').onclick=()=>{navigator.clipboard?.writeText(addr);$('copy').textContent='Copied ✓';setTimeout(()=>$('copy').textContent='Copy address',1500)};
+async function load(){try{const s=await (await fetch('/api/agent',{cache:'no-store'})).json();if(s.disabled){$('state').textContent='disabled';return}
+const live=s.mode==='live';$('mode').textContent=live?'LIVE':'PAPER';$('mode').className='badge '+(live?'b-live':'b-paper');$('paperNote').hidden=live;
+addr=s.wallet.address||'';$('addr').textContent=addr||'not configured';$('solscan').href=s.wallet.solscan||'#';
+$('state').textContent=s.state;$('onchain').textContent=s.wallet.onChainSol!=null?`· on-chain balance ${sol(s.wallet.onChainSol)}`:'';
+if(live){$('balLbl').textContent='On-chain balance';$('bal').textContent=sol(s.balance.sol)}else{$('balLbl').textContent=`Paper equity (start ${s.balance.startSol})`;$('bal').textContent=sol(s.balance.equitySol)}
+$('pnl').innerHTML=sgn(s.pnl.realizedSol);$('wr').textContent=s.stats.winRate==null?'–':s.stats.winRate+'% ('+s.stats.wins+'/'+s.stats.closedTrades+')';
+$('today').innerHTML=sgn(s.pnl.todaySol)+` <span class="tiny">/ -${s.pnl.dailyLossLimitSol}</span>`;
+$('counts').textContent=`${s.stats.signals} signals · ${s.stats.scans} scanned · ${s.stats.rejectedByScanner} rejected by the scanner · unrealized ${Math.round((s.pnl.unrealizedSol||0)*1e4)/1e4} SOL${s.solUsd?` · SOL $${Math.round(s.solUsd)}`:''}`;
+$('openN').textContent=`(${s.positions.length}/${s.rules.maxOpen})`;
+$('positions').innerHTML=s.positions.length?s.positions.map(p=>`<div class="row"><div class="h"><span><span class="tag t-BUY">OPEN</span>${coin(p.mint,p.symbol)} · ${sol(p.costSol)}</span><span class="${(p.pnlPct||0)>=0?'pos':'neg'}">${p.pnlPct==null?'–':(p.pnlPct>=0?'+':'')+p.pnlPct+'%'}</span></div><div class="why">${esc(p.reason)}</div><div class="tiny">${p.ageMin} min · ${txl(p.tx,s.mode)}</div></div>`).join(''):'<span class="mut">None right now.</span>';
+$('trades').innerHTML=s.trades.length?s.trades.map(x=>`<div class="row"><div class="h"><span><span class="tag t-${x.side}">${x.side}</span>${coin(x.mint,x.symbol)} · ${sol(x.sol)}</span><span>${x.side==='SELL'?sgn(x.pnlSol)+` (${x.pnlPct>=0?'+':''}${x.pnlPct}%)`:''}</span></div><div class="why">${esc(x.reason)}</div><div class="tiny">${t(x.at)} · ${x.mode.toUpperCase()} · ${txl(x.tx,x.mode)}</div></div>`).join(''):'<span class="mut">No trades yet. The agent is waiting for a signal on a coin that passes the scanner.</span>';
+$('decisions').innerHTML=s.decisions.length?s.decisions.slice(0,30).map(d=>`<div class="row"><div class="h"><span><span class="tag t-${esc(d.action)}">${esc(d.action)}</span>${d.mint?coin(d.mint,d.symbol):''}</span><span class="tiny">${t(d.at)}</span></div><div class="why">${esc(d.reason)}</div></div>`).join(''):'<span class="mut">Waiting for the first signal…</span>';
+const r=s.rules;$('rules').innerHTML=[`Size: ${r.sizePctOfBalance}% of free balance, max <b>${r.maxTradeSol} SOL</b> per trade; ${r.reserveSol} SOL always kept for fees`,`Max <b>${r.maxOpen}</b> open positions; one decision per coin every ${Math.round(r.coinCooldownMin/60)} h`,`Take profit <b>+${r.takeProfitPct}%</b> · stop loss <b>-${r.stopLossPct}%</b> · time stop <b>${r.maxHoldMin} min</b>`,`Daily loss limit <b>${r.dailyLossLimitSol} SOL</b> → stops for the day`,`Only bonding-curve coins between ${r.curveProgressPct[0]}% and ${r.curveProgressPct[1]}% progress`,`Dip signal: ${esc(r.signals.dip)}`,`Momentum signal: ${esc(r.signals.momentum)}`,`Scanner gate: ${esc(r.scannerGate)}`,`Costs counted: ${r.feesPerSidePct}% per side (pump.fun 1.25% + PumpPortal 0.5%) + ${r.txFeeSol} SOL network fee per tx`,`<b>Never trades:</b> ${r.neverTrades.length?r.neverTrades.map(m=>`<span class="wal">${esc(m)}</span>`).join(', '):'its own coin (set at launch)'} and any coin created by the dev wallet`,`Kill switch: AGENT_ENABLED=0 stops all new entries`].map(x=>`<li>${x}</li>`).join('');
+$('upd').textContent=t(s.now);}catch(e){$('upd').textContent='offline, retrying… (free server may be waking up)'}}
+load();setInterval(load,10000);
+</script></body></html>

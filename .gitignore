@@ -6,3 +6,5 @@ node_modules/
 !.env.example
 dryrun-*.json
 dryrun*.log
+.agent_wallet.json
+*wallet*.json

@@ -23,4 +23,8 @@ for (const x of ['/api/rips/live', 'Next pack', 'First rip soon', 'LAUNCHING SOO
 assert.ok(!/pok[eé]mon(?!\|)|nintendo|invest|100x|moon/i.test(lv.replace(/\/\\b\(pok\[eé\]mon\|gacha\|pack\)\\b\/gi/, '')), 'live.html: no franchise or investment copy');
 assert.ok(r.includes('href="/live"'), 'rips links to /live');
 for (const route of ["'/live'", "'/rips/live'", "'/api/rips/live'"]) assert.ok(server.includes(`app.get(${route}`), 'route ' + route);
+const ag = pub('agent.html');
+for (const x of ['/api/agent', 'never trades its own coin', 'can and probably will lose money', 'solscan', 'PAPER', 'Trade log', 'Decisions']) assert.ok(ag.toLowerCase().includes(x.toLowerCase()), 'agent.html has ' + x);
+assert.ok(pub('dev.html').includes('href="/agent"'), 'dev links to /agent');
+for (const route of ["'/agent'", "'/api/agent'"]) assert.ok(server.includes(`app.get(${route}`), 'route ' + route);
 console.log('pages tests OK');
