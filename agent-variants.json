@@ -1,0 +1,143 @@
+{
+ "note": "Pre-registered forward paper test, written 2026-10-25 00:35 Berlin before any forward data. Do not tune on these results without a fresh window.",
+ "variants": [
+  {
+   "id": "mom_50_8_5",
+   "arm": "momentum",
+   "tp": 50,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02,
+   "note": "in-sample tuned exits (backtest 16:29-17:06Z)"
+  },
+  {
+   "id": "mom_30_8_5",
+   "arm": "momentum",
+   "tp": 30,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02
+  },
+  {
+   "id": "mom_20_8_5",
+   "arm": "momentum",
+   "tp": 20,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02
+  },
+  {
+   "id": "mom_50_8_10",
+   "arm": "momentum",
+   "tp": 50,
+   "sl": 8,
+   "hold": 10,
+   "size": 0.02
+  },
+  {
+   "id": "mom_20_12_15",
+   "arm": "momentum",
+   "tp": 20,
+   "sl": 12,
+   "hold": 15,
+   "size": 0.02,
+   "note": "close to the hand-set default"
+  },
+  {
+   "id": "mom_50_8_5_b20",
+   "arm": "momentum",
+   "tp": 50,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02,
+   "filter": {
+    "minBuyers": 20
+   }
+  },
+  {
+   "id": "mom_50_8_5_c30",
+   "arm": "momentum",
+   "tp": 50,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02,
+   "filter": {
+    "maxChgPct": 30
+   }
+  },
+  {
+   "id": "mom_50_8_5_s01",
+   "arm": "momentum",
+   "tp": 50,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.01,
+   "note": "half size: costs vs size"
+  },
+  {
+   "id": "brk_50_8_5",
+   "arm": "breakout",
+   "tp": 50,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02
+  },
+  {
+   "id": "brk_25_12_10",
+   "arm": "breakout",
+   "tp": 25,
+   "sl": 12,
+   "hold": 10,
+   "size": 0.02
+  },
+  {
+   "id": "fresh_50_8_5",
+   "arm": "fresh",
+   "tp": 50,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02
+  },
+  {
+   "id": "fresh_30_15_12",
+   "arm": "fresh",
+   "tp": 30,
+   "sl": 15,
+   "hold": 12,
+   "size": 0.02
+  },
+  {
+   "id": "dip_20_15_15",
+   "arm": "dip",
+   "tp": 20,
+   "sl": 15,
+   "hold": 15,
+   "size": 0.02
+  },
+  {
+   "id": "dip_10_8_5",
+   "arm": "dip",
+   "tp": 10,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02
+  },
+  {
+   "id": "vb_20_10_20",
+   "arm": "volbot",
+   "tp": 20,
+   "sl": 10,
+   "hold": 20,
+   "size": 0.02,
+   "note": "the user's volume-bot rider spec"
+  },
+  {
+   "id": "vb_20_8_10",
+   "arm": "volbot",
+   "tp": 20,
+   "sl": 8,
+   "hold": 10,
+   "size": 0.02
+  }
+ ]
+}

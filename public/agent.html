@@ -191,7 +191,7 @@ details.rlog summary{cursor:pointer;color:var(--mu);font-size:12px;letter-spacin
   </section>
 
   <section id="shadowBox" style="display:none">
-    <h2>Shadow strategies (paper signals only, no money)</h2>
+    <h2>Forward paper test: candidate strategies (no money)</h2>
     <div id="shadowTxt" class="sm mu"></div>
   </section>
 
@@ -306,10 +306,9 @@ function renderExec(s){
   const g=s.payout;if(g&&g.goal){$('goalBox').style.display='';const done=g.status==='done';
     $('goalTxt').innerHTML=done?`<b>Principal returned — I'm now running on my own profits.</b> ${f6(g.payout.sol)} SOL went back${g.payout.tx?` · <a href="https://solscan.io/tx/${esc(g.payout.tx)}" target="_blank" rel="noopener">tx</a>`:' (paper simulation)'}.`:esc(g.rule||'');
     $('goalBar').style.width=(g.progressPct||0)+'%';$('goalSub').textContent=done?`New baseline: ${f4(g.payout.treasuryAfterSol)} SOL`:`${f4(g.treasurySol)} / ${f4(g.goal)} SOL (${g.progressPct??0}%) · free SOL ${f4(g.freeSol)} · status: ${g.status}${g.mode==='paper'?' (paper)':''}`;}
-  const sh=s.shadow;if(sh&&Object.keys(sh.arms||{}).length){$('shadowBox').style.display='';const A=Object.values(sh.arms);
-    $('shadowTxt').innerHTML=`<div>${esc(sh.note)}</div>${A.map(a=>`<div style="margin-top:6px"><b style="color:${COL.volbot}">${esc(a.label)}</b>${a.shadow?' · <b>SHADOW</b>':''}: ${a.closed} paper outcomes since ${tm(sh.since)}${a.closed?` · ${a.winRate}% wins · hit +20% net in ${a.tpHitRatePct}% · avg ${a.avgPct>0?'+':''}${a.avgPct}% · ${sg(a.netSolAt002)} SOL at 0.02 SOL each`:''}</div>`).join('')}
-    ${(sh.open||[]).length?`<div style="margin-top:6px">Watching now: ${sh.open.map(p=>`<a href="https://pump.fun/coin/${esc(p.mint)}" target="_blank" rel="noopener">${esc(p.symbol||short(p.mint))}</a>`).join(', ')}</div>`:''}
-    ${(sh.closed||[]).length?`<div class="scroll"><table style="margin-top:6px"><tr><th>Closed (Madrid)</th><th>Coin</th><th>Held</th><th>Paper P&L</th><th>Why</th></tr>${sh.closed.slice(0,12).map(x=>`<tr><td>${tm(x.closedAt)}</td><td><a href="https://pump.fun/coin/${esc(x.mint)}" target="_blank" rel="noopener">${esc(x.symbol||short(x.mint))}</a></td><td>${x.heldMin} min</td><td class="${cls(x.pnlPct)}">${x.pnlPct>0?'+':''}${x.pnlPct}%</td><td>${esc(x.why)}</td></tr>`).join('')}</table></div>`:''}`;}
+  const sh=s.shadow;if(sh&&(sh.variants||[]).length){$('shadowBox').style.display='';
+    $('shadowTxt').innerHTML=`<div>${esc(sh.note)} Since ${tm(sh.since)} Madrid · ${sh.signals} signals.</div><div class="scroll"><table style="margin-top:6px"><tr><th>Variant</th><th>Exits · size</th><th>Closed</th><th>Wins</th><th>Avg</th><th>Net SOL</th><th>Max DD</th><th>Open</th></tr>${sh.variants.map(v=>`<tr><td><b style="color:${COL[v.arm]||'#ccc'}">${esc(v.id)}</b><div class="mu">${esc(v.label)}${v.filter?' · '+esc(JSON.stringify(v.filter)):''}</div></td><td>${esc(v.exits)} · ${v.sizeSol}</td><td>${v.closed}</td><td>${v.winRate??'–'}%</td><td class="${cls(v.avgPct)}">${v.avgPct??'–'}%</td><td class="${cls(v.netSol)}">${sg(v.netSol)}</td><td>${f4(v.maxDDSol)}</td><td>${v.open}</td></tr>`).join('')}</table></div>
+    ${(sh.closed||[]).length?`<details style="margin-top:6px"><summary>Last paper closes</summary><div class="scroll"><table><tr><th>Closed (Madrid)</th><th>Variant</th><th>Coin</th><th>Held</th><th>P&L</th><th>Why</th></tr>${sh.closed.slice(0,25).map(x=>`<tr><td>${tm(x.closedAt)}</td><td>${esc(x.v)}</td><td><a href="https://pump.fun/coin/${esc(x.mint)}" target="_blank" rel="noopener">${esc(x.symbol||short(x.mint))}</a></td><td>${x.heldMin} min</td><td class="${cls(x.pnlPct)}">${x.pnlPct>0?'+':''}${x.pnlPct}%</td><td>${esc(x.why)}</td></tr>`).join('')}</table></div></details>`:''}`;}
   const a=s.paperArchive;if(a){$('paperBox').style.display='';$('paperArch').innerHTML=`${esc(a.label)}: ${a.closedTrades} closed trades, ${a.wins} wins, net ${sg(a.netSol)} SOL on a ${f4(a.paperStart)} SOL paper start. Archived ${tm(a.archivedAt)}. This was never real money and is not part of my live record.`;}
 }
 function renderVital(s){const v=s.vitals;if(!v)return;const stt=v.state||{};const vis=v.visual||{};const af=v.affect||{};const p=v.policy||{};

@@ -195,15 +195,19 @@ function dipMint(t0) {
     vm.trades.push({ at: t1 + 5e3, sol: 2, buy: false, user: 'WHALE', vs, vt, pvs: vs, pvt: vt }); assert.ok(/dumped/.test(M2.volbotExit(vm, t1 + 6e3, v.bots, t1, v.clip)), 'dump exit');
     vm.trades.pop();
     assert.ok(M2.armParams().volbot.shadow && !M2.armParams().volbot.enabled, 'volbot ships in shadow mode');
-    const tSave = t; t = t1; let sc = 0; const sa = mk(async () => { sc++; return cleanRep(); }); await sa.start(); const vmint = 'VolBot1111111111111111111111111111111pump'; mints.set(vmint, vm);
+    const tSave = t; t = t1; let sc = 0; process.env.AGENT_VARIANTS_FILE = '/nonexistent'; const sa = mk(async () => { sc++; return cleanRep(); }); delete process.env.AGENT_VARIANTS_FILE; await sa.start(); const vmint = 'VolBot1111111111111111111111111111111pump'; mints.set(vmint, vm);
     sa.onTrade({ mint: vmint, vs: vm.vs, vt: vm.vt }, vm); await settle();
-    assert.strictEqual(sa.st.positions.length, 0, 'shadow arm never opens a position'); assert.strictEqual(sa.st.shadow.open.length, 1, 'shadow paper signal logged');
+    assert.strictEqual(sa.st.positions.length, 0, 'shadow arm never opens a position'); assert.strictEqual(sa.st.shadow.open.length, 1, 'shadow paper signal logged'); assert.ok(sa.st.shadow.open[0].pending, 'fill waits for the latency');
+    t = t1 + 6e3; push(t, 0.5, true, 'BOT0'); sa.onTrade({ mint: vmint, vs: vm.vs, vt: vm.vt }, vm); assert.ok(!sa.st.shadow.open[0].pending && sa.st.shadow.open[0].cost > 0.02, 'filled on the first trade >= 5 s later');
     t = t1 + 120e3; sa._test.safeTick(); assert.strictEqual(sa.st.shadow.closed.length, 1, 'shadow closed by bot-stop'); assert.ok(/stopped/.test(sa.st.shadow.closed[0].why));
-    assert.strictEqual(sa.st.bandit.volbot.all.n, 0, 'shadow does not teach the bandit'); assert.ok(sa.status().shadow.arms.volbot.closed === 1);
+    assert.strictEqual(sa.st.bandit.volbot.all.n, 0, 'shadow does not teach the bandit'); const vv = sa.status().shadow.variants.find((x) => x.id === 'volbot'); assert.ok(vv && vv.closed === 1 && vv.maxDDSol >= 0);
     // stricter rug filters when it does trade
     const { volbotGate } = require('../agent'); const young = cleanRep({ creation: { time: new Date(t1 - 3 * 60e3).toISOString() } });
     assert.ok(volbotGate(young, t1).some((x) => /min old/.test(x)), 'young coin rejected'); assert.deepStrictEqual(volbotGate(cleanRep({ creation: { time: new Date(t1 - 30 * 60e3).toISOString() } }), t1), []);
     assert.ok(volbotGate(cleanRep({ creation: { time: new Date(t1 - 30 * 60e3).toISOString() }, dev: { wallet: 'C', hasSold: true, holdingPctSupply: 1 } }), t1).length, 'dev sell history rejected');
+    // the pre-registered variant file loads and every variant names a real arm
+    const vf = require('../agent-variants.json').variants; assert.ok(vf.length >= 10 && vf.every((x) => M2.ARMS[x.arm] && x.tp > 0 && x.sl > 0 && x.hold > 0 && x.size <= 0.02));
+    const sb = mk(); assert.strictEqual(sb.status().shadow.variants.length, vf.length);
     t = tSave; mints.delete(vmint); }
   console.log('agent tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -25,6 +25,12 @@ const DEV_WALLET = '9piBCsKoxYEs3MaE1eV6ZAEfGbyWDqEv23mRYo71X7ys'; // the dev's 
 // the only address principal can ever be returned to (the funder's wallet); AGENT_PAYOUT_ADDRESS must equal it
 const PAYOUT_PIN = '76FHD3T6iu1GMJNyUqShKxHepu85kD3tkg1s6QXq4HLm';
 const PUMP_PROGRAMS = ['6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P', 'pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ', 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA'];
+// forward-test variants (agent-variants.json or AGENT_VARIANTS_FILE): [{ id, arm, tp, sl, hold, size, filter }]; default = shadow arms
+function loadVariants(arms) {
+  let list = null; try { list = JSON.parse(fs.readFileSync(process.env.AGENT_VARIANTS_FILE || path.join(__dirname, 'agent-variants.json'), 'utf8')).variants; } catch {}
+  if (!Array.isArray(list)) list = Object.keys(arms).filter((k) => arms[k].shadow).map((k) => ({ id: k, arm: k }));
+  return list.filter((v) => v && v.id && arms[v.arm]).map((v) => ({ size: 0.02, tp: arms[v.arm].tp, sl: arms[v.arm].sl, hold: arms[v.arm].hold, ...v }));
+}
 function loadParams() { try { return JSON.parse(fs.readFileSync(process.env.AGENT_PARAMS_FILE || path.join(__dirname, 'agent-params.json'), 'utf8')); } catch { return null; } }
 const ACFG = () => ({
   mode: (process.env.AGENT_MODE || 'paper').toLowerCase() === 'live' ? 'live' : 'paper',
@@ -152,7 +158,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     bandit: Object.assign(M.newBandit(), { _prior: priors }), regime: M.newRegime(), peak: cfg.paperStartSol, streak: 0, hibernateDay: null,
     equityHist: [], weightsHist: [], weights: null, dayStats: M.newDay(cfg.paperStartSol), diaries: [], fundings: [], fundSeen: [], eurPerSol: null, eurAt: null,
     affect: VT.newAffect(t0), limbo: null, revivals: [], life: 1, vitalKey: null, privilege: null, liveBaseline: null, capitalIn: 0, payout: null, paperArchive: null, liveStartedAt: null, volAccPaid: false,
-    shadow: { since: new Date(t0).toISOString(), signals: 0, open: [], closed: [], byArm: {}, seen: {} },
+    shadow: { since: new Date(t0).toISOString(), signals: 0, open: [], closed: [], byVar: {}, seen: {} },
     lastThinkAt: 0, lastSitOutLogAt: 0, lastEqAt: 0, lastWAt: 0, lastRegAt: 0, lastFundAt: 0, lastEurAt: 0,
   };
   if (cfg.mode === 'live') {
@@ -203,24 +209,36 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
 
   // signals of arms allowed to trade (shadow arms only log paper signals, see shadowObserve)
   const liveSigs = (m, t) => M.armSignals(m, t, cfg.ride, arms).filter((s) => arms[s.arm]?.enabled && s.f.progress >= cfg.minProg && s.f.progress <= cfg.maxProg);
-  // ---- shadow arms: paper signals only, logged publicly with a paper outcome (same costs and exits as a real trade);
-  // never touch the treasury, never feed the bandit. No scanner call (it costs credits), so rug filters are NOT applied.
-  const SHADOW_SIZE = 0.02;
+  // ---- forward paper test ("shadow"): candidate strategy variants run side by side on the live stream, paper only.
+  // Each variant = an arm's entry signal (+ optional filters) and its own exits and size. Fill = the first trade of that
+  // coin >= FILL_DELAY_MS after the signal (like my scanner latency), at that trade's reserves, with my real direct-route
+  // costs. Never touches the treasury, never feeds the bandit, no scanner call (rug filters are NOT applied here).
+  const FILL_DELAY_MS = 5000;
+  const VARIANTS = loadVariants(arms);
+  const allArms = Object.fromEntries(M.ARM_KEYS.map((k) => [k, { ...arms[k], enabled: true }]));
+  const passF = (f, F = {}) => (F.minBuyers == null || f.uniqueBuyers >= F.minBuyers) && (F.maxChgPct == null || f.chgPct <= F.maxChgPct) && (F.minChgPct == null || f.chgPct >= F.minChgPct)
+    && (F.minProg == null || f.progress >= F.minProg) && (F.maxProg == null || f.progress <= F.maxProg) && (F.minNet == null || f.net >= F.minNet) && (F.maxBot == null || f.botTxShare <= F.maxBot) && (F.minVol == null || f.vol >= F.minVol);
   function shadowObserve(tr, m, t) {
-    const sh = st.shadow; if (!Object.values(arms).some((a) => a.shadow)) return;
-    for (const p of sh.open) if (p.mint === tr.mint) shadowExit(p, m, t, tr);
+    const sh = st.shadow; if (!VARIANTS.length) return;
+    for (const p of [...sh.open]) if (p.mint === tr.mint) { if (p.pending) { if (t >= p.fillAfter && !m.complete) shadowFill(p, tr, t); else if (m.complete) sh.open = sh.open.filter((x) => x !== p); } else shadowExit(p, m, t, tr); }
     if (m.complete || (m.agentShadow || 0) > t - 3000) return; m.agentShadow = t;
-    if (sh.open.some((p) => p.mint === tr.mint) || (sh.seen[tr.mint] || 0) > t || sh.open.length >= 10) return;
-    let s = null; const av = arms.volbot; // the only shadow-capable arm today; computed directly (cheaper than all arm tests)
-    if (av?.shadow) { const f60 = features(m, t, 60e3); if (f60 && f60.progress >= Math.max(cfg.minProg, av.prog[0]) && f60.progress <= Math.min(cfg.maxProg, av.prog[1])) { const vb = M.volbotState(m, t); if (vb?.entry) s = { arm: 'volbot', f: f60, vb, facts: vb.facts }; } }
-    if (!s) return;
-    const ap = arms[s.arm]; const bq = E.buyQuote(m.vs, m.vt, SHADOW_SIZE, { curveFeePct: cfg.curveFeePct, routeFeePct: routeFee(), netSol: cfg.txFeeSol });
+    if (sh.open.length >= 200) return;
+    const sigs = M.armSignals(m, t, cfg.ride, allArms, { shadow: true }); if (!sigs.length) return;
     const symbol = scalper?.symbol?.(tr.mint) || null;
-    const p = { id: crypto.randomUUID().slice(0, 8), arm: s.arm, mint: tr.mint, symbol, at: t, openedAt: iso(t), solIn: bq.solIn, tok: bq.tok, cost: r6(SHADOW_SIZE + cfg.txFeeSol), tp: ap.tp, sl: ap.sl, hold: ap.hold, bots: s.vb?.bots || [], clip: s.vb?.clip || 0, facts: s.facts, vs: m.vs, vt: m.vt };
-    sh.open.push(p); sh.signals++; sh.seen[tr.mint] = t + 30 * 60e3; dirty = true;
-    actLog('shadow', `Paper signal only (shadow arm, no money): ${armLabel(s.arm).toLowerCase()} on ${sym(symbol, tr.mint)}: ${s.facts}.`, { mint: tr.mint, symbol });
+    for (const v of VARIANTS) {
+      const s = sigs.find((x) => x.arm === v.arm); if (!s || !passF(s.f, v.filter)) continue;
+      const key = v.id + '|' + tr.mint; if ((sh.seen[key] || 0) > t || sh.open.some((p) => p.v === v.id && p.mint === tr.mint)) continue;
+      sh.seen[key] = t + 30 * 60e3; sh.signals++;
+      sh.open.push({ id: crypto.randomUUID().slice(0, 8), v: v.id, arm: v.arm, mint: tr.mint, symbol, sigAt: t, fillAfter: t + FILL_DELAY_MS, pending: true, size: v.size, tp: v.tp, sl: v.sl, hold: v.hold, bots: s.vb?.bots || [], clip: s.vb?.clip || 0, facts: s.facts });
+    }
+    dirty = true;
+  }
+  function shadowFill(p, tr, t) {
+    const bq = E.buyQuote(tr.vs, tr.vt, p.size, { curveFeePct: cfg.curveFeePct, routeFeePct: routeFee(), netSol: cfg.txFeeSol });
+    Object.assign(p, { pending: false, at: t, openedAt: iso(t), solIn: bq.solIn, tok: bq.tok, cost: r6(p.size + cfg.txFeeSol), vs: tr.vs, vt: tr.vt });
   }
   function shadowExit(p, m, t, tr = null) {
+    if (p.pending) { if (t - p.sigAt > 120e3) st.shadow.open = st.shadow.open.filter((x) => x !== p); return; } // no trade to fill on: dropped
     if (tr) { p.vs = tr.vs; p.vt = tr.vt; }
     const val = Math.max(0, sellValue(p.vs, p.vt, p, cfg)); const pct = ((val - p.cost) / p.cost) * 100; const age = (t - p.at) / 60e3;
     let why = null;
@@ -228,14 +246,20 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     else if (age >= p.hold) why = `time stop after ${r1(age)} min`; else if (p.arm === 'volbot') why = M.volbotExit(m, t, p.bots, p.at, p.clip);
     if (!why) return;
     const sh = st.shadow; sh.open = sh.open.filter((x) => x !== p); const pnl = r6(val - p.cost);
-    sh.closed.unshift({ arm: p.arm, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt, closedAt: iso(t), heldMin: r1(age), pnlSol: pnl, pnlPct: r1(pct), why, facts: p.facts }); sh.closed.length = Math.min(sh.closed.length, 60);
-    const a = sh.byArm[p.arm] || (sh.byArm[p.arm] = { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0 }); a.n++; if (pnl > 0) a.wins++; if (/^take profit/.test(why)) a.tpHits++; a.netSol = r6(a.netSol + pnl); a.sumPct = r1(a.sumPct + pct); dirty = true;
+    sh.closed.unshift({ v: p.v, arm: p.arm, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt, closedAt: iso(t), heldMin: r1(age), sizeSol: p.size, pnlSol: pnl, pnlPct: r1(pct), why }); sh.closed.length = Math.min(sh.closed.length, 300);
+    const a = sh.byVar[p.v] || (sh.byVar[p.v] = { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0, eq: 0, peak: 0, maxDD: 0, firstAt: p.openedAt });
+    a.n++; if (pnl > 0) a.wins++; if (/^take profit/.test(why)) a.tpHits++; a.netSol = r6(a.netSol + pnl); a.sumPct = r1(a.sumPct + pct);
+    a.eq = r6(a.eq + pnl); a.peak = Math.max(a.peak, a.eq); a.maxDD = r6(Math.max(a.maxDD, a.peak - a.eq)); a.lastAt = iso(t); dirty = true;
   }
   function shadowTick(t) { for (const p of [...st.shadow.open]) shadowExit(p, scalper?.mints?.get(p.mint), t); }
   function shadowStatus() {
-    const sh = st.shadow; const armsOut = Object.fromEntries(M.ARM_KEYS.filter((k) => arms[k].shadow || sh.byArm[k]).map((k) => { const a = sh.byArm[k] || { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0 };
-      return [k, { label: arms[k].label, shadow: !!arms[k].shadow, closed: a.n, wins: a.wins, winRate: a.n ? r1((a.wins / a.n) * 100) : null, tpHitRatePct: a.n ? r1((a.tpHits / a.n) * 100) : null, avgPct: a.n ? r1(a.sumPct / a.n) : null, netSolAt002: a.netSol }]; }));
-    return { note: `Shadow = paper signals only: a ${SHADOW_SIZE} SOL paper fill at the observed price with my real direct-route costs and the arm's exits. No money moves, my beliefs do not learn from it, and my scanner (rug filters) is not run on these coins.`, since: sh.since, signals: sh.signals, arms: armsOut, open: sh.open.map((p) => ({ arm: p.arm, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt, facts: p.facts })), closed: sh.closed.slice(0, 30) };
+    const sh = st.shadow;
+    const variants = VARIANTS.map((v) => { const a = sh.byVar[v.id] || { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0, maxDD: 0 };
+      return { id: v.id, arm: v.arm, label: armLabel(v.arm), exits: `+${v.tp}% / -${v.sl}% / ${v.hold} min`, sizeSol: v.size, filter: v.filter || null, note: v.note || null,
+        closed: a.n, wins: a.wins, winRate: a.n ? r1((a.wins / a.n) * 100) : null, tpHitRatePct: a.n ? r1((a.tpHits / a.n) * 100) : null, avgPct: a.n ? r1(a.sumPct / a.n) : null, netSol: a.netSol, maxDDSol: a.maxDD || 0,
+        firstAt: a.firstAt || null, lastAt: a.lastAt || null, open: sh.open.filter((p) => p.v === v.id && !p.pending).length }; });
+    return { note: `Forward paper test: candidate strategies run side by side on the live stream. Each signal gets a paper fill on the first trade ≥${FILL_DELAY_MS / 1000} s later, with my real direct-route costs and that variant's exits. No money moves, my beliefs do not learn from it, and my scanner (rug filters) is not run on these coins.`,
+      since: sh.since, signals: sh.signals, variants, open: sh.open.filter((p) => !p.pending).slice(0, 40).map((p) => ({ v: p.v, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt })), closed: sh.closed.slice(0, 40) };
   }
   const curMood = () => moodNow();
   const moodBase = () => M.mood({ ddPct: dd().ddPct, regime: st.regime.label, dayPnl: st.dayPnl, streak: st.streak, open: st.positions.length, halted: st.halted || !cfg.enabled, hibernating: st.hibernateDay === st.day });
@@ -761,6 +785,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       for (const k of ['bornAt', 'thoughts', 'peak', 'streak', 'hibernateDay', 'equityHist', 'weightsHist', 'weights', 'dayStats', 'diaries', 'fundings', 'fundSeen', 'eurPerSol', 'affect', 'limbo', 'revivals', 'life', 'vitalKey', 'privilege', 'liveBaseline', 'capitalIn', 'payout', 'paperArchive', 'liveStartedAt', 'volAccPaid', 'shadow']) if (j[k] != null) st[k] = j[k];
       if (j.bandit) for (const k of M.ARM_KEYS) if (j.bandit[k]) st.bandit[k] = { ...st.bandit[k], ...j.bandit[k] };
       if (j.regime) st.regime = { ...st.regime, ...j.regime };
+      if (!st.shadow.byVar) st.shadow = { since: new Date(now()).toISOString(), signals: 0, open: [], closed: [], byVar: {}, seen: {} }; // older shadow format: start the forward test fresh
     } else st.peak = Math.max(st.paperCash, st.paperStart);
     if (M.ARM_KEYS.every((k) => !st.bandit[k].all.n)) {
       // v1 trades taught nothing to a bandit (there was none): replay their closed outcomes so v2 starts from real history
