@@ -45,5 +45,19 @@ assert.ok(zero, 'exit reasons add up to trade count');
 // ride signal must NOT fire on a coin dominated by looping bots
 assert.strictEqual(S.rideOk({ uniqueBuyers: 30, buySol: 10, sellSol: 2, net: 8, loopShare: 0.6, sameSize: 0.1, botTxShare: 0.1, progress: 30 }), false);
 assert.strictEqual(S.rideOk({ uniqueBuyers: 30, buySol: 10, sellSol: 2, net: 8, loopShare: 0.1, sameSize: 0.1, botTxShare: 0.05, progress: 30 }), true);
+// 4) CPU guard: sustained event-loop lag updates lagMs and pauses the stream; clock jumps are ignored
+{
+  let c = 1_900_000_000_000; const sc2 = S.createScalper({ now: () => c, log: () => {} });
+  sc2._setConnected(true); sc2.lagCheck(); // sync lastTick
+  for (let i = 0; i < 5; i++) { c += 1000; sc2.lagCheck(); }
+  assert.strictEqual(sc2.status().stream.lagMs, 0, 'no lag on 1 s ticks');
+  c += 120e3; sc2.lagCheck(); // suspend / clock jump
+  assert.strictEqual(sc2.status().stream.lagMs, 0, 'clock jump not counted as lag');
+  for (let i = 0; i < 40; i++) { c += 3000; sc2.lagCheck(); } // 2 s lag every tick
+  const s2 = sc2.status().stream;
+  assert.ok(s2.lagMs > cfg.maxLagMs, 'lagMs tracks sustained lag: ' + s2.lagMs);
+  assert.ok(s2.pauses >= 1 && s2.pausedUntil && /event-loop lag/.test(s2.lastError), 'stream paused on lag: ' + JSON.stringify(s2));
+  sc2.stop();
+}
 console.log('scalp tests passed:', JSON.stringify({ signals: st.signals, entries: st.entries, closes: st.closes, tpVariant: { n: tp.n, net: Math.round(tp.net * 1e4) / 1e4, exits: tp.reasons } }));
 process.exit(0);

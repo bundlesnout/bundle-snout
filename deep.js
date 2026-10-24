@@ -182,7 +182,8 @@ function score(s) {
     socials: (so.twitter ? 2 : 0) + (so.telegram ? 1.5 : 0) + (so.website ? 1.5 : 0),
   };
   const fails = [];
-  if (t.uniqueBuyers < num('DEEP_MIN_BUYERS', 15)) fails.push(`solo ${t.uniqueBuyers} compradores únicos en las últimas ${t.sampled} operaciones`);
+  if (!t.sampled) fails.push('sin datos de operaciones (el RPC no devolvió ninguna tx de la curva); no se puede evaluar');
+  else if (t.uniqueBuyers < num('DEEP_MIN_BUYERS', 15)) fails.push(`solo ${t.uniqueBuyers} compradores únicos en las últimas ${t.sampled} operaciones`);
   if (t.washVolShare >= 0.5) fails.push(`wash trading: ${Math.round(t.washVolShare * 100)}% del volumen de wallets que compran y venden en bucle`);
   if (t.botTxShare >= 0.5) fails.push(`${Math.round(t.botTxShare * 100)}% de las operaciones de bots con ritmo de reloj`);
   if (Math.max(t.tinyShare, t.modeShare) >= 0.6) fails.push(`bot de volumen: ${Math.round(Math.max(t.tinyShare, t.modeShare) * 100)}% de compras diminutas o idénticas`);

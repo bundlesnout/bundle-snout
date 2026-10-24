@@ -15,6 +15,8 @@ assert.strictEqual(bot.hardFails.length, 7, 'all hard fails fire: ' + bot.hardFa
 assert.ok(bot.score < 50, 'bot coin scores low: ' + bot.score);
 const sellers = score({ trades: { ...goodTrades, sellSol10: 9, buySol10: 3, netSol10: -6 }, clusters: goodClusters, dev: goodDev, socials: {} });
 assert.ok(sellers.hardFails.some((f) => /presión vendedora/.test(f)));
+const empty = score({ trades: { ...goodTrades, sampled: 0, uniqueBuyers: 0, buys: 0 }, clusters: goodClusters, dev: goodDev, socials: {} });
+assert.ok(empty.hardFails.some((f) => /sin datos de operaciones/.test(f)) && !empty.hardFails.some((f) => /compradores únicos/.test(f)), 'no trade data is reported as missing data, not as 0 buyers: ' + empty.hardFails.join(' | '));
 console.log('score tests passed', s1.score, bot.score);
 
 // ---- picker

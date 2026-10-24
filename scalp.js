@@ -274,7 +274,8 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
   let lagSlow = 0, lastTick = now();
   function lagCheck() {
     const t = now(); const lag = Math.max(0, t - lastTick - 1000); lastTick = t;
-    if (lag > 30e3) { st.clockJumps = (st.clockJumps || 0) + 1; return; } // host was suspended / clock jump, not CPU starvation st.lagMs = Math.round(st.lagMs * 0.8 + lag * 0.2);
+    if (lag > 30e3) { st.clockJumps = (st.clockJumps || 0) + 1; return; } // host was suspended / clock jump, not CPU starvation
+    st.lagMs = Math.round(st.lagMs * 0.8 + lag * 0.2);
     if (st.lagMs > cfg.maxLagMs && st.ws.connected) { if (++lagSlow >= 10) { lagSlow = 0; st.ws.pauses++; st.ws.pausedUntil = new Date(t + 300e3).toISOString(); st.ws.lastError = `paused: event-loop lag ${st.lagMs}ms`; log('[scalp] ' + st.ws.lastError); try { ws.close(); } catch {} } }
     else lagSlow = 0;
   }
@@ -297,7 +298,8 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
     },
     stop() { stopped = true; timers.forEach(clearInterval); try { ws?.close(); } catch {} },
     solUsd: () => st.solUsd, symbol: (m) => symOf(m), streamInfo: () => ({ connected: st.ws.connected, lastAt: st.ws.lastAt, pausedUntil: st.ws.pausedUntil, mintsTracked: mints.size }),
-    save: () => save(true), resolveSymbols, onTrade, onMessage, tick, variants, logs,
+    save: () => save(true), resolveSymbols, onTrade, onMessage, tick, lagCheck, variants, logs,
+    _setConnected: (v) => { st.ws.connected = v; },
     status() {
       const prim = variants.get(cfg.primary), rp = variants.get(cfg.ridePrimary);
       const openNow = [...positions.values()].reduce((a, x) => a + x.length, 0);
