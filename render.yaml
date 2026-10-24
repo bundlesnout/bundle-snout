@@ -5,7 +5,7 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    buildCommand: npm ci --omit=dev
+    buildCommand: npm install --omit=dev --no-audit --no-fund
     startCommand: npm start
     healthCheckPath: /healthz
     autoDeploy: true
