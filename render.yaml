@@ -1,7 +1,7 @@
 # Render Blueprint — free web service (UI + API + Telegram webhook in one process)
 services:
   - type: web
-    name: bundle-sniffer
+    name: bundle-snout
     runtime: node
     plan: free
     region: frankfurt
