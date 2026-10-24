@@ -83,6 +83,11 @@ app.get('/scalp', (_, res) => res.sendFile(path.join(__dirname, 'public', 'scalp
 app.get('/api/scalp/status', (_, res) => { res.set('cache-control', 'no-store'); res.json(scalper ? scalper.status() : { disabled: true }); });
 app.get('/api/scalp/trades', (_, res) => { res.set('cache-control', 'no-store'); res.json(scalper ? scalper.trades() : { disabled: true }); });
 app.get('/api/scalp/variant/:key', (req, res) => { const v = scalper?.variant(req.params.key); v ? res.json(v) : res.sendStatus(404); });
+// ---- Fee Rips tracker (/rips): creator fees -> Collector Crypt packs, read on-chain from the public RPC (0 Helius credits)
+let rips = null;
+if (process.env.RIPS_ENABLED !== '0') { rips = require('./rips').createRips(); rips.start(); }
+app.get('/rips', (_, res) => res.sendFile(path.join(__dirname, 'public', 'rips.html')));
+app.get('/api/rips/status', (_, res) => { res.set('cache-control', 'no-store'); res.json(rips ? rips.status() : { disabled: true }); });
 for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} process.exit(0); });
 app.get('/api/radar/status', (_, res) => {
   res.set('cache-control', 'no-store');

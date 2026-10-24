@@ -11,7 +11,7 @@
     "webhook:delete": "node set_webhook.js delete",
     "radar:dryrun": "node scripts/radar-dryrun.js",
     "scalp:dryrun": "node scripts/scalp-dryrun.js",
-    "test": "node tests/clean.test.js && node tests/telegram.test.js && node tests/picks.test.js && node tests/scalp.test.js"
+    "test": "node tests/clean.test.js && node tests/telegram.test.js && node tests/picks.test.js && node tests/scalp.test.js && node tests/rips.test.js"
   },
   "keywords": [],
   "author": "",
