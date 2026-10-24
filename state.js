@@ -8,7 +8,7 @@ const SERVICE = process.env.RENDER_SERVICE_ID || process.env.STATE_RENDER_SERVIC
 const BACKEND = (process.env.STATE_BACKEND || (API_KEY && SERVICE ? 'render' : 'memory')).toLowerCase();
 
 function createStore() {
-  let data = { v: 1, subs: [], alerted: [] };
+  let data = { v: 1, subs: [], alerted: [], picks: [] };
   let timer = null; let lastSaveAt = null; let lastSaveError = null; let loadedFrom = 'empty';
   const url = `https://api.render.com/v1/services/${SERVICE}/env-vars/${KEY}`;
   const headers = { authorization: `Bearer ${API_KEY}`, 'content-type': 'application/json', accept: 'application/json' };
@@ -23,7 +23,7 @@ function createStore() {
       } catch (e) { lastSaveError = 'load ' + e.message; }
     }
     if (raw == null && process.env[KEY]) { raw = process.env[KEY]; loadedFrom = 'process.env'; }
-    if (raw) { try { const j = JSON.parse(raw); data = { v: 1, subs: j.subs || [], alerted: j.alerted || [] }; } catch { loadedFrom = 'corrupt->empty'; } }
+    if (raw) { try { const j = JSON.parse(raw); data = { v: 1, subs: j.subs || [], alerted: j.alerted || [], picks: j.picks || [] }; } catch { loadedFrom = 'corrupt->empty'; } }
     return data;
   }
   async function flush() {
@@ -39,7 +39,7 @@ function createStore() {
   return {
     load, save, flush,
     get data() { return data; },
-    status: () => ({ backend: BACKEND, key: KEY, loadedFrom, lastSaveAt, lastSaveError, subscribers: data.subs.length, alertedRemembered: data.alerted.length }),
+    status: () => ({ backend: BACKEND, key: KEY, loadedFrom, lastSaveAt, lastSaveError, subscribers: data.subs.length, alertedRemembered: data.alerted.length, picks: (data.picks || []).length, bytes: JSON.stringify(data).length }),
   };
 }
 module.exports = { createStore };

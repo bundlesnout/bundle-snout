@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bond Radar — historial de picks</title>
+<style>
+:root{color-scheme:dark}body{margin:0;font:15px/1.5 system-ui,sans-serif;background:#0c0f14;color:#e6e9ef}
+main{max-width:880px;margin:0 auto;padding:24px 16px}h1{margin:0 0 4px;font-size:26px}.sub{color:#9aa3b2;margin:0 0 18px}
+.banner{background:#2a2110;border:1px solid #6b5212;padding:10px 12px;border-radius:8px;margin-bottom:16px}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}.stat{background:#151a22;border:1px solid #242b37;border-radius:8px;padding:8px 12px}.stat b{display:block;font-size:20px}
+.card{background:#151a22;border:1px solid #242b37;border-radius:10px;padding:14px 16px;margin-bottom:14px}.card.loss{border-color:#5a2630}.card.win{border-color:#1f5a3a}
+.row{display:flex;flex-wrap:wrap;gap:14px;align-items:baseline}.sym{font-size:20px;font-weight:700}.mint{font:12px ui-monospace,monospace;color:#9aa3b2;word-break:break-all}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;background:#242b37}.g{background:#123d29;color:#6ee7a8}.r{background:#4a1a22;color:#ff8f9f}.y{background:#3d3412;color:#f5d36b}
+.nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0}.nums div{background:#0f131a;border-radius:6px;padding:6px 10px}.nums small{color:#9aa3b2;display:block}
+pre{white-space:pre-wrap;font:13px/1.5 system-ui,sans-serif;background:#0f131a;border-radius:6px;padding:10px;margin:8px 0 0;color:#cdd3de}
+a{color:#7cb7ff}table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:5px 6px;border-bottom:1px solid #242b37;vertical-align:top}.muted{color:#9aa3b2}
+</style></head><body><main>
+<h1>🎯 Bond Radar</h1>
+<p class="sub">Como mucho una moneda de pump.fun cada ~40 min, solo si pasa todos los filtros on-chain (bundle, bots de volumen, wash trading, wallets agrupadas, dev). Aquí están <b>todas</b> las elegidas, también las que perdieron.</p>
+<div id="banner"></div><div class="stats" id="stats"></div><div id="picks"><p class="muted">Cargando…</p></div>
+<h2>Últimas candidatas evaluadas</h2><p class="muted">Lo que el radar miró y por qué lo descartó (ventana de ~60 min, se borra al reiniciar).</p>
+<table id="cands"><tr><td class="muted">—</td></tr></table>
+<p class="muted" style="margin-top:24px">Señales automáticas sobre datos públicos de Solana y DexScreener. No es consejo financiero. La mayoría de memecoins pierden valor. <a href="/api/radar/picks">JSON</a></p>
+</main><script>
+const $=(id)=>document.getElementById(id), esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const usd=(x)=>x==null?'?':'$'+Math.round(x).toLocaleString('en-US'), mult=(x)=>x==null?'?':(x>=10?x.toFixed(0):x.toFixed(2))+'x';
+const t=(iso)=>iso?new Date(iso).toLocaleString('es-ES',{timeZone:'Europe/Madrid',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' (Madrid)':'—';
+async function load(){
+  const j=await (await fetch('/api/radar/picks',{cache:'no-store'})).json();
+  $('banner').innerHTML=j.mode!=='live'?'<div class="banner">Modo <b>demo</b>: los picks se registran y se siguen aquí, pero no se envían a nadie por Telegram.</div>':'';
+  const s=j.summary;$('stats').innerHTML=[['Picks',s.picks],['≥2x',s.hit2x],['≥5x',s.hit5x],['≥10x',s.hit10x],['Graduadas',s.migrated],['Rug (−80%)',s.rugged],['Bajo entrada ahora',s.belowEntryNow]].map(([k,v])=>`<div class="stat"><b>${v}</b>${k}</div>`).join('');
+  $('picks').innerHTML=j.picks.length?j.picks.map((p)=>{const win=p.peakMultiple>=2,loss=p.rugAt||p.curMultiple<1;
+    const tags=[p.milestones?.x10&&'<span class="tag g">10x</span>',p.milestones?.x5&&!p.milestones?.x10&&'<span class="tag g">5x</span>',p.milestones?.x2&&!p.milestones?.x5&&'<span class="tag g">2x</span>',p.migrated&&'<span class="tag y">graduada</span>',p.rugAt&&'<span class="tag r">rug −80%</span>',p.curMultiple<1&&!p.rugAt&&'<span class="tag r">en pérdidas</span>'].filter(Boolean).join(' ');
+    return `<div class="card ${loss?'loss':win?'win':''}"><div class="row"><span class="sym">$${esc(p.symbol)}</span><span class="tag">${p.score}/100</span>${tags}<span class="muted">${t(p.at)}</span></div>
+    <div class="mint">${esc(p.mint)} · <a href="https://dexscreener.com/solana/${esc(p.mint)}" target="_blank" rel="noopener">DexScreener</a> · <a href="https://pump.fun/coin/${esc(p.mint)}" target="_blank" rel="noopener">pump.fun</a></div>
+    <div class="nums"><div><small>MC entrada</small>${usd(p.entryMcUsd)}</div><div><small>Máximo</small>${usd(p.peakMcUsd)} · ${mult(p.peakMultiple)}<br><span class="muted">${t(p.peakAt)}</span></div><div><small>Ahora</small>${usd(p.curMcUsd)} · ${mult(p.curMultiple)}<br><span class="muted">${t(p.curAt)}</span></div><div><small>Curva al elegir</small>${p.progress}%</div></div>
+    <details><summary>Por qué la eligió</summary><pre>${esc(p.rationale)}</pre></details></div>`}).join(''):'<p class="muted">Todavía ninguna moneda ha superado el listón. Eso es normal: el filtro es muy exigente.</p>';
+  const w=(j.picker?.window||[]).slice().reverse();
+  $('cands').innerHTML=w.length?'<tr><th>Hora</th><th>Moneda</th><th>Fase</th><th>Nota</th><th>Motivo</th></tr>'+w.map((c)=>`<tr><td>${t(c.at)}</td><td>$${esc(c.symbol)}</td><td>${c.stage==='deep'?'análisis profundo':'filtro básico'}</td><td>${c.score??'—'}</td><td>${esc((c.why||[]).join('; '))}</td></tr>`).join(''):'<tr><td class="muted">Sin candidatas en la ventana actual.</td></tr>';
+}
+load().catch((e)=>$('picks').innerHTML='<p>Error: '+esc(e.message)+'</p>');setInterval(load,60000);
+</script></body></html>

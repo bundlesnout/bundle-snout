@@ -32,14 +32,19 @@ const { createRadar } = require('./radar');
 const { createStore } = require('./state');
 const store = createStore();
 let bot = null; let radar = null;
+const { createPicker } = require('./picks');
+let picker = null;
 if (process.env.RADAR_ENABLED !== '0') {
+  // RADAR_MODE=demo (default): picks are only recorded + shown on /radar. RADAR_MODE=live: picks are also sent to /radar subscribers.
+  picker = createPicker({ store, onPick: async (pick) => {
+    if (pick.mode !== 'live') return console.log(`[radar] demo mode: pick ${pick.symbol} recorded, not broadcast`);
+    const n = bot ? await bot.broadcastPick(pick) : 0;
+    console.log(`[radar] PICK ${pick.symbol} ${pick.mint} -> ${n} subscriber(s)`);
+  } });
   radar = createRadar({
+    picker,
     isAlerted: (m) => store.data.alerted.includes(m),
     markAlerted: (m) => { store.data.alerted.push(m); if (store.data.alerted.length > 200) store.data.alerted.splice(0, store.data.alerted.length - 200); store.save(); },
-    onAlert: async (rep) => {
-      const n = bot ? await bot.broadcast(rep) : 0;
-      console.log(`[radar] ALERT ${rep.symbol} ${rep.mint} -> ${n} subscriber(s)`);
-    },
   });
   store.load().then(() => { console.log('[state]', JSON.stringify(store.status())); radar.start(); });
 }
@@ -54,6 +59,16 @@ if (process.env.KEEPALIVE !== '0' && PUBLIC_URL && /^https:/.test(PUBLIC_URL)) {
     catch (e) { keepalive.fails++; keepalive.lastStatus = e.message; }
   }, keepalive.intervalMin * 60e3).unref();
 }
+
+app.get('/api/radar/picks', (_, res) => {
+  res.set('cache-control', 'no-store');
+  const picks = [...(store.data.picks || [])].reverse();
+  const done = picks.filter((p) => p.entryMcUsd);
+  const summary = { picks: picks.length, hit2x: done.filter((p) => p.milestones?.x2).length, hit5x: done.filter((p) => p.milestones?.x5).length, hit10x: done.filter((p) => p.milestones?.x10).length,
+    migrated: done.filter((p) => p.migrated).length, rugged: done.filter((p) => p.rugAt).length, belowEntryNow: done.filter((p) => p.curMultiple < 1).length };
+  res.json({ mode: (process.env.RADAR_MODE || 'demo').toLowerCase(), summary, picks, picker: picker ? picker.status() : null, now: new Date().toISOString() });
+});
+app.get('/radar', (_, res) => res.sendFile(path.join(__dirname, 'public', 'radar.html')));
 
 app.get('/api/radar/status', (_, res) => {
   res.set('cache-control', 'no-store');

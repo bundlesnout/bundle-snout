@@ -16,7 +16,7 @@ function createBot(token, { radar = null, store = null } = {}) {
     return j.result;
   }
   const send = (chat_id, text, extra = {}) => tg('sendMessage', { chat_id, text, parse_mode: 'HTML', disable_web_page_preview: true, ...extra });
-  const HELP = '🐽 <b>Bundle Sniffer</b>\n\nEnvía <code>/sniff &lt;mint&gt;</code> o pega el mint de un token de pump.fun.\nSend <code>/sniff &lt;mint&gt;</code> or just paste a pump.fun mint.\n\n📡 <b>Bond Radar</b>: <code>/radar on</code> · <code>/radar off</code> · <code>/radar status</code>\nAvisos de monedas que pasan del 70% de la curva y salen limpias. / Alerts for coins past 70% of the curve that scan clean.\n\nSolo lectura: nunca pido claves ni toco fondos. / Read-only: never asks for keys or touches funds.\n\n' + footer();
+  const HELP = '🐽 <b>Bundle Sniffer</b>\n\nEnvía <code>/sniff &lt;mint&gt;</code> o pega el mint de un token de pump.fun.\nSend <code>/sniff &lt;mint&gt;</code> or just paste a pump.fun mint.\n\n📡 <b>Bond Radar</b>: <code>/radar on</code> · <code>/radar off</code> · <code>/radar status</code>\nComo mucho 1 pick cada ~40 min: la moneda que pasa todos los filtros (bundle, bots, wash, clusters, dev) con mejor nota, y por qué. Historial público: /radar en la web. / At most one pick per ~40 min, with the reasons.\n\nSolo lectura: nunca pido claves ni toco fondos. / Read-only: never asks for keys or touches funds.\n\n' + footer();
 
   async function handleRadar(msg, arg) {
     const chat = msg.chat.id;
@@ -26,7 +26,7 @@ function createBot(token, { radar = null, store = null } = {}) {
       if (msg.chat.type !== 'private' && !(await isAdmin(chat, msg.from?.id))) return send(chat, 'Solo un admin del grupo puede activar el radar. / Only a group admin can enable the radar.');
       if (!on) { subs.push(chat); store.save(); }
       const cfg = radar.status().config;
-      return send(chat, `📡 <b>Bond Radar ON</b>\nTe aviso cuando una moneda pase del <b>${cfg.thresholdPct}%</b> de la curva y salga limpia: sin bundle, dev sin vender, top 10 &lt; ${cfg.maxTop10Pct}%.\nI\'ll alert you when a coin passes ${cfg.thresholdPct}% of the curve and scans clean.\n\n<code>/radar off</code> para parar / to stop.\n\n${footer()}`);
+      return send(chat, `📡 <b>Bond Radar ON</b>\nRecibirás como mucho 1 pick cada ~40 min: la moneda (&gt;${cfg.thresholdPct}% de curva) que pasa bundle, bots, wash, clusters y dev con la mejor nota, explicando por qué.${(process.env.RADAR_MODE || 'demo') !== 'live' ? '\n⚠️ Modo demo: ahora mismo los picks solo se registran en la web (/radar), no se envían.' : ''}\nAt most one pick per ~40 min, with the reasons.\n\n<code>/radar off</code> para parar / to stop.\n\n${footer()}`);
     }
     if (arg === 'off') {
       if (msg.chat.type !== 'private' && !(await isAdmin(chat, msg.from?.id))) return send(chat, 'Solo un admin del grupo puede desactivar el radar. / Only a group admin can disable the radar.');
@@ -52,6 +52,21 @@ function createBot(token, { radar = null, store = null } = {}) {
   async function broadcast(report) {
     if (!store) return 0;
     const text = formatAlert(report); let ok = 0;
+    for (const chat of [...store.data.subs]) {
+      try { await send(chat, text); ok++; }
+      catch (e) {
+        if (/blocked|kicked|not found|deactivated|have no rights|chat not found/i.test(e.message)) { store.data.subs.splice(store.data.subs.indexOf(chat), 1); store.save(); }
+        console.error('[radar] send to', chat, e.message);
+      }
+      await sleep(50);
+    }
+    return ok;
+  }
+
+  async function broadcastPick(pick) {
+    if (!store) return 0;
+    const text = `🎯 <b>Bond Radar — pick</b>\n<code>${esc(pick.mint)}</code>\n${esc(pick.rationale)}\nMC entrada: $${Math.round(pick.entryMcUsd || 0).toLocaleString('en-US')}${footer()}`;
+    let ok = 0;
     for (const chat of [...store.data.subs]) {
       try { await send(chat, text); ok++; }
       catch (e) {
@@ -95,7 +110,7 @@ function createBot(token, { radar = null, store = null } = {}) {
       handleMessage(u.message).catch((e) => console.error('handle', e.message));
     }
   }
-  return { tg, handleUpdate, broadcast };
+  return { tg, handleUpdate, broadcast, broadcastPick };
 }
 // Telegram only accepts [A-Za-z0-9_-]{1,256}; Render's generateValue is base64, so normalise to hex if needed.
 function webhookSecret(raw) {

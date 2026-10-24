@@ -4,7 +4,8 @@
 //  * PumpPortal data websocket (no key): live new-token + migration events (liveness/stats; trade streams need a paid key).
 // Helius is only used by the existing analyzer, once per mint that crosses the threshold, under a daily budget.
 const WebSocket = require('ws');
-const { analyze, rpc } = require('./analyzer');
+const { analyze, rpc, creditStats, setCreditTag } = require('./analyzer');
+const { deepAnalyze } = require('./deep');
 
 const num = (k, d) => (process.env[k] != null && process.env[k] !== '' ? Number(process.env[k]) : d);
 const CFG = () => ({
@@ -12,7 +13,9 @@ const CFG = () => ({
   pollMs: num('RADAR_POLL_MS', 15000),
   pageLimit: num('RADAR_PAGE_LIMIT', 50),
   pages: num('RADAR_PAGES', 2),
-  maxScansPerDay: num('RADAR_MAX_SCANS_PER_DAY', 300),
+  maxScansPerDay: num('RADAR_MAX_SCANS_PER_DAY', 250),
+  maxDeepPerDay: num('RADAR_MAX_DEEP_PER_DAY', 40),
+  dailyCreditCap: num('RADAR_DAILY_CREDIT_CAP', 28000), // Helius free = 1M/month -> ~33k/day; leave headroom for /api/analyze + Telegram scans
   maxPct: num('RADAR_MAX_PCT', 97), // skip coins that are basically graduating already
   // clean thresholds
   maxTop10Pct: num('RADAR_MAX_TOP10_PCT', 30),
@@ -64,7 +67,7 @@ function progressFromApi(c, initReal = INITIAL_REAL) {
   return Math.max(0, Math.round(((initReal - rt) / initReal) * 1000) / 10);
 }
 
-function createRadar({ onAlert, isAlerted = () => false, markAlerted = () => {}, log = console.log } = {}) {
+function createRadar({ onAlert, picker = null, isAlerted = () => false, markAlerted = () => {}, log = console.log } = {}) {
   const cfg = CFG();
   const tracked = new Map();   // mint -> { name, symbol, progress, mcUsd, lastTradeAt, firstSeenAt, lastSeenAt }
   const decided = new Map();   // mint -> { at, clean, reasons, progress }
@@ -73,7 +76,7 @@ function createRadar({ onAlert, isAlerted = () => false, markAlerted = () => {},
     startedAt: new Date().toISOString(), running: false,
     poll: { count: 0, ok: 0, fail: 0, lastAt: null, lastOkAt: null, lastError: null, lastCoins: 0 },
     ws: { connected: false, connects: 0, lastEventAt: null, newTokens: 0, migrations: 0, lastError: null, lastNewMint: null },
-    scans: { today: 0, day: new Date().toISOString().slice(0, 10), total: 0, errors: 0, clean: 0, dirty: 0, skippedBudget: 0 },
+    scans: { today: 0, day: new Date().toISOString().slice(0, 10), total: 0, errors: 0, clean: 0, dirty: 0, skippedBudget: 0, deepToday: 0, deepTotal: 0, deepErrors: 0, deepSkippedBudget: 0, skippedCreditCap: 0 },
     alerts: { sent: 0, lastAt: null, lastMint: null },
     recent: [],
   };
@@ -111,6 +114,7 @@ function createRadar({ onAlert, isAlerted = () => false, markAlerted = () => {},
       const due = [...chain.values()].filter((c) => now - c.lastCheckAt >= dueMs(c, now)).sort((a, b) => b.progress - a.progress).slice(0, 1000);
       for (let i = 0; i < due.length; i += 100) {
         const batch = due.slice(i, i + 100);
+        setCreditTag('tracker');
         const res = await rpc('getMultipleAccounts', [batch.map((c) => c.curve), { encoding: 'base64', dataSlice: { offset: 0, length: 49 } }]);
         st.chain.batches++; st.chain.accountsRead += batch.length; st.chain.lastAt = new Date().toISOString();
         res.value.forEach((acc, k) => {
@@ -177,13 +181,15 @@ function createRadar({ onAlert, isAlerted = () => false, markAlerted = () => {},
       while (queue.length && !stopped) {
         const mint = queue.shift();
         const day = new Date().toISOString().slice(0, 10);
-        if (st.scans.day !== day) { st.scans.day = day; st.scans.today = 0; for (const [m, v] of decided) if (v.budget) decided.delete(m); }
+        if (st.scans.day !== day) { st.scans.day = day; st.scans.today = 0; st.scans.deepToday = 0; for (const [m, v] of decided) if (v.budget) decided.delete(m); }
         if (st.scans.today >= cfg.maxScansPerDay) { st.scans.skippedBudget++; decided.set(mint, { at: Date.now(), clean: false, reasons: ['daily scan budget reached'], budget: true }); queued.delete(mint); continue; }
+        if (creditStats().today >= cfg.dailyCreditCap) { st.scans.skippedCreditCap++; decided.set(mint, { at: Date.now(), clean: false, reasons: ['daily Helius credit cap reached'], budget: true }); queued.delete(mint); continue; }
         if ((tracked.get(mint)?.progress ?? 0) > cfg.maxPct) { decided.set(mint, { at: Date.now(), clean: false, reasons: ['too close to graduation to be useful'] }); queued.delete(mint); continue; }
         st.scans.today++; st.scans.total++;
         const t = tracked.get(mint) || { mint };
         let rep;
-        try { rep = await analyze(mint).finally(() => queued.delete(mint)); }
+        setCreditTag('scan');
+        try { rep = await analyze(mint).finally(() => { queued.delete(mint); setCreditTag('other'); }); }
         catch (e) {
           st.scans.errors++; log(`[radar] analyze ${mint} failed: ${e.message}`);
           const prev = decided.get(mint);
@@ -198,12 +204,21 @@ function createRadar({ onAlert, isAlerted = () => false, markAlerted = () => {},
         log(`[radar] ${res.clean ? 'CLEAN ✅' : 'dirty ❌'} ${rep.symbol} ${mint} curve ${rep.curve?.progressPct}% top10 ${rep.holders?.top10Pct}%${res.clean ? '' : ' — ' + res.reasons.join('; ')}`);
         if (res.clean) {
           st.scans.clean++;
-          if (!isAlerted(mint)) {
-            markAlerted(mint);
-            st.alerts.sent++; st.alerts.lastAt = new Date().toISOString(); st.alerts.lastMint = mint;
-            try { await onAlert?.(rep, t); } catch (e) { log('[radar] onAlert error:', e.message); }
+          markAlerted(mint); // remembered across restarts so we don't re-scan it
+          let deep = null;
+          if (st.scans.deepToday >= cfg.maxDeepPerDay) { st.scans.deepSkippedBudget++; rec.deep = 'skipped: daily deep budget'; }
+          else {
+            st.scans.deepToday++; st.scans.deepTotal++;
+            try { deep = await deepAnalyze(rep); }
+            catch (e) { st.scans.deepErrors++; rec.deep = 'error: ' + e.message; log(`[radar] deep ${mint} failed: ${e.message}`); }
           }
-        } else st.scans.dirty++;
+          if (deep) {
+            Object.assign(rec, { score: deep.score, hardFails: deep.hardFails, deepMs: deep.ms, uniqueBuyers: deep.trades.uniqueBuyers, washVolShare: deep.trades.washVolShare, botTxShare: deep.trades.botTxShare, cluster: deep.clusters.largestCluster, freshShare: deep.clusters.freshShare, devPrior: deep.dev.priorLaunches });
+            log(`[radar]   deep ${rep.symbol}: score ${deep.score}/100${deep.hardFails.length ? ' HARD FAIL: ' + deep.hardFails.join('; ') : ''}`);
+            picker?.addCandidate({ mint, symbol: rep.symbol, stage: 'deep', score: deep.score, parts: deep.parts, hardFails: deep.hardFails, rep, deep });
+            try { await onAlert?.(rep, t, deep); } catch (e) { log('[radar] onAlert error:', e.message); }
+          }
+        } else { st.scans.dirty++; picker?.addCandidate({ mint, symbol: rep.symbol, stage: 'basic', reasons: res.reasons }); }
       }
     } finally { working = false; }
   }
@@ -236,7 +251,7 @@ function createRadar({ onAlert, isAlerted = () => false, markAlerted = () => {},
   return {
     start() {
       if (st.running) return; st.running = true; stopped = false;
-      log(`[radar] started: threshold ${cfg.thresholdPct}%, poll ${cfg.pollMs}ms, ${cfg.pages}x${cfg.pageLimit} coins, budget ${cfg.maxScansPerDay} scans/day`);
+      log(`[radar] started: threshold ${cfg.thresholdPct}%, poll ${cfg.pollMs}ms, ${cfg.pages}x${cfg.pageLimit} coins, budget ${cfg.maxScansPerDay} scans + ${cfg.maxDeepPerDay} deep/day, credit cap ${cfg.dailyCreditCap}/day`);
       poll(); pollTimer = setInterval(poll, cfg.pollMs); if (useChain) chainTimer = setInterval(chainTick, cfg.chainTickMs); connectWs();
     },
     stop() { stopped = true; st.running = false; clearInterval(pollTimer); clearInterval(chainTimer); try { ws?.close(); } catch {} },
@@ -248,7 +263,7 @@ function createRadar({ onAlert, isAlerted = () => false, markAlerted = () => {},
         aboveThreshold: list.filter((t) => t.progress >= cfg.thresholdPct && !t.complete).length,
         lastEventAt: lastEvt, sources: { api: useApi, chain: useChain }, poll: st.poll, chain: { ...st.chain, tracked: chain.size }, ws: st.ws, scans: st.scans, alerts: st.alerts, queue: queue.length,
         hottest: list.filter((t) => !t.complete && t.progress != null).sort((a, b) => b.progress - a.progress).slice(0, 5).map((t) => ({ mint: t.mint, symbol: t.symbol, progress: t.progress, decided: decided.has(t.mint) ? (decided.get(t.mint).clean ? 'clean' : 'dirty') : null })),
-        recentDecisions: st.recent.slice(0, 10),
+        recentDecisions: st.recent.slice(0, 10), credits: creditStats(), picks: picker ? picker.status() : null,
       };
     },
   };

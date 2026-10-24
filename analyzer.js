@@ -21,6 +21,11 @@ const DEFAULT_INITIAL_REAL_TOKENS = 793_100_000n * 10n ** 6n;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let rpcCalls = 0;
+// Helius credit accounting (1 per call, 10 for getProgramAccounts), per UTC day.
+const credits = { day: new Date().toISOString().slice(0, 10), today: 0, total: 0, byTag: {} };
+let creditTag = 'other';
+function setCreditTag(t) { creditTag = t; }
+function creditStats() { const d = new Date().toISOString().slice(0, 10); if (d !== credits.day) { credits.day = d; credits.today = 0; credits.byTag = {}; } return credits; }
 
 // --- RPC with rate-limit handling (429 / -32429 / network errors -> exponential backoff)
 let lastCall = 0;
@@ -32,6 +37,7 @@ async function rpc(method, params, tries = 7) {
     if (wait > 0) await sleep(wait);
     lastCall = Date.now();
     rpcCalls++;
+    { const c = creditStats(); const n = method === 'getProgramAccounts' ? 10 : 1; c.today += n; c.total += n; c.byTag[creditTag] = (c.byTag[creditTag] || 0) + n; }
     try {
       const res = await fetch(RPC_URL, {
         method: 'POST',
@@ -97,7 +103,7 @@ async function getGlobalInitialReal() {
 async function getMetadata(mint, mintParsed) {
   // Token-2022 metadata extension
   const ext = mintParsed?.extensions?.find((e) => e.extension === 'tokenMetadata');
-  if (ext) return { name: ext.state.name, symbol: ext.state.symbol };
+  if (ext) return { name: ext.state.name, symbol: ext.state.symbol, uri: ext.state.uri };
   try {
     const [pda] = PublicKey.findProgramAddressSync([Buffer.from('metadata'), METAPLEX.toBuffer(), new PublicKey(mint).toBuffer()], METAPLEX);
     const r = await rpc('getAccountInfo', [pda.toBase58(), { encoding: 'base64' }]);
@@ -105,7 +111,7 @@ async function getMetadata(mint, mintParsed) {
     const d = Buffer.from(r.value.data[0], 'base64');
     let o = 1 + 32 + 32;
     const rd = () => { const l = d.readUInt32LE(o); o += 4; const s = d.subarray(o, o + l).toString('utf8').replace(/\0/g, '').trim(); o += l; return s; };
-    return { name: rd(), symbol: rd() };
+    return { name: rd(), symbol: rd(), uri: rd() };
   } catch { return {}; }
 }
 
@@ -177,7 +183,7 @@ async function analyze(mintStr, opts = {}) {
   ]);
 
   const report = {
-    mint, name: meta.name || dex?.name || null, symbol: meta.symbol || dex?.symbol || null,
+    mint, name: meta.name || dex?.name || null, symbol: meta.symbol || dex?.symbol || null, uri: meta.uri || null,
     tokenProgram: tokenProgram === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' ? 'Token-2022' : 'SPL Token',
     decimals, supply: fmt(supplyRaw, decimals), isPumpFun: false, bondingCurve, dex,
   };
@@ -410,7 +416,7 @@ function scoreRisk(r) {
   return { level, levelEn, score, flags, disclaimer: { es: 'Señales automáticas on-chain, no son consejo financiero. Un riesgo BAJO no garantiza nada.', en: 'Automated on-chain signals, not financial advice. LOW risk guarantees nothing.' } };
 }
 
-module.exports = { analyze, rpc };
+module.exports = { analyze, rpc, getTx, ownerDeltas, getDexScreener, mapLimit, creditStats, setCreditTag, PUMP_PROGRAM_ID: PUMP_PROGRAM.toBase58() };
 
 if (require.main === module) {
   analyze(process.argv[2]).then((r) => console.log(JSON.stringify(r, null, 2))).catch((e) => { console.error('ERROR', e.message); process.exit(1); });
