@@ -114,5 +114,8 @@ function dipMint(t0) {
   const fz = mk(analyze, { rpc }); await fz._test.scanFunding(); delete process.env.AGENT_PUBLIC_KEY;
   assert.strictEqual(fz.st.fundings.length, 2); assert.ok(fz.st.fundings.some((f) => /dev wallet/.test(f.source) && f.sol === 1)); assert.ok(fz.st.fundings.some((f) => /creator fees/.test(f.source) && f.sol === 0.05));
   await fz._test.scanFunding(); assert.strictEqual(fz.st.fundings.length, 2, 'no double counting');
+  // 14) v1 state migrates: its closed trades seed the bandit
+  const v1 = JSON.stringify({ v: 1, mode: 'paper', paperCash: 0.09, paperStart: 0.1, trades: [{ side: 'SELL', mint: 'Mx', pnlPct: -20 }, { side: 'BUY', mint: 'Mx', reason: 'organic-demand momentum' }] });
+  const mg = mk(); mg._test.restore(v1); assert.strictEqual(mg.st.bandit.momentum.all.n, 1); assert.strictEqual(mg.st.migratedTrades, 1);
   console.log('agent tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });

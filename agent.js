@@ -437,7 +437,16 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       for (const k of ['bornAt', 'thoughts', 'peak', 'streak', 'hibernateDay', 'equityHist', 'weightsHist', 'weights', 'dayStats', 'diaries', 'fundings', 'fundSeen', 'eurPerSol']) if (j[k] != null) st[k] = j[k];
       if (j.bandit) for (const k of M.ARM_KEYS) if (j.bandit[k]) st.bandit[k] = { ...st.bandit[k], ...j.bandit[k] };
       if (j.regime) st.regime = { ...st.regime, ...j.regime };
-    } else st.peak = Math.max(st.paperCash, st.paperStart);
+    } else {
+      st.peak = Math.max(st.paperCash, st.paperStart);
+      // v1 trades taught nothing to a bandit (there was none): replay their closed outcomes so v2 starts from real history
+      const armOf = {}; let n = 0;
+      for (const x of [...st.trades].reverse()) {
+        if (x.side === 'BUY') armOf[x.mint] = x.arm || (/momentum/.test(x.reason || '') ? 'momentum' : 'dip');
+        else if (x.side === 'SELL' && typeof x.pnlPct === 'number') { const arm = x.arm || armOf[x.mint] || 'dip'; if (st.bandit[arm]) { M.recordOutcome(st.bandit, arm, 'normal', x.pnlPct); x.arm = x.arm || arm; n++; } }
+      }
+      if (n) st.migratedTrades = n;
+    }
     st.restoredFrom = j.savedAt;
   }
   async function save(force = false) {
