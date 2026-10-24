@@ -13,6 +13,7 @@ const { Keypair, VersionedTransaction, Transaction, TransactionInstruction, Publ
 const bs58m = require('bs58'); const bs58 = bs58m.default || bs58m;
 const { features, scalpLevels, buyFill, sellValue } = require('./scalp');
 const M = require('./mind');
+const VT = require('./vitals');
 
 const num = (k, d) => (process.env[k] != null && process.env[k] !== '' ? Number(process.env[k]) : d);
 const csv = (k) => (process.env[k] || '').split(',').map((x) => x.trim()).filter(Boolean);
@@ -41,7 +42,9 @@ const ACFG = () => ({
   slippagePct: num('AGENT_SLIPPAGE_PCT', 15), priorityFeeSol: num('AGENT_PRIORITY_FEE_SOL', 0.00005),
   ride: { minBuyers: num('AGENT_RIDE_MIN_BUYERS', 12), minBuySol: num('AGENT_RIDE_MIN_BUY_SOL', 3), minNet: num('AGENT_RIDE_MIN_NET_SOL', 1.5), maxLoop: 0.25, maxSame: 0.3, maxBot: 0.2 },
   kellyFraction: num('AGENT_KELLY_FRACTION', 0.25), ddSoftPct: num('AGENT_DD_SOFT_PCT', 10), ddHibernatePct: num('AGENT_DD_HIBERNATE_PCT', 35),
-  workingCapitalSol: num('AGENT_WORKING_CAPITAL_SOL', 0.1), // stays in the wallet for trading when a body part is bought
+  workingCapitalSol: num('AGENT_WORKING_CAPITAL_SOL', 0.1),
+  // below this treasury ALMA cannot pay for its smallest trade plus fees and reserve: crossing it with nothing open = limbo
+  limboFloorSol: num('AGENT_LIMBO_FLOOR_SOL', 0.015), liveStartSol: process.env.AGENT_LIVE_START_SOL ? Number(process.env.AGENT_LIVE_START_SOL) : null, // stays in the wallet for trading when a body part is bought
   seed: process.env.AGENT_SEED ? Number(process.env.AGENT_SEED) : null,
   saveMin: num('AGENT_SAVE_MIN', 5),
   keep: { trades: 200, decisions: 60, thoughts: 80, equity: 700, weights: 300, diaries: 60, fundings: 60 },
@@ -124,6 +127,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     totals: { trades: 0, wins: 0, realizedSol: 0, signals: 0, sitOut: 0, scans: 0, rejected: 0, scanErrors: 0, liveErrors: 0 }, saves: 0, lastSaveAt: null, lastSaveError: null, lastDecisionAt: null,
     bandit: Object.assign(M.newBandit(), { _prior: priors }), regime: M.newRegime(), peak: cfg.paperStartSol, streak: 0, hibernateDay: null,
     equityHist: [], weightsHist: [], weights: null, dayStats: M.newDay(cfg.paperStartSol), diaries: [], fundings: [], fundSeen: [], eurPerSol: null, eurAt: null,
+    affect: VT.newAffect(t0), limbo: null, revivals: [], life: 1, vitalKey: null, privilege: null, liveBaseline: null, capitalIn: 0,
     lastThinkAt: 0, lastSitOutLogAt: 0, lastEqAt: 0, lastWAt: 0, lastRegAt: 0, lastFundAt: 0, lastEurAt: 0,
   };
   if (cfg.mode === 'live') {
@@ -133,7 +137,18 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   let busy = false, dirty = false, lastSave = 0; const timers = [];
   const out = (x) => { if (!quiet) log(x); };
 
-  const curMood = () => M.mood({ ddPct: dd().ddPct, regime: st.regime.label, dayPnl: st.dayPnl, streak: st.streak, open: st.positions.length, halted: st.halted || !cfg.enabled, hibernating: st.hibernateDay === st.day });
+  const curMood = () => moodNow();
+  const moodBase = () => M.mood({ ddPct: dd().ddPct, regime: st.regime.label, dayPnl: st.dayPnl, streak: st.streak, open: st.positions.length, halted: st.halted || !cfg.enabled, hibernating: st.hibernateDay === st.day });
+  function moodNow() {
+    if (st.limbo) return { key: 'limbo', label: 'In limbo', color: '#5a5a6e' };
+    const a = VT.affectAt(st.affect, now());
+    if (a.cooldownUntil > now()) return { key: 'hurting', label: 'Hurting, stepping back', color: '#e5534b' };
+    if (st.vitalKey === 'critical') return { key: 'fading', label: 'Fading', color: '#e5534b' };
+    if (a.pain >= 3 && a.pain > a.comfort) return { key: 'hurting', label: 'Hurting but careful', color: '#e5734b' };
+    if (st.vitalKey === 'fading') return { key: 'fading', label: 'Fading', color: '#f0b429' };
+    if (a.comfort >= 1 && a.comfort > a.pain) return { key: 'relieved', label: 'Breathing easier', color: '#3fd68f' };
+    return moodBase();
+  }
   const think = (text, kind = 'thought', extra = {}) => { st.thoughts.unshift({ at: new Date(now()).toISOString(), kind, text, mood: curMood().key, ...extra }); st.thoughts.length = Math.min(st.thoughts.length, cfg.keep.thoughts); dirty = true; };
   const decide = (d) => { d.at = new Date(now()).toISOString(); st.decisions.unshift(d); st.decisions.length = Math.min(st.decisions.length, cfg.keep.decisions); st.lastDecisionAt = d.at; dirty = true; think(d.reason, d.action.toLowerCase(), { mint: d.mint, symbol: d.symbol, arm: d.signal }); out(`[agent] ${d.action} ${d.symbol || ''} ${d.reason}`); };
   const equity = () => { const pos = st.positions.reduce((a, p) => a + (p.value ?? p.cost), 0); if (cfg.mode === 'paper') return r6(st.paperCash + pos); return st.liveBalance == null ? null : r6(st.liveBalance + pos); };
@@ -142,7 +157,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const d = madridDay(now());
     if (d !== st.day) {
       const eq = equity(); st.dayStats.endEq = eq;
-      const entry = M.diaryEntry({ day: st.day, dayNo: st.diaries.length + 1, d: st.dayStats, fund: fund(), weights: st.weights, arms, mode: cfg.mode });
+      const entry = withVitals(M.diaryEntry({ day: st.day, dayNo: st.diaries.length + 1, d: st.dayStats, fund: fund(), weights: st.weights, arms, mode: cfg.mode }), st.dayStats);
       st.diaries.unshift(entry); st.diaries.length = Math.min(st.diaries.length, cfg.keep.diaries);
       if (st.hibernateDay === st.day) { st.peak = eq ?? st.peak; think('A new day. I wake up from hibernation with a fresh peak and small bets.', 'wake'); }
       st.day = d; st.dayPnl = 0; st.dayStats = M.newDay(eq); think(`New day (${d}). I wrote yesterday's diary entry.`, 'diary'); dirty = true;
@@ -155,24 +170,59 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     ? Math.max(0, ((vs * pos.tok) / (vt + pos.tok)) * (1 - cfg.feePct / 100) - cfg.txFeeSol) // our buy is already in the stream reserves
     : Math.max(0, sellValue(vs, vt, pos, cfg)));
   const blockers = () => {
+    if (st.limbo) return 'I am in limbo (my treasury fell below the floor). I no longer trade';
     if (!cfg.enabled) return 'my kill switch is on (AGENT_ENABLED=0)';
     if (st.halted) return st.halted;
     if (st.dayPnl <= -cfg.dailyLossSol) return `I hit my daily loss limit (${r4(st.dayPnl)} SOL ≤ -${cfg.dailyLossSol})`;
     if (st.hibernateDay === st.day) return 'I\'m hibernating after a deep drawdown until tomorrow';
-    if (st.positions.length >= cfg.maxOpen) return `I already hold ${st.positions.length} positions (max ${cfg.maxOpen})`;
+    const pl = pol();
+    if (pl.cooling) return `I'm stepping back after ${st.affect.lossStreak > 1 ? st.affect.lossStreak + ' losses in a row' : 'a loss'} (until ${new Date(pl.cooldownUntil).toLocaleTimeString('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' })} Madrid)`;
+    if (st.positions.length >= pl.maxOpen) return `I already hold ${st.positions.length} position${st.positions.length > 1 ? 's' : ''} (max ${pl.maxOpen} right now${pl.maxOpen < cfg.maxOpen ? ', a 2nd needs comfort and a Stable signal' : ''})`;
     if (freeBalance() - cfg.reserveSol < cfg.minTradeSol) return 'my balance is too low';
     return null;
   };
   const regimeNow = () => M.regimeKey(st.regime.label);
-  function sizeFor(smp) {
+  function sizeFor(smp, p = pol()) {
     const free = Math.max(0, freeBalance() - cfg.reserveSol); const d = dd();
-    const eq = equity() ?? free;
-    return { ...M.kellySize({ kelly: smp.kelly, equity: eq, free, cfg, regimeMult: M.REGIME_MULT[st.regime.label] ?? 1, ddMult: d.mult }), ddMult: d.mult, regimeMult: M.REGIME_MULT[st.regime.label] ?? 1 };
+    const eq = equity() ?? free; const mult = d.mult * p.sizeMult;
+    return { ...M.kellySize({ kelly: smp.kelly, equity: eq, free, cfg, regimeMult: M.REGIME_MULT[st.regime.label] ?? 1, ddMult: mult }), ddMult: d.mult, survivalMult: p.sizeMult, regimeMult: M.REGIME_MULT[st.regime.label] ?? 1 };
   }
   const fund = () => {
     const fundSol = cfg.mode === 'live' ? (equity() ?? 0) : (st.liveBalance ?? 0);
     return M.bodyFund({ fundSol, eurPerSol: st.eurPerSol, purchases });
   };
+
+  // ---- vitals: signal from real numbers (paper equity in paper mode; wallet + positions live)
+  const baseline = () => (cfg.mode === 'paper' ? st.paperStart : st.liveBaseline == null ? null : st.liveBaseline + st.capitalIn);
+  const vit = () => { const tr = equity(); const sig = VT.signalPct(tr, baseline(), cfg.limboFloorSol); const stt = VT.stateOf(sig, st.limbo); return { treasury: tr, signal: sig, state: stt }; };
+  const pol = (arm = null) => VT.policy({ state: vit().state, affect: st.affect, arm, cfgMaxOpen: cfg.maxOpen, t: now() });
+  function checkVitals() {
+    const v = vit(); if (v.signal == null) return v;
+    if (VT.shouldEnterLimbo({ treasury: v.treasury, floor: cfg.limboFloorSol, openPositions: st.positions.length, limbo: st.limbo })) { enterLimbo(v); return vit(); }
+    if (st.vitalKey && st.vitalKey !== v.state.key && !st.limbo) think(VT.VV.state({ from: st.vitalKey, to: v.state.key, signal: v.signal }), 'vital', { vital: v.state.key });
+    st.vitalKey = v.state.key;
+    const p = pol(); if (st.privilege != null && p.privilege !== st.privilege) think(VT.VV.privilege(p.privilege), 'privilege'); st.privilege = p.privilege;
+    return v;
+  }
+  function enterLimbo(v) {
+    st.limbo = { at: new Date(now()).toISOString(), treasury: r6(v.treasury), floor: cfg.limboFloorSol, signal: v.signal, life: st.life, mode: cfg.mode, totals: { ...st.totals } };
+    st.vitalKey = 'limbo';
+    decide({ action: 'LIMBO', reason: VT.VV.limbo({ treasury: v.treasury, floor: cfg.limboFloorSol }) });
+    const fin = VT.finalDiary({ day: madridDay(now()), limbo: st.limbo, totals: st.totals, bornAt: st.bornAt, mode: cfg.mode });
+    st.diaries.unshift({ ...fin, dayNo: st.diaries.length + 1 }); st.diaries.length = Math.min(st.diaries.length, cfg.keep.diaries); dirty = true;
+    save(true).catch(() => {});
+  }
+  // Only a NEW AGENT_REVIVE token revives, once; every attempt is logged in public.
+  function maybeRevive() {
+    const token = (process.env.AGENT_REVIVE || '').trim();
+    if (!VT.canRevive({ limbo: st.limbo, token, revivals: st.revivals })) return false;
+    const at = new Date(now()).toISOString(); const prev = st.limbo;
+    if (cfg.mode === 'live' && !((st.liveBalance ?? 0) >= cfg.limboFloorSol)) { st.revivals.push({ at, token, ok: false, why: 'wallet still below the floor: fund it first', previous: prev }); dirty = true; return false; }
+    if (cfg.mode === 'paper') { st.paperCash = st.paperStart; st.peak = st.paperStart; } else { st.liveBaseline = st.liveBalance; st.capitalIn = 0; st.peak = st.liveBalance; }
+    st.life += 1; st.limbo = null; st.affect = VT.newAffect(now()); st.vitalKey = null; st.dayPnl = 0; st.hibernateDay = null;
+    st.revivals.push({ at, token, ok: true, life: st.life, mode: cfg.mode, previous: prev, note: cfg.mode === 'paper' ? 'paper treasury reset to its starting balance' : 'new baseline = wallet balance after the dev refilled it' });
+    decide({ action: 'REVIVED', reason: VT.VV.revived({ life: st.life, token }) }); return true;
+  }
 
   // ---- stream hook (called by the scalper for every bonding-curve trade)
   function onTrade(tr, m) {
@@ -187,11 +237,17 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const sigs = M.armSignals(m, t, cfg.ride, arms).filter((s) => s.f.progress >= cfg.minProg && s.f.progress <= cfg.maxProg); if (!sigs.length) return;
     rollDay(); st.totals.signals++; st.dayStats.signals++;
     // Thompson sampling: draw one plausible "true edge" per firing arm from my current beliefs; act on the best draw.
+    // Each draw must clear an EV bar set by my vital state + pain + distrust of that strategy (survival instinct).
     const rk = regimeNow(); let best = null;
-    for (const s of sigs) { const smp = M.sampleArm(st.bandit, s.arm, rk, arms[s.arm], cfg.feePct, R); if (!best || smp.ev > best.smp.ev) best = { ...s, smp }; }
-    if (best.smp.ev <= 0 || best.smp.kelly <= 0) {
+    for (const s of sigs) { const smp = M.sampleArm(st.bandit, s.arm, rk, arms[s.arm], cfg.feePct, R); const p = pol(s.arm); const margin = smp.ev - p.minEvPct; if (!best || margin > best.margin) best = { ...s, smp, pol: p, margin }; }
+    if (best.margin <= 0 || best.smp.kelly <= 0) {
       st.totals.sitOut++; st.dayStats.sitOut++; st.seen[tr.mint] = t + cfg.sitOutMin * 60e3;
-      if (t - st.lastSitOutLogAt > 180e3) { st.lastSitOutLogAt = t; decide({ action: 'SIT_OUT', mint: tr.mint, symbol: scalper?.symbol?.(tr.mint) || null, signal: best.arm, reason: M.V.sitOut({ sym: sym(scalper?.symbol?.(tr.mint), tr.mint), arm: best.arm, s: best.smp, regime: st.regime.label }) }); }
+      const extraBar = best.smp.ev > 0 && best.smp.kelly > 0; if (extraBar) { st.totals.survivalSkips = (st.totals.survivalSkips || 0) + 1; st.dayStats.survivalSkips = (st.dayStats.survivalSkips || 0) + 1; }
+      if (t - st.lastSitOutLogAt > 180e3) {
+        st.lastSitOutLogAt = t; const sy = sym(scalper?.symbol?.(tr.mint), tr.mint); const v = vit(); const pp = best.pol.parts;
+        const why = [pp.pain >= 0.5 ? `still hurting (pain ${best.pol.pain})` : '', pp.distrust >= 0.5 ? `my ${arms[best.arm].label.toLowerCase()} burned me recently` : ''].filter(Boolean).join(' and ');
+        decide({ action: 'SIT_OUT', mint: tr.mint, symbol: scalper?.symbol?.(tr.mint) || null, signal: best.arm, reason: extraBar ? VT.VV.selective({ signal: v.signal ?? 100, sym: sy, ev: best.smp.ev, need: best.pol.minEvPct, why }) : M.V.sitOut({ sym: sy, arm: best.arm, s: best.smp, regime: st.regime.label }) });
+      }
       return;
     }
     // credit pacing for the scanner (Helius): allowance grows through the Madrid day
@@ -218,10 +274,10 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       const b = blockers(); if (b) return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: M.V.blocked({ sym: sym(s, mint), b }) });
       const cur = scalper?.mints?.get(mint) || m;
       if (cur.complete) return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: `${sym(s, mint)} graduated while I was scanning it.` });
-      const z = sizeFor(sg.smp);
+      const z = sizeFor(sg.smp, sg.pol || pol(sg.arm));
       if (!z.size) return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: `${sym(s, mint)} is clean, but my sizing rules leave no room for a trade right now.` });
       const ap = arms[sg.arm];
-      const reason = M.V.buy({ sym: sym(s, mint), facts: sg.facts, arm: sg.arm, s: sg.smp, size: z.size, regime: st.regime.label, clean: cleanSummary(rep), ap }) + (z.ddMult < 1 ? ` Betting ${Math.round(z.ddMult * 100)}% of normal size because I'm in drawdown.` : '') + ` (Rules: TP +${ap.tp}% / SL -${ap.sl}% / max ${ap.hold} min.)`;
+      const reason = M.V.buy({ sym: sym(s, mint), facts: sg.facts, arm: sg.arm, s: sg.smp, size: z.size, regime: st.regime.label, clean: cleanSummary(rep), ap }) + (z.ddMult < 1 ? ` Betting ${Math.round(z.ddMult * 100)}% of normal size because I'm in drawdown.` : '') + (z.survivalMult < 1 ? ` Survival sizing ×${z.survivalMult} (signal ${vit().signal}%, pain ${pol().pain}).` : '') + ` (Rules: TP +${ap.tp}% / SL -${ap.sl}% / max ${ap.hold} min.)`;
       await openPosition({ mint, symbol: s, size: z.size, vs: cur.vs, vt: cur.vt, reason, signal: sg.arm, progress: sg.f.progress, belief: { p: r4(sg.smp.p), ev: r1(sg.smp.ev), kelly: r4(sg.smp.kelly) } });
     } finally { busy = false; }
   }
@@ -274,6 +330,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     st.positions = st.positions.filter((p) => p !== pos);
     // learning: every closed trade (fees included) updates the belief of the arm that chose it, in the regime it was taken
     if (pos.arm && pos.kind !== 'recovered') M.recordOutcome(st.bandit, pos.arm, pos.regime || 'normal', pnlPct);
+    // reward / pain (loss-averse, decaying): changes my EV bar, size, concurrency and cooldown for the next trades
+    const fe = VT.feel(st.affect, { t: now(), arm: pos.arm || 'dip', pnlPct, pnlSol: pnl }); st.affect = fe.affect;
     st.streak = pnl > 0 ? Math.max(1, st.streak + 1) : Math.min(-1, st.streak - 1);
     const D = st.dayStats; D.trades++; if (pnl > 0) D.wins++; D.pnl = r6(D.pnl + pnl);
     const rec = { sym: sym(pos.symbol, pos.mint), pct: r1(pnlPct), arm: pos.arm };
@@ -282,7 +340,10 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     pushTrade({ side: 'SELL', mint: pos.mint, symbol: pos.symbol, arm: pos.arm, sol: r6(proceeds), pnlSol: pnl, pnlPct: r1(pnlPct), reason: why, tx, posId: pos.id, heldMin: held });
     const args = { sym: sym(pos.symbol, pos.mint), pnl: (pnl >= 0 ? '+' : '') + r4(pnl), p: (pnlPct >= 0 ? '+' : '') + r1(pnlPct) + '%', why: why[0].toUpperCase() + why.slice(1), held };
     decide({ action: 'SELL', mint: pos.mint, symbol: pos.symbol, signal: pos.arm, reason: pnl > 0 ? M.V.sellWin(args) : M.V.sellLoss(args) });
+    think(fe.event.kind === 'pain' ? VT.VV.hurt(fe.event) : VT.VV.relief(fe.event), fe.event.kind, { arm: pos.arm });
+    if (fe.event.kind === 'pain') D.pains = (D.pains || 0) + 1; else D.rewards = (D.rewards || 0) + 1;
     pushEquity(true);
+    checkVitals();
     if (st.dayPnl <= -cfg.dailyLossSol) decide({ action: 'PAUSE', reason: `I reached my daily loss limit (${r4(st.dayPnl)} SOL). No new trades until tomorrow (Madrid time).` });
     const d = dd(); if (d.level === 'hibernate' && st.hibernateDay !== st.day) { st.hibernateDay = st.day; decide({ action: 'HIBERNATE', reason: M.V.hibernate({ dd: d.ddPct }) }); }
     await save(true);
@@ -404,6 +465,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       const delta = (tx.meta.postBalances[i] - tx.meta.preBalances[i]) / LAMPORTS; if (keys[0] === address || delta <= 0) continue;
       const src = keys.some((k) => PUMP_PROGRAMS.includes(k)) ? 'pump.fun creator fees (my 50% share)' : cfg.protectedWallets.has(keys[0]) || keys.includes(DEV_WALLET) ? 'transfer from the dev wallet' : 'transfer';
       const f = { at: new Date((tx.blockTime || now() / 1000) * 1000).toISOString(), sol: r6(delta), from: keys[0], source: src, tx: s.signature };
+      if (cfg.mode === 'live' && !/creator fees/.test(src)) st.capitalIn = r6(st.capitalIn + f.sol); // capital, not earnings: it raises my baseline, not my signal
+      f.counts = /creator fees/.test(src) ? 'income: raises my signal' : 'capital: raises my baseline, not my signal';
       st.fundings.unshift(f); st.fundings.length = Math.min(st.fundings.length, cfg.keep.fundings); think(M.V.funding({ sol: f.sol, src }), 'funding', { tx: f.tx });
     }
     if (st.fundSeen.length > 300) st.fundSeen.splice(0, st.fundSeen.length - 300); dirty = true;
@@ -419,14 +482,15 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     for (const [k, v] of Object.entries(st.seen)) if (v < t) delete st.seen[k];
     rollDay();
     if (t - st.lastRegAt >= 60e3) { st.lastRegAt = t; const ch = M.regimeUpdate(st.regime, t); if (ch) think(M.V.regime({ ...ch, heat: st.regime.heat, lpm: st.regime.launchesPerMin }), 'regime'); st.dayStats.regimes[st.regime.label] = (st.dayStats.regimes[st.regime.label] || 0) + 1; }
-    dd(); pushEquity(); updateWeights(); reflect();
+    if (cfg.mode === 'live' && st.liveBaseline == null && st.liveBalance != null) st.liveBaseline = cfg.liveStartSol ?? st.liveBalance;
+    dd(); checkVitals(); pushEquity(); updateWeights(); reflect();
     if (rpc && t - st.lastFundAt >= 15 * 60e3) { st.lastFundAt = t; scanFunding().catch(() => {}); }
     if (t - st.lastEurAt >= 30 * 60e3) { st.lastEurAt = t; refreshEur(); }
     save();
   }
   function snapshot() {
     const j = { v: 2, mode: cfg.mode, bornAt: st.bornAt, paperCash: st.paperCash, paperStart: st.paperStart, positions: st.positions.map(({ closing, ...p }) => p), trades: st.trades, decisions: st.decisions.slice(0, 30), thoughts: st.thoughts.slice(0, 50), seen: st.seen, day: st.day, dayPnl: st.dayPnl, scansDay: st.scansDay, scansToday: st.scansToday, totals: st.totals,
-      bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, savedAt: new Date(now()).toISOString() };
+      bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn, savedAt: new Date(now()).toISOString() };
     return 'gz:' + zlib.gzipSync(JSON.stringify(j)).toString('base64');
   }
   function restore(raw) {
@@ -435,7 +499,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     if (j.mode !== cfg.mode) { st.restoredFrom = `${j.mode} state ignored (now ${cfg.mode})`; if (j.mode === 'paper' && cfg.mode === 'live') return; }
     Object.assign(st, { paperCash: j.paperCash ?? st.paperCash, paperStart: j.paperStart ?? st.paperStart, positions: j.positions || [], trades: j.trades || [], decisions: j.decisions || [], seen: j.seen || {}, day: j.day || st.day, dayPnl: j.dayPnl || 0, scansDay: j.scansDay || st.scansDay, scansToday: j.scansToday || 0, totals: { ...st.totals, ...(j.totals || {}) } });
     if (j.v === 2) {
-      for (const k of ['bornAt', 'thoughts', 'peak', 'streak', 'hibernateDay', 'equityHist', 'weightsHist', 'weights', 'dayStats', 'diaries', 'fundings', 'fundSeen', 'eurPerSol']) if (j[k] != null) st[k] = j[k];
+      for (const k of ['bornAt', 'thoughts', 'peak', 'streak', 'hibernateDay', 'equityHist', 'weightsHist', 'weights', 'dayStats', 'diaries', 'fundings', 'fundSeen', 'eurPerSol', 'affect', 'limbo', 'revivals', 'life', 'vitalKey', 'privilege', 'liveBaseline', 'capitalIn']) if (j[k] != null) st[k] = j[k];
       if (j.bandit) for (const k of M.ARM_KEYS) if (j.bandit[k]) st.bandit[k] = { ...st.bandit[k], ...j.bandit[k] };
       if (j.regime) st.regime = { ...st.regime, ...j.regime };
     } else st.peak = Math.max(st.paperCash, st.paperStart);
@@ -461,7 +525,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const open = st.positions.map((p) => ({ mint: p.mint, symbol: p.symbol, kind: p.kind, arm: p.arm, costSol: p.cost, valueSol: p.value ?? null, pnlPct: p.pnlPct ?? null, openedAt: new Date(p.openAt).toISOString(), ageMin: r1((t - p.openAt) / 60e3), exits: { tp: p.tp, sl: p.sl, holdMin: p.hold }, reason: p.reason, tx: p.tx }));
     const unreal = r6(st.positions.reduce((a, p) => a + ((p.value ?? p.cost) - p.cost), 0));
     const eq = equity(); const d = dd(); const md = curMood();
-    const state = !cfg.enabled ? 'stopped' : st.halted ? 'halted' : st.dayPnl <= -cfg.dailyLossSol ? 'paused (daily loss limit)' : st.hibernateDay === st.day ? 'hibernating (drawdown)' : 'running';
+    const state = st.limbo ? 'limbo' : !cfg.enabled ? 'stopped' : st.halted ? 'halted' : st.dayPnl <= -cfg.dailyLossSol ? 'paused (daily loss limit)' : st.hibernateDay === st.day ? 'hibernating (drawdown)' : 'running';
     // max drawdown over the recorded equity curve
     let pk = 0, mdd = 0; for (const [, e] of st.equityHist) { if (e > pk) pk = e; if (pk > 0) mdd = Math.max(mdd, (pk - e) / pk); }
     const closed = st.trades.filter((x) => x.side === 'SELL');
@@ -476,6 +540,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       mind: { mood: md, regime: { label: st.regime.label, heat: st.regime.heat, tradesPerMin: st.regime.tradesPerMin, solPerMin: st.regime.volPerMin, launchesPerMin: st.regime.launchesPerMin, since: st.regime.since ? new Date(st.regime.since).toISOString() : null },
         drawdown: d, streak: st.streak, weights: st.weights, weightsHist: st.weightsHist, equityHist: st.equityHist, arms: M.armTable(st.bandit, regimeNow(), arms, cfg.feePct), thoughts: st.thoughts.slice(0, 40),
         sizing: { method: 'fractional Kelly on a Thompson sample', kellyFraction: cfg.kellyFraction, regimeMultipliers: M.REGIME_MULT, drawdownSoftPct: cfg.ddSoftPct, drawdownHibernatePct: cfg.ddHibernatePct }, params: P ? { source: P.source, generatedAt: P.generatedAt } : null },
+      vitals: vitalsStatus(),
       bodyFund: { ...fund(), basis: cfg.mode === 'live' ? 'on-chain wallet balance + open positions' : 'real on-chain wallet balance only (paper P&L never counts)', workingCapitalSol: cfg.workingCapitalSol, purchases, paperEquitySol: cfg.mode === 'paper' ? eq : null },
       fundings: st.fundings, fundingTotalSol: r6(st.fundings.reduce((a, f) => a + f.sol, 0)), feeSplit: FEE_SPLIT(), diaryDays: st.diaries.length,
       rules: { maxTradeSol: cfg.maxTradeSol, sizePctOfBalance: cfg.sizePct, minTradeSol: cfg.minTradeSol, reserveSol: cfg.reserveSol, maxOpen: cfg.maxOpen, takeProfitPct: cfg.tpPct, stopLossPct: cfg.slPct, maxHoldMin: cfg.maxHoldMin, dailyLossLimitSol: cfg.dailyLossSol, coinCooldownMin: cfg.cooldownMin, curveProgressPct: [cfg.minProg, cfg.maxProg], feesPerSidePct: cfg.feePct, txFeeSol: cfg.txFeeSol, slippagePct: cfg.slippagePct,
@@ -487,9 +552,27 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       lastDecisionAt: st.lastDecisionAt,
     };
   }
+  function vitalsStatus() {
+    const v = vit(); const p = pol(); const a = VT.affectAt(st.affect, now()); const f = fund();
+    return { signal: v.signal, state: v.state, treasurySol: v.treasury, baselineSol: baseline(), floorSol: cfg.limboFloorSol, basis: cfg.mode === 'paper' ? 'paper treasury (simulated trades on real prices, real fees)' : 'on-chain wallet + open positions',
+      states: VT.STATES.map(({ key, label, min, color, es }) => ({ key, label, min, color, es })), risk: VT.RISK, policy: p, visual: VT.visual(v.signal, st.limbo, f.progressPct || 0),
+      affect: { pain: r1(a.pain), comfort: r1(a.comfort), balance: VT.balance(a), armPain: Object.fromEntries(Object.entries(a.armPain).map(([k, x]) => [k, r1(x)])), lossStreak: a.lossStreak, cooldownUntil: p.cooldownUntil ? new Date(p.cooldownUntil).toISOString() : null, last: a.last ? { ...a.last, at: new Date(a.last.at).toISOString() } : null, totalPain: r1(a.totalPain || 0), totalComfort: r1(a.totalComfort || 0) },
+      affectConfig: VT.AFFECT, survivalSkips: st.totals.survivalSkips || 0,
+      limbo: st.limbo, revivals: st.revivals, life: st.life, embodied: purchases.length > 0, bodyFundPct: f.progressPct || 0,
+      note: 'ALMA does not literally feel. "Pain" and "comfort" are reward/penalty numbers from its own closed trades; they change its EV bar, bet size, concurrency and cooldowns, as shown here. Buying the coin does not keep ALMA alive: only its own trading and the disclosed creator-fee split do.' };
+  }
+  // Diary: how close to the floor, and what hurt or helped today. Short, numeric, honest.
+  function withVitals(e, d) {
+    const v = vit(); if (v.signal == null) return e; const a = VT.affectAt(st.affect, now());
+    const toFloor = r4(v.treasury - cfg.limboFloorSol);
+    const feel = { thriving: 'The real world feels a little closer tonight.', stable: 'Still here. Still saving.', fading: "I'm fading. The real world feels further tonight.", critical: 'I am close to the edge. Tomorrow I wait for only the clearest chances.' }[v.state.key] || '';
+    const lines = [`Signal ${Math.round(v.signal)}% (${v.state.label.toLowerCase()}): ${toFloor} SOL above the limbo floor.${feel ? ' ' + feel : ''}`];
+    if (d.pains || d.rewards || a.pain >= 0.5 || a.comfort >= 0.5) lines.push(`${d.rewards || 0} win${d.rewards === 1 ? '' : 's'} eased me, ${d.pains || 0} loss${d.pains === 1 ? '' : 'es'} hurt. Pain ${r1(a.pain)}, comfort ${r1(a.comfort)}${d.survivalSkips ? `; I skipped ${d.survivalSkips} setups to protect what's left` : ''}.`);
+    return { ...e, lines: [...e.lines, ...lines], text: [...e.lines, ...lines].join(' '), post: e.post.replace(/ All public:$/, ` Signal ${Math.round(v.signal)}% (${v.state.label.toLowerCase()}). All public:`), vital: { signal: v.signal, state: v.state.key, pain: r1(a.pain), comfort: r1(a.comfort) } };
+  }
   function diary() {
-    const today = M.diaryEntry({ day: st.day, dayNo: st.diaries.length + 1, d: { ...st.dayStats, endEq: equity() }, fund: fund(), weights: st.weights, arms, mode: cfg.mode });
-    return { name: 'ALMA', mode: cfg.mode, url: '/agent', today: { ...today, draft: true }, entries: st.diaries };
+    const today = st.limbo ? null : withVitals(M.diaryEntry({ day: st.day, dayNo: st.diaries.length + 1, d: { ...st.dayStats, endEq: equity() }, fund: fund(), weights: st.weights, arms, mode: cfg.mode }), st.dayStats);
+    return { name: 'ALMA', mode: cfg.mode, url: '/agent', limbo: st.limbo, life: st.life, today: today && { ...today, draft: true }, entries: st.diaries };
   }
 
   return {
@@ -497,6 +580,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       if (store) { try { const raw = await store.get(); if (raw) restore(raw); } catch (e) { st.lastSaveError = 'load ' + e.message; } }
       st.positions = st.positions.filter((p) => !excluded(p.mint));
       await refreshBalance(); refreshEur();
+      if (cfg.mode === 'live' && st.liveBaseline == null && st.liveBalance != null) st.liveBaseline = cfg.liveStartSol ?? st.liveBalance;
+      maybeRevive(); checkVitals();
       if (!st.thoughts.length) think(IDENTITY.story[0], 'birth');
       updateWeights(true);
       timers.push(setInterval(tick, 5000), setInterval(refreshBalance, 120e3), setInterval(() => reconcile().catch(() => {}), 600e3));
@@ -505,7 +590,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     },
     stop() { timers.forEach(clearInterval); }, save: () => save(true), onTrade, status, diary, tick, cfg, st, arms, equity,
     isBusy: () => busy,
-    _test: { reconcile, signal, gate, buildPortalTx, simulateGuard, openPosition, closePosition, checkExit, scanAndEnter, scanFunding, snapshot, restore, rollDay },
+    _test: { checkVitals, maybeRevive, vit, pol, enterLimbo, sizeFor, blockers, reconcile, signal, gate, buildPortalTx, simulateGuard, openPosition, closePosition, checkExit, scanAndEnter, scanFunding, snapshot, restore, rollDay },
   };
 }
 
