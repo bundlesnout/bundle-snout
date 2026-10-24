@@ -787,6 +787,11 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       if (j.regime) st.regime = { ...st.regime, ...j.regime };
       if (!st.shadow.byVar) st.shadow = { since: new Date(now()).toISOString(), signals: 0, open: [], closed: [], byVar: {}, seen: {} }; // older shadow format: start the forward test fresh
     } else st.peak = Math.max(st.paperCash, st.paperStart);
+    // paper start was re-set (e.g. a redeploy with a new paper bankroll) while an older, higher peak survived: that
+    // fake drawdown would hibernate me with no trade ever lost. With no trades since the reset, the peak is the start.
+    if (cfg.mode === 'paper' && !(st.positions || []).length && st.paperCash === st.paperStart && st.peak > st.paperStart) {
+      st.peak = st.paperStart; st.hibernateDay = null; st.equityHist = (st.equityHist || []).filter(([, e]) => e <= st.paperStart);
+    }
     if (M.ARM_KEYS.every((k) => !st.bandit[k].all.n)) {
       // v1 trades taught nothing to a bandit (there was none): replay their closed outcomes so v2 starts from real history
       const armOf = {}; let n = 0;
