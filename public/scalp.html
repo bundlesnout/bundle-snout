@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scalper de bots — simulación (paper trading)</title>
+<style>
+:root{color-scheme:dark}body{margin:0;font:15px/1.5 system-ui,sans-serif;background:#0c0f14;color:#e6e9ef}
+main{max-width:1000px;margin:0 auto;padding:24px 16px}h1{margin:0 0 4px;font-size:26px}h2{margin:26px 0 6px;font-size:19px}.sub{color:#9aa3b2;margin:0 0 14px}
+.banner{background:#2a2110;border:1px solid #6b5212;padding:10px 12px;border-radius:8px;margin-bottom:14px}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}.stat{background:#151a22;border:1px solid #242b37;border-radius:8px;padding:8px 12px}.stat b{display:block;font-size:20px}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:5px 6px;border-bottom:1px solid #242b37;vertical-align:top}th{color:#9aa3b2;font-weight:600}
+.pos{color:#6ee7a8}.neg{color:#ff8f9f}.muted{color:#9aa3b2}a{color:#7cb7ff}code{font-size:12px}.wrap{overflow-x:auto}
+</style></head><body><main>
+<p><a href="/radar">← Bond Radar</a></p>
+<h1>🤖 Scalper de bots de volumen</h1>
+<p class="sub">Simulación con datos reales de pump.fun: detecta monedas con bots de volumen, "compra" 0,05/0,10/0,25 SOL y "vende" con +X%, stop loss o tiempo máximo. Más la estrategia "aguantar hasta el bonding". Se prueban cientos de combinaciones a la vez sobre las mismas señales.</p>
+<div class="banner"><b>Solo simulación (paper trading).</b> No hay wallet ni dinero real. Cada resultado ya descuenta la comisión de pump.fun en compra y venta, la comisión de red por transacción, el deslizamiento de la curva y un retraso de ejecución.</div>
+<div id="assump" class="muted"></div>
+<h2>Estrategia principal <span class="muted" id="pkey"></span></h2><div class="stats" id="prim"></div>
+<h2>Top 10 combinaciones (scalper) por SOL neto</h2><p class="muted">Clave: regla-nivel-tamaño-tp-sl-tiempo. R1 = bots + subida, R2 = bots + caída. L1 suave, L2 medio, L3 estricto. Mínimo 3 operaciones.</p>
+<div class="wrap"><table id="top"></table></div><p class="muted" id="tot"></p>
+<h2>Aguantar hasta el bonding <span class="muted" id="rkey"></span></h2><p class="muted">Entra solo con demanda que parece orgánica (muchos compradores distintos, entrada neta de SOL, poco wash/bots) y vende al llegar al market cap objetivo, con stop loss y tiempo máximo.</p>
+<div class="stats" id="ride"></div><div class="wrap"><table id="rtop"></table></div>
+<h2>Últimas operaciones simuladas (estrategia principal)</h2><div class="wrap"><table id="trades"></table></div>
+<h2>Últimas operaciones (aguantar hasta el bonding)</h2><div class="wrap"><table id="rtrades"></table></div>
+<p class="muted" style="margin-top:24px">Datos: logs públicos del programa de pump.fun (RPC pública de Solana), precio SOL/USD de CoinGecko. Resultados pasados simulados no garantizan nada. <a href="/api/scalp/status">JSON estado</a> · <a href="/api/scalp/trades">JSON operaciones</a></p>
+</main><script>
+const $=(id)=>document.getElementById(id),esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const sol=(x)=>x==null?'—':`<span class="${x>0?'pos':x<0?'neg':''}">${x>0?'+':''}${Number(x).toFixed(4)} SOL</span>`;
+const t=(iso)=>iso?new Date(iso).toLocaleString('es-ES',{timeZone:'Europe/Madrid',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—';
+const R={tp:'take profit',sl:'stop loss',time:'tiempo',target:'objetivo MC',graduated:'graduó'};
+const stats=(v,usd)=>v?[['Operaciones',v.trades],['Acierto',v.winRate==null?'—':v.winRate+'%'],['SOL neto',sol(v.netSol)],['Ganancia media',sol(v.avgWin)],['Pérdida media',sol(v.avgLoss)],['Peor racha (drawdown)',v.maxDrawdownSol.toFixed(4)+' SOL'],['Abiertas',v.open]].map(([k,x])=>`<div class="stat"><b>${x}</b>${k}</div>`).join('')+(usd?`<div class="stat"><b>${usd}</b>neto en USD</div>`:''):'';
+const vt=(rows)=>rows.length?'<tr><th>#</th><th>Combinación</th><th>Ops</th><th>Acierto</th><th>SOL neto</th><th>Media +</th><th>Media −</th><th>Drawdown</th><th>Salidas</th></tr>'+rows.map((v,i)=>`<tr><td>${i+1}</td><td><code>${esc(v.key)}</code></td><td>${v.trades}</td><td>${v.winRate}%</td><td>${sol(v.netSol)}</td><td>${sol(v.avgWin)}</td><td>${sol(v.avgLoss)}</td><td>${v.maxDrawdownSol.toFixed(4)}</td><td>${Object.entries(v.exits||{}).map(([k,n])=>(R[k]||k)+' '+n).join(', ')}</td></tr>`).join(''):'<tr><td class="muted">Aún no hay combinaciones con suficientes operaciones.</td></tr>';
+const tt=(rows)=>rows.length?'<tr><th>Moneda</th><th>Entrada</th><th>Salida</th><th>Duración</th><th>MC entrada→salida (SOL)</th><th>Precio</th><th>Motivo</th><th>Neto</th></tr>'+rows.slice(0,40).map((r)=>`<tr><td><a href="https://pump.fun/coin/${esc(r.mint)}" target="_blank" rel="noopener">${esc(r.symbol?'$'+r.symbol:r.mint.slice(0,6)+'…')}</a></td><td>${t(r.entryAt)}</td><td>${t(r.exitAt)}</td><td>${r.holdSec}s</td><td>${r.entryMcSol} → ${r.exitMcSol}</td><td>${r.grossPct>0?'+':''}${r.grossPct}%</td><td>${R[r.reason]||r.reason}</td><td>${sol(r.netSol)} (${r.netPct}%)</td></tr>`).join(''):'<tr><td class="muted">Sin operaciones todavía.</td></tr>';
+async function load(){
+  const [s,tr]=await Promise.all([fetch('/api/scalp/status',{cache:'no-store'}).then(r=>r.json()),fetch('/api/scalp/trades',{cache:'no-store'}).then(r=>r.json())]);
+  const a=s.assumptions,usd=(x)=>a.solUsd&&x!=null?(x*a.solUsd>=0?'+':'')+'$'+(x*a.solUsd).toFixed(2):null;
+  $('assump').innerHTML=`Supuestos: comisión pump.fun ${a.feePctPerSide}% por lado, ${a.txFeeSol} SOL de red por transacción, retraso ${a.latencyMs/1000}s, máx. ${a.maxOpenPerVariant} posiciones a la vez por combinación. Coste ida y vuelta: ${Object.entries(a.roundTripCostPctAt).map(([k,v])=>k+' SOL → '+v+'%').join(', ')}. SOL = $${a.solUsd??'?'}. En marcha desde ${t(s.startedAt)} (Madrid). Stream: ${s.stream.connected?'conectado':'desconectado'}, ${s.stream.mintsTracked} monedas vigiladas, ${s.entries} entradas, ${s.openPositions} posiciones abiertas.`;
+  $('pkey').textContent=s.primary?.key||'';$('prim').innerHTML=stats(s.primary,usd(s.primary?.netSol));
+  $('top').innerHTML=vt(s.scalp.top10);$('tot').textContent=`${s.scalp.totals.variants} combinaciones; ${s.scalp.totals.withTrades} con operaciones, ${s.scalp.totals.profitable} en positivo.`;
+  $('rkey').textContent=s.ridePrimary?.key||'';$('ride').innerHTML=stats(s.ridePrimary,usd(s.ridePrimary?.netSol));$('rtop').innerHTML=vt(s.ride.top10);
+  $('trades').innerHTML=tt(tr.scalp);$('rtrades').innerHTML=tt(tr.ride);
+}
+load().catch((e)=>$('assump').textContent='Error: '+e.message);setInterval(load,30000);
+</script></body></html>

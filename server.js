@@ -34,6 +34,15 @@ const store = createStore();
 let bot = null; let radar = null;
 const { createPicker } = require('./picks');
 let picker = null;
+// ---- Bot-Volume Scalper + Ride-to-Bonding (PAPER TRADING ONLY; free public Solana RPC log stream, 0 Helius credits)
+const createdSyms = new Map(); // mint -> symbol, fed by the radar's PumpPortal create stream
+let scalper = null;
+if (process.env.SCALP_ENABLED !== '0') {
+  const { createScalper, renderEnvStore } = require('./scalp');
+  scalper = createScalper({ store: renderEnvStore(), symbolOf: (m) => createdSyms.get(m) });
+  scalper.start().catch((e) => console.error('[scalp] start failed', e.message));
+}
+const onWsEvent = (j) => { if (j.txType === 'create' && j.mint && j.symbol) { createdSyms.set(j.mint, j.symbol); if (createdSyms.size > 20000) createdSyms.delete(createdSyms.keys().next().value); } };
 if (process.env.RADAR_ENABLED !== '0') {
   // RADAR_MODE=demo (default): picks are only recorded + shown on /radar. RADAR_MODE=live: picks are also sent to /radar subscribers.
   picker = createPicker({ store, onPick: async (pick) => {
@@ -42,7 +51,7 @@ if (process.env.RADAR_ENABLED !== '0') {
     console.log(`[radar] PICK ${pick.symbol} ${pick.mint} -> ${n} subscriber(s)`);
   } });
   radar = createRadar({
-    picker,
+    picker, onWsEvent,
     isAlerted: (m) => store.data.alerted.includes(m),
     markAlerted: (m) => { store.data.alerted.push(m); if (store.data.alerted.length > 200) store.data.alerted.splice(0, store.data.alerted.length - 200); store.save(); },
   });
@@ -70,6 +79,11 @@ app.get('/api/radar/picks', (_, res) => {
 });
 app.get('/radar', (_, res) => res.sendFile(path.join(__dirname, 'public', 'radar.html')));
 
+app.get('/scalp', (_, res) => res.sendFile(path.join(__dirname, 'public', 'scalp.html')));
+app.get('/api/scalp/status', (_, res) => { res.set('cache-control', 'no-store'); res.json(scalper ? scalper.status() : { disabled: true }); });
+app.get('/api/scalp/trades', (_, res) => { res.set('cache-control', 'no-store'); res.json(scalper ? scalper.trades() : { disabled: true }); });
+app.get('/api/scalp/variant/:key', (req, res) => { const v = scalper?.variant(req.params.key); v ? res.json(v) : res.sendStatus(404); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} process.exit(0); });
 app.get('/api/radar/status', (_, res) => {
   res.set('cache-control', 'no-store');
   res.json({ radar: radar ? radar.status() : { running: false, disabled: true }, state: store.status(), keepalive, uptimeSec: Math.round(process.uptime()), now: new Date().toISOString() });

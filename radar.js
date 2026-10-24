@@ -67,7 +67,7 @@ function progressFromApi(c, initReal = INITIAL_REAL) {
   return Math.max(0, Math.round(((initReal - rt) / initReal) * 1000) / 10);
 }
 
-function createRadar({ onAlert, picker = null, isAlerted = () => false, markAlerted = () => {}, log = console.log } = {}) {
+function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () => false, markAlerted = () => {}, log = console.log } = {}) {
   const cfg = CFG();
   const tracked = new Map();   // mint -> { name, symbol, progress, mcUsd, lastTradeAt, firstSeenAt, lastSeenAt }
   const decided = new Map();   // mint -> { at, clean, reasons, progress }
@@ -235,6 +235,7 @@ function createRadar({ onAlert, picker = null, isAlerted = () => false, markAler
     });
     ws.on('message', (buf) => {
       let j; try { j = JSON.parse(buf); } catch { return; }
+      if (onWsEvent) { try { onWsEvent(j); } catch {} }
       if (j.txType === 'create' && j.mint) { chainAdd(j); st.ws.newTokens++; st.ws.lastEventAt = new Date().toISOString(); st.ws.lastNewMint = j.mint; }
       else if (j.txType === 'migrate' || (j.mint && j.pool && !j.txType)) { st.ws.migrations++; st.ws.lastEventAt = new Date().toISOString(); if (j.mint) tracked.delete(j.mint); }
     });
