@@ -11,7 +11,7 @@ const TOKEN = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ATA = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const CORE = 'CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d';
 const GACHA = 'https://gacha.collectorcrypt.com';
-const RENT_0 = 890880; // rent-exempt minimum for a 0-byte system account (the pump creator vault)
+const RENT_0_DEFAULT = 650240; // rent-exempt minimum for a 0-byte account (the pump creator vault keeps it); read live via RPC
 const CREATOR_FEE_PCT = 0.30; // pump.fun bonding curve creator fee (pump.fun/docs/fees, updated 17 Oct 2026)
 const TIER = { 1: 'Epic', 2: 'Rare', 3: 'Uncommon', 4: 'Common' };
 const MEMO_RE = /([a-z0-9]{1,24}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):open/;
@@ -70,9 +70,11 @@ function createRips(opts = {}) {
   }
   const getTx = (sig) => rpc('getTransaction', [sig, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 1, commitment: 'confirmed' }]);
 
+  let rent0 = null;
   async function readVaults() {
+    if (rent0 == null) { try { rent0 = Number(await rpc('getMinimumBalanceForRentExemption', [0])) || RENT_0_DEFAULT; } catch { rent0 = RENT_0_DEFAULT; } }
     const [a, b] = await Promise.all([rpc('getBalance', [V.curve, { commitment: 'confirmed' }]), rpc('getAccountInfo', [V.amm, { encoding: 'jsonParsed', commitment: 'confirmed' }])]);
-    st.unclaimed.curveSol = Math.max(0, ((a?.value ?? 0) - RENT_0) / 1e9);
+    st.unclaimed.curveSol = Math.max(0, ((a?.value ?? 0) - rent0) / 1e9);
     st.unclaimed.ammSol = Number(b?.value?.data?.parsed?.info?.tokenAmount?.amount || 0) / 1e9;
   }
 
@@ -192,7 +194,7 @@ function createRips(opts = {}) {
       statement: 'Creator fees open packs live. The dev keeps the cards. Not financial advice.',
       coin: { ca: configured ? CA : null, devWallet: configured ? DEV : null, ticker: env.RIPS_TICKER || null, name: env.RIPS_NAME || null, x: env.RIPS_X_URL || null,
         pumpUrl: configured ? `https://pump.fun/coin/${CA}` : null, creatorVaults: configured ? V : null, market: st.market },
-      fees: { creatorFeePct: CREATOR_FEE_PCT, note: 'pump.fun bonding curve: 0.30% of every trade to the creator. After graduation PumpSwap pays 0.30% below 420 SOL market cap, then a tier table (0.95% at 420-1470 SOL, stepping down as it grows).',
+      fees: { creatorFeePct: CREATOR_FEE_PCT, vaultScope: 'pump.fun creator vaults are per creator wallet, not per coin: use a fresh dev wallet for this coin so the numbers are this coin only.', note: 'pump.fun bonding curve: 0.30% of every trade to the creator. After graduation PumpSwap pays 0.30% below 420 SOL market cap, then a tier table (0.95% at 420-1470 SOL, stepping down as it grows).',
         unclaimedSol: +unclaimedSol.toFixed(6), unclaimedCurveSol: +st.unclaimed.curveSol.toFixed(6), unclaimedPumpswapSol: +st.unclaimed.ammSol.toFixed(6),
         claimedSol: +claimedSol.toFixed(6), earnedSol: +(claimedSol + unclaimedSol).toFixed(6), earnedUsd: usd(claimedSol + unclaimedSol), claims: [...st.claims].reverse() },
       packs: { opened: ok.length, spentUsd: ok.reduce((s, p) => s + (priceOf(p.packType) || 0), 0), insuredValueUsd: ok.reduce((s, p) => s + (p.insuredValueUsd || 0), 0),

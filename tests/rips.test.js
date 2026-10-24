@@ -40,6 +40,7 @@ const d = R.vaultDeltas(tx, v); assert.ok(Math.abs(d.curve + 0.5) < 1e-9 && Math
     url = String(url);
     if (init?.method === 'POST') {
       const { method, params } = JSON.parse(init.body);
+      if (method === 'getMinimumBalanceForRentExemption') return ok({ result: 890880 });
       if (method === 'getBalance') return ok({ result: { value: 0.1e9 + 890880 } });
       if (method === 'getAccountInfo' && params[0] === v.amm) return ok({ result: { value: null } });
       if (method === 'getAccountInfo' && params[0] === NFT) return ok({ result: { value: { owner: 'CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d', data: [asset.toString('base64'), 'base64'] } } });
