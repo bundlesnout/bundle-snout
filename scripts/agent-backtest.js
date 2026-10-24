@@ -14,7 +14,9 @@ const files = process.argv.slice(2).filter((x) => !x.startsWith('--')); const SE
 const E = require('../exec'); const OLD = process.env.BT_COST === 'old';
 if (OLD) Object.assign(process.env, { AGENT_ROUTE: 'pumpportal', AGENT_TX_FEE_SOL: '0.0001', AGENT_MAX_COST_SHARE: '100', AGENT_CURVE_FEE_PCT: '1.25' });
 const LATENCY = 5000, SIZE = 0.02, FEE = OLD ? { feePct: 1.75, txFeeSol: 0.0001 } : { feePct: 1.25, txFeeSol: (E.networkSol('buy') + E.networkSol('sell')) / 2 };
+const VB_TP = 20; // the user's rule for the volume-bot arm: take profit at +20% net of all costs (not tuned)
 const GRID = { tp: [10, 15, 20, 30, 50], sl: [8, 12, 15, 25], hold: [3, 5, 10, 15] };
+const iso = (t) => new Date(t).toISOString();
 const r1 = (x) => Math.round(x * 10) / 10, r4 = (x) => Math.round(x * 1e4) / 1e4;
 const solCurve = (t) => t.vs >= 29.9 && t.vs <= 130 && t.vt > 250e6 && t.vt <= 1.0731e9;
 
@@ -45,22 +47,26 @@ const statsCI = (pnls) => ({ ...stats(pnls), ci90AvgPct: boot(pnls) });
   const tStart = rows[0].at, tEnd = rows[rows.length - 1].at, tSplit = tStart + (tEnd - tStart) / 2;
   const arms = M.armParams({}); const ride = require('../agent').ACFG().ride;
   // ---- 1) signal events + price paths
-  const mints = new Map(), lastEval = new Map(), fired = Object.fromEntries(M.ARM_KEYS.map((k) => [k, new Set()])); const events = []; const byMint = new Map();
+  const mints = new Map(), lastEval = new Map(), fired = Object.fromEntries(M.ARM_KEYS.map((k) => [k, new Set()])); const events = []; const byMint = new Map(); const firstSeen = new Map();
   for (const tr of rows) {
     const m = feed(mints, tr);
-    if (!byMint.has(tr.mint)) byMint.set(tr.mint, []); byMint.get(tr.mint).push([tr.at, tr.vs, tr.vt, m.complete]);
+    if (!byMint.has(tr.mint)) byMint.set(tr.mint, []); byMint.get(tr.mint).push([tr.at, tr.vs, tr.vt, m.complete, tr.user, tr.buy, tr.sol]); if (!firstSeen.has(tr.mint)) firstSeen.set(tr.mint, tr.at);
     if (m.complete || (lastEval.get(tr.mint) || 0) > tr.at - 3000) continue; lastEval.set(tr.mint, tr.at);
-    for (const s of M.armSignals(m, tr.at, ride, arms)) { if (fired[s.arm].has(tr.mint)) continue; fired[s.arm].add(tr.mint); events.push({ arm: s.arm, mint: tr.mint, at: tr.at, idx: byMint.get(tr.mint).length - 1 }); }
+    for (const s of M.armSignals(m, tr.at, ride, arms, { shadow: true })) { if (fired[s.arm].has(tr.mint)) continue; fired[s.arm].add(tr.mint); events.push({ arm: s.arm, mint: tr.mint, at: tr.at, idx: byMint.get(tr.mint).length - 1, bots: s.vb?.bots || null, clip: s.vb?.clip || 0 }); }
   }
   // simulate one event for all grid combos
   function simulate(ev) {
     const path = byMint.get(ev.mint); let i = ev.idx + 1; while (i < path.length && path[i][0] < ev.at + LATENCY) i++; if (i >= path.length) return null;
     const [ft, fvs, fvt, fdone] = path[i]; if (fdone) return null; const fill = buyFill(fvs, fvt, SIZE, FEE); const pos = { solIn: fill.solIn, tok: fill.tok };
     const res = {};
-    for (const tp of GRID.tp) for (const sl of GRID.sl) for (const hold of GRID.hold) {
-      let out = null;
-      for (let j = i + 1; j < path.length; j++) { const [t, vs, vt, done] = path[j]; const v = Math.max(0, sellValue(vs, vt, pos, FEE)); const pct = ((v - fill.cost) / fill.cost) * 100;
-        if (done || pct >= tp || pct <= -sl || t - ft >= hold * 60e3) { out = { sol: v - fill.cost, pct, at: t }; break; } }
+    // volume-bot arm: also exit when the bot stops (no bot-wallet trade for VB.stopMs) or a big non-bot sell (dump)
+    const B = ev.bots ? new Set(ev.bots) : null;
+    for (const tp of (ev.arm === 'volbot' ? [VB_TP] : GRID.tp)) for (const sl of GRID.sl) for (const hold of GRID.hold) {
+      let out = null; let lastBot = ft;
+      for (let j = i + 1; j < path.length; j++) { const [t, vs, vt, done, user, buy, sol] = path[j]; const v = Math.max(0, sellValue(vs, vt, pos, FEE)); const pct = ((v - fill.cost) / fill.cost) * 100;
+        let why = done ? 'graduated' : pct >= tp ? 'tp' : pct <= -sl ? 'sl' : t - ft >= hold * 60e3 ? 'time' : null;
+        if (!why && B) { if (M.isBotTrade({ user, sol }, B, ev.clip)) lastBot = t; else if (t - lastBot >= M.VB.stopMs) why = 'bot stopped'; else if (!buy && sol >= M.VB.dumpSol) why = 'dump'; }
+        if (why) { out = { sol: v - fill.cost, pct, at: t, why }; break; } }
       if (!out) { const [t, vs, vt] = path[path.length - 1]; const v = Math.max(0, sellValue(vs, vt, pos, FEE)); out = { sol: v - fill.cost, pct: ((v - fill.cost) / fill.cost) * 100, at: t, open: true }; }
       res[`${tp}/${sl}/${hold}`] = out;
     }
@@ -75,7 +81,7 @@ const statsCI = (pnls) => ({ ...stats(pnls), ci90AvgPct: boot(pnls) });
     const keys = Object.keys(evs[0]?.sim.res || {});
     let best = null; for (const key of keys) { const s = score(IS, key); if (s.n >= 15 && (!best || s.netSol > best.s.netSol)) best = { key, s }; }
     // how lucky is the in-sample winner? share of the 80 combos that are positive in-sample
-    const posShare = IS.length ? keys.filter((key) => score(IS, key).netSol > 0).length / 80 : 0;
+    const posShare = IS.length && keys.length ? keys.filter((key) => score(IS, key).netSol > 0).length / keys.length : 0;
     const defIS = score(IS, defKey);
     // anti-overfit rule: only move away from the defaults when a real region of the grid works (≥20% of combos
     // profitable in-sample) and the best combo beats the defaults; one lucky corner of the grid is not an edge
@@ -83,10 +89,11 @@ const statsCI = (pnls) => ({ ...stats(pnls), ci90AvgPct: boot(pnls) });
     const pick = robust ? best.key : defKey; const [tp, sl, hold] = pick.split('/').map(Number);
     const picked = !best ? 'kept defaults: too few in-sample trades to tune' : robust ? 'tuned: best in-sample combo, with ≥20% of the grid profitable' : best.s.netSol <= 0 ? 'kept defaults: none of the 80 exit combos was profitable in-sample' : `kept defaults: the best in-sample combo (${best.key}) looked like luck, only ${r1(posShare * 100)}% of the grid was profitable`;
     const enabled = true; const inSamplePositive = score(IS, pick).netSol > 0; // one short sample is too little to switch an arm off: the live bandit decides
-    chosen[k] = { tp, sl, hold, enabled, inSamplePositive };
+    chosen[k] = { tp, sl, hold, enabled, inSamplePositive, ...(arms[k].shadow ? { shadow: true } : {}) };
     // what the in-sample half says about this arm (with the exits picked above) becomes a down-weighted prior for the bandit
     if (IS.length) priors[k] = M.statOf(IS.map((e) => e.sim.res[pick].pct));
-    perArm.push({ arm: k, label: arms[k].label, signals: events.filter((e) => e.arm === k).length, evaluated: evs.length, defaults: { params: defKey, inSample: scoreCI(IS, defKey), outOfSample: scoreCI(OOS, defKey) },
+    const why = {}; for (const e of OOS) { const w = e.sim.res[pick].why || 'open at end'; why[w] = (why[w] || 0) + 1; }
+    perArm.push({ arm: k, label: arms[k].label, exitReasonsOutOfSample: why, tpHitRateOutOfSamplePct: OOS.length ? r1(((why.tp || 0) / OOS.length) * 100) : null, signals: events.filter((e) => e.arm === k).length, evaluated: evs.length, defaults: { params: defKey, inSample: scoreCI(IS, defKey), outOfSample: scoreCI(OOS, defKey) },
       chosen: { params: pick, enabled, inSamplePositive, picked, bestInSample: best ? best.key : null, inSample: scoreCI(IS, pick), outOfSample: scoreCI(OOS, pick) }, inSampleCombosPositivePct: r1(posShare * 100) });
   }
   // ---- 2) system replay with the real agent code
@@ -95,7 +102,7 @@ const statsCI = (pnls) => ({ ...stats(pnls), ci90AvgPct: boot(pnls) });
   const cleanRep = { isPumpFun: true, curve: { quote: 'SOL', mayhemMode: false, creatorOnCurve: 'x' }, bundle: { multiWalletTxs: 0, sameSlotPaidByDev: 0, rightAfterCreateWallets: 0, rightAfterCreatePct: 0, sameSlotPctSupply: 0, earlyStillHoldPct: 0 }, dev: { wallet: 'x', hasSold: false, holdingPctSupply: 1 }, holders: { top10Pct: 10 }, risk: { level: 'BAJO' } };
   async function system(seed, params, pri, instincts = true) {
     process.env.AGENT_SEED = String(seed); let t = tStart; const mm = new Map();
-    const scalper = { mints: mm, symbol: () => null }; const ag = createAgent({ scalper, now: () => t, analyze: async () => cleanRep, cleanCheck, radarCfg: CFG(), rpc: null, quiet: true, instincts, params: { source: 'backtest', arms: params, priors: pri }, fetchFn: async () => ({ json: async () => ({}) }) });
+    const scalper = { mints: mm, symbol: () => null }; const ag = createAgent({ scalper, now: () => t, analyze: async (mint) => ({ ...cleanRep, creation: { time: iso(firstSeen.get(mint) ?? t) } }), /* coin age = since first seen in the data (a lower bound) */ cleanCheck, radarCfg: CFG(), rpc: null, quiet: true, instincts, params: { source: 'backtest', arms: params, priors: pri }, fetchFn: async () => ({ json: async () => ({}) }) });
     ag.cfg.enabled = false; let nextTick = t + 5000;
     for (const tr of rows) {
       t = tr.at; if (!ag.cfg.enabled && t >= tSplit) { ag.cfg.enabled = true; ag.st.peak = ag.equity(); }
@@ -106,17 +113,18 @@ const statsCI = (pnls) => ({ ...stats(pnls), ci90AvgPct: boot(pnls) });
     const sells = ag.st.trades.filter((x) => x.side === 'SELL');
     return { seed, ...stats(sells.reverse().map((x) => ({ sol: x.pnlSol, pct: x.pnlPct }))), sitOut: ag.st.totals.sitOut, survivalSkips: ag.st.totals.survivalSkips || 0, pains: Math.round((ag.st.affect.totalPain || 0) * 10) / 10, life: ag.st.limbo ? 'limbo' : ag._test.vit().state.key, signal: ag._test.vit().signal, scans: ag.st.totals.scans, weights: ag.st.weights, byArm: Object.fromEntries(M.ARM_KEYS.map((k) => [k, ag.st.bandit[k].all.n])) };
   }
-  const sysRuns = { chosen: [], noInstincts: [], noPrior: [], defaults: [] };
-  for (let s = 1; s <= SEEDS; s++) { sysRuns.chosen.push(await system(s, chosen, priors)); sysRuns.noInstincts.push(await system(s, chosen, priors, false)); sysRuns.noPrior.push(await system(s, chosen, null)); sysRuns.defaults.push(await system(s, {}, null)); }
+  const sysRuns = { chosen: [], volbotLive: [], noInstincts: [], noPrior: [], defaults: [] };
+  // volbotLive = the deployed setup with the volume-bot arm allowed to trade (shadow off), with its in-sample prior
+  const withVB = { ...chosen, volbot: { ...chosen.volbot, shadow: false } };
+  for (let s = 1; s <= SEEDS; s++) { sysRuns.chosen.push(await system(s, chosen, priors)); sysRuns.volbotLive.push(await system(s, withVB, priors)); sysRuns.noInstincts.push(await system(s, chosen, priors, false)); sysRuns.noPrior.push(await system(s, chosen, null)); sysRuns.defaults.push(await system(s, {}, null)); }
   const summ = (runs) => { const v = runs.map((r) => r.netSol).sort((a, b) => a - b); return { seeds: runs.length, medianNetSol: v[Math.floor(v.length / 2)], meanNetSol: r4(v.reduce((a, x) => a + x, 0) / v.length), minNetSol: v[0], maxNetSol: v[v.length - 1], profitableSeedsPct: r1((v.filter((x) => x > 0).length / v.length) * 100), avgTrades: r1(runs.reduce((a, r) => a + r.n, 0) / runs.length), avgWinRate: r1(runs.reduce((a, r) => a + (r.winRate || 0), 0) / runs.length), avgMaxDDSol: r4(runs.reduce((a, r) => a + r.maxDDSol, 0) / runs.length), avgSurvivalSkips: r1(runs.reduce((a, r) => a + (r.survivalSkips || 0), 0) / runs.length), endStates: runs.reduce((a, r) => ((a[r.life] = (a[r.life] || 0) + 1), a), {}) }; };
-  const iso = (t) => new Date(t).toISOString();
   const outJ = { generatedAt: new Date().toISOString(), data: { files: files.map((f) => path.basename(f)), trades: rows.length, coins: byMint.size, from: iso(tStart), to: iso(tEnd), minutes: r1((tEnd - tStart) / 60e3) },
     split: { inSample: [iso(tStart), iso(tSplit)], outOfSample: [iso(tSplit), iso(tEnd)] },
     assumptions: { costModel: OLD ? 'old (PumpPortal 1.75%/side)' : 'direct route (exec.js)', sizeSol: SIZE, feesPerSidePct: FEE.feePct, txFeeSol: FEE.txFeeSol, entryLatencyMs: LATENCY, grid: GRID, oneEntryPerCoinPerArm: true },
-    perArm, system: { note: 'real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass). withInSampleParams = what is deployed (in-sample exits + in-sample priors); withoutInstincts = deployed setup with survival scaling and reward/pain switched off (ablation); withoutPriors = same exits, bandit starts blank; withDefaults = hand-set exits, blank bandit; doing nothing = 0 SOL', withInSampleParams: summ(sysRuns.chosen), withoutInstincts: summ(sysRuns.noInstincts), withoutPriors: summ(sysRuns.noPrior), withDefaults: summ(sysRuns.defaults), baselineNoTrading: 0, runs: sysRuns.chosen },
+    perArm, system: { note: 'real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass). withInSampleParams = what is deployed (in-sample exits + in-sample priors); withoutInstincts = deployed setup with survival scaling and reward/pain switched off (ablation); withoutPriors = same exits, bandit starts blank; withDefaults = hand-set exits, blank bandit; doing nothing = 0 SOL', withInSampleParams: summ(sysRuns.chosen), withVolbotTrading: { ...summ(sysRuns.volbotLive), volbotTradesPerSeed: r1(sysRuns.volbotLive.reduce((a, r) => a + (r.byArm.volbot || 0), 0) / SEEDS) }, withoutInstincts: summ(sysRuns.noInstincts), withoutPriors: summ(sysRuns.noPrior), withDefaults: summ(sysRuns.defaults), baselineNoTrading: 0, runs: sysRuns.chosen },
     caveats: ['Short sample (one recording session): results are noisy and say little about the future.', 'The live scanner rejects most coins; it cannot be replayed offline, so the system replay trades coins the live agent would refuse.', 'Fills use the observed curve after a 5 s delay; real fills can be worse (slippage, priority-fee races, failed txs).', 'Exit params were picked on the in-sample half only; the out-of-sample numbers are the honest ones.', 'ci90AvgPct is a bootstrap 90% interval for the average % per trade: if it includes 0, this sample cannot distinguish an edge from luck.'] };
   const OUT = process.env.BT_OUT_DIR; if (OUT) fs.mkdirSync(OUT, { recursive: true });
   fs.writeFileSync(OUT ? path.join(OUT, 'agent-backtest.json') : path.join(__dirname, '..', 'public', 'agent-backtest.json'), JSON.stringify(outJ, null, 1));
   fs.writeFileSync(OUT ? path.join(OUT, 'agent-params.json') : path.join(__dirname, '..', 'agent-params.json'), JSON.stringify({ priors, priorNote: `in-sample outcomes per arm; the agent counts them at ≤${M.PRIOR_WEIGHT}× weight, ≤${M.PRIOR_MAX_N} pseudo-trades`, source: `backtest in-sample ${iso(tStart).slice(0, 16)}→${iso(tSplit).slice(11, 16)}Z (${files.map((f) => path.basename(f)).join(',')})`, generatedAt: outJ.generatedAt, arms: chosen }, null, 1));
-  console.log(JSON.stringify({ data: outJ.data, perArm: perArm.map((a) => ({ arm: a.arm, signals: a.signals, def: [a.defaults.inSample, a.defaults.outOfSample].map((s) => `${s.n}t ${s.winRate}% ${s.netSol}`), chosen: a.chosen.params, en: a.chosen.enabled, ch: [a.chosen.inSample, a.chosen.outOfSample].map((s) => `${s.n}t ${s.winRate}% ${s.netSol}`), posCombos: a.inSampleCombosPositivePct })), system: { deployed: outJ.system.withInSampleParams, noInstincts: outJ.system.withoutInstincts, noPrior: outJ.system.withoutPriors, defaults: outJ.system.withDefaults } }, null, 1));
+  console.log(JSON.stringify({ data: outJ.data, perArm: perArm.map((a) => ({ arm: a.arm, signals: a.signals, def: [a.defaults.inSample, a.defaults.outOfSample].map((s) => `${s.n}t ${s.winRate}% ${s.netSol}`), chosen: a.chosen.params, en: a.chosen.enabled, ch: [a.chosen.inSample, a.chosen.outOfSample].map((s) => `${s.n}t ${s.winRate}% ${s.netSol}`), posCombos: a.inSampleCombosPositivePct })), perArmVB: perArm.filter((a) => a.arm === 'volbot').map((a) => ({ exits: a.exitReasonsOutOfSample, tpHit: a.tpHitRateOutOfSamplePct, oos: a.chosen.outOfSample, is: a.chosen.inSample, picked: a.chosen.picked })), system: { deployed: outJ.system.withInSampleParams, volbotLive: outJ.system.withVolbotTrading, noInstincts: outJ.system.withoutInstincts, noPrior: outJ.system.withoutPriors, defaults: outJ.system.withDefaults } }, null, 1));
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -17,20 +17,25 @@ const ARMS = {
   momentum: { label: 'Crowd rider', idea: 'many different wallets buying with net SOL inflow and few bots → organic momentum', tp: 20, sl: 15, hold: 15, prog: [8, 85] },
   breakout: { label: 'Breakout', idea: 'price breaks its 5-minute high on rising, broad buying → continuation', tp: 25, sl: 12, hold: 10, prog: [10, 80] },
   fresh: { label: 'Early crowd', idea: 'a young curve pulling many distinct small buyers and few sellers → early discovery', tp: 30, sl: 15, hold: 12, prog: [2, 25] },
+  // shadow by default: it only logs paper signals until a backtest on real data says it adds edge (AGENT_ARM_VOLBOT_SHADOW=0 to trade it)
+  volbot: { label: 'Volume-bot rider', idea: 'a few wallets trade both ways in regular, similar-size clips and hold the price in a range → buy a dip near the range low, exit at +20% net, when the bot stops or on a big sell', tp: 20, sl: 10, hold: 20, prog: [5, 85], shadow: true },
 };
 const ARM_KEYS = Object.keys(ARMS);
 function armParams(overrides = {}) {
   const out = {};
   for (const k of ARM_KEYS) {
     const o = overrides[k] || {}; const e = (n) => (process.env[`AGENT_ARM_${k.toUpperCase()}_${n}`] != null ? Number(process.env[`AGENT_ARM_${k.toUpperCase()}_${n}`]) : null);
-    out[k] = { ...ARMS[k], tp: e('TP') ?? o.tp ?? ARMS[k].tp, sl: e('SL') ?? o.sl ?? ARMS[k].sl, hold: e('HOLD') ?? o.hold ?? ARMS[k].hold, enabled: process.env[`AGENT_ARM_${k.toUpperCase()}`] !== '0' && o.enabled !== false };
+    const sh = process.env[`AGENT_ARM_${k.toUpperCase()}_SHADOW`]; const shadow = sh != null ? sh !== '0' : o.shadow != null ? !!o.shadow : !!ARMS[k].shadow;
+    const on = process.env[`AGENT_ARM_${k.toUpperCase()}`] !== '0' && o.enabled !== false;
+    // enabled = may open real (or paper-treasury) positions; shadow = only logs paper signals, never trades or learns
+    out[k] = { ...ARMS[k], tp: e('TP') ?? o.tp ?? ARMS[k].tp, sl: e('SL') ?? o.sl ?? ARMS[k].sl, hold: e('HOLD') ?? o.hold ?? ARMS[k].hold, enabled: on && !shadow, shadow: on && shadow };
   }
   return out;
 }
 // All arms whose entry test passes right now on this coin (m = scalper mint state, t = now).
-function armSignals(m, t, ride, arms) {
+function armSignals(m, t, ride, arms, { shadow = false } = {}) { // shadow:true = also test shadow arms (backtest study)
   const out = []; const f60 = features(m, t, 60e3); if (!f60) return out;
-  const pin = (k, f) => arms[k]?.enabled && f.progress >= arms[k].prog[0] && f.progress <= arms[k].prog[1];
+  const pin = (k, f) => (arms[k]?.enabled || (shadow && arms[k]?.shadow)) && f.progress >= arms[k].prog[0] && f.progress <= arms[k].prog[1];
   const lv = scalpLevels(f60);
   if (pin('dip', f60) && lv.R2 >= 1) out.push({ arm: 'dip', f: f60, facts: `the price fell ${Math.abs(f60.chgPct)}% in 60 s while ${f60.n} trades and ${f60.vol} SOL kept flowing (${Math.round(f60.loopShare * 100)}% from wallets trading both ways)` });
   const f = features(m, t, 180e3);
@@ -44,7 +49,47 @@ function armSignals(m, t, ride, arms) {
   }
   if (pin('fresh', f60) && f60.uniqueBuyers >= 10 && f60.buySol >= 1.5 && f60.sells <= 0.5 * f60.buys && f60.loopShare <= 0.2 && f60.botTxShare <= 0.2 && f60.sameSize <= 0.3 && f60.chgPct > 0 && f60.chgPct <= 60)
     out.push({ arm: 'fresh', f: f60, facts: `a young curve (${f60.progress}% bonded) drew ${f60.uniqueBuyers} distinct buyers in 60 s with only ${f60.sells} sells` });
+  if (pin('volbot', f60)) { const vb = volbotState(m, t); if (vb && vb.entry) out.push({ arm: 'volbot', f: f60, vb, facts: vb.facts }); }
   return out;
+}
+
+// ---------------------------------------------------------------- volume-bot detection
+// A "volume bot" here = a small set of wallets (VB.minBots..VB.maxBots) that each BUY and SELL in the last 3 min with
+// matching totals (wash: |buy SOL - sell SOL| <= VB.washTol of the larger side), in clips of similar size (CV <= VB.maxSizeCv),
+// together >= VB.minShare of all trades and active in every minute of the window. The price must be ranging
+// (3 min high/low within VB.range, small drift, no pump in the last 60 s). Entry = a dip: the price is in the lowest
+// VB.lowZone of that range and fell over the last 30 s. Dust trades (< 0.001 SOL) are ignored.
+const VB = { win: 180e3, washTol: 0.2, maxSizeCv: 0.8, minBots: 1, maxBots: 25, minShare: 0.3, minTrades: 15, range: [3, 30], maxDrift: 10, lowZone: 0.3, maxPump60: 8, stopMs: 90e3, dumpSol: 1.0 };
+const cvOf = (a) => { if (a.length < 2) return 0; const mu = a.reduce((x, y) => x + y, 0) / a.length; if (!mu) return 0; const v = a.reduce((x, y) => x + (y - mu) ** 2, 0) / a.length; return Math.sqrt(v) / mu; };
+function volbotState(m, t) {
+  const w = (m.trades || []).filter((x) => x.at >= t - VB.win && x.sol >= 0.001); if (w.length < VB.minTrades) return null;
+  const by = new Map(); for (const x of w) { const q = by.get(x.user) || { b: 0, s: 0 }; x.buy ? (q.b += x.sol) : (q.s += x.sol); by.set(x.user, q); }
+  const bots = []; for (const [u, q] of by) if (q.b > 0 && q.s > 0 && Math.abs(q.b - q.s) / Math.max(q.b, q.s) <= VB.washTol) bots.push(u);
+  if (bots.length < VB.minBots || bots.length > VB.maxBots) return null;
+  const B = new Set(bots); const bt = w.filter((x) => B.has(x.user)); const share = bt.length / w.length;
+  if (share < VB.minShare || cvOf(bt.map((x) => x.sol)) > VB.maxSizeCv) return null;
+  for (let k = 0; k < 3; k++) if (!bt.some((x) => x.at >= t - VB.win + k * 60e3 && x.at < t - VB.win + (k + 1) * 60e3)) return null; // steady: every minute
+  const ps = w.map((x) => x.vs / x.vt); const hi = Math.max(...ps), lo = Math.min(...ps), p = ps[ps.length - 1];
+  const rangePct = (hi / lo - 1) * 100, drift = (p / ps[0] - 1) * 100;
+  const p60 = w.filter((x) => x.at >= t - 60e3).map((x) => x.vs / x.vt); let pump60 = 0, mn = Infinity; for (const q of p60) { mn = Math.min(mn, q); pump60 = Math.max(pump60, (q / mn - 1) * 100); } // biggest rise inside the last 60 s
+  const p30 = w.filter((x) => x.at >= t - 30e3); const fell30 = p30.length >= 2 && p < p30[0].pvs / p30[0].pvt;
+  const pos = hi > lo ? (p - lo) / (hi - lo) : 0.5;
+  const ok = rangePct >= VB.range[0] && rangePct <= VB.range[1] && Math.abs(drift) <= VB.maxDrift && pump60 < VB.maxPump60;
+  const entry = ok && pos <= VB.lowZone && fell30;
+  const sz = bt.map((x) => x.sol).sort((x, y) => x - y); const clip = r4(sz[sz.length >> 1]);
+  return { bots, share: r3(share), rangePct: r1(rangePct), drift: r1(drift), pos: r3(pos), pump60: r1(pump60), clip, ok, entry,
+    facts: `${bots.length} wallet${bots.length > 1 ? 's' : ''} washing buys and sells in ~${clip} SOL clips made ${Math.round(share * 100)}% of the last 3 min of trades, holding the price in a ${r1(rangePct)}% range; it just dipped to the lower ${Math.round(pos * 100)}% of that range` };
+}
+// Volume-bot exits beyond TP/SL/time: the bot stopped (none of its wallets, and no trade of its clip size, for VB.stopMs)
+// or a big non-bot sell (a holder dumping).
+const isBotTrade = (x, B, clip) => B.has(x.user) || (clip > 0 && x.sol >= 0.5 * clip && x.sol <= 1.5 * clip);
+function volbotExit(m, t, bots, sinceAt, clip = 0) {
+  const B = new Set(bots || []); const tr = (m?.trades || []).filter((x) => x.at >= sinceAt);
+  let lastBot = sinceAt; for (const x of tr) if (isBotTrade(x, B, clip) && x.at > lastBot) lastBot = x.at;
+  if (t - lastBot >= VB.stopMs) return `the volume bot stopped (no bot trade for ${Math.round((t - lastBot) / 1e3)} s)`;
+  const dump = tr.find((x) => !x.buy && !B.has(x.user) && x.sol >= VB.dumpSol);
+  if (dump) return `a big holder dumped ${r3(dump.sol)} SOL`;
+  return null;
 }
 
 // ---------------------------------------------------------------- random (seedable for tests/backtests)
@@ -225,5 +270,5 @@ function diaryEntry({ day, dayNo, d, fund, weights, arms, mode }) {
 }
 const newDay = (eq) => ({ opened: 0, trades: 0, wins: 0, pnl: 0, signals: 0, scans: 0, rejected: 0, sitOut: 0, rejects: {}, regimes: {}, best: null, worst: null, startEq: eq, endEq: eq });
 
-module.exports = { ARMS, ARM_KEYS, armParams, armSignals, rng, beta, newBandit, recordOutcome, belief, sampleArm, armWeights, armTable, kellySize,
+module.exports = { ARMS, ARM_KEYS, armParams, armSignals, volbotState, volbotExit, isBotTrade, VB, rng, beta, newBandit, recordOutcome, belief, sampleArm, armWeights, armTable, kellySize,
   makePrior, statOf, PRIOR_WEIGHT, PRIOR_MAX_N, newRegime, regimeObserve, regimeUpdate, regimeKey, REGIME_MULT, ddState, mood, BODY, bodyFund, V, pick, diaryEntry, newDay };

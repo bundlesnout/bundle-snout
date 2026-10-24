@@ -177,11 +177,33 @@ function dipMint(t0) {
       if (m === 'getSignaturesForAddress') return []; return null; };
     process.env.AGENT_PAYOUT_POLL_MS = '0'; const lp = mk(analyze, { rpc: rpcL }); delete process.env.AGENT_PAYOUT_POLL_MS; delete process.env.AGENT_SECRET_KEY; delete process.env.AGENT_MODE;
     lp.st.liveBalance = 0.30; lp.st.liveBaseline = 0.185814381; lp._test.safeTick(); await settle(400); assert.strictEqual(sent.length, 0, 'below goal: nothing sent');
-    lp.st.liveBalance = 0.38; lp._test.safeTick(); await settle(400);
+    lp.st.liveBalance = 0.38; lp._test.safeTick(); for (let i = 0; i < 50 && lp.st.payout?.status !== 'done'; i++) await settle(200); // confirm polling is async
     assert.strictEqual(sent.length, 1, 'payout sent once'); assert.ok(calls.indexOf('simulateTransaction') < calls.indexOf('sendTransaction'), 'simulated before sending');
     assert.strictEqual(lp.st.payout.status, 'done'); assert.strictEqual(lp.st.payout.lamports, 185814381); assert.strictEqual(lp.st.payout.to, '76FHD3T6iu1GMJNyUqShKxHepu85kD3tkg1s6QXq4HLm');
     assert.ok(Math.abs(lp.st.liveBaseline - lam / 1e9) < 1e-6, 'new baseline = post-payout wallet'); assert.strictEqual(lp.st.capitalIn, 0);
     lp.st.liveBalance = 0.9; lp._test.safeTick(); await settle(400); assert.strictEqual(sent.length, 1, 'never twice');
     for (const k of ['AGENT_PAYOUT_ADDRESS', 'AGENT_PAYOUT_SOL', 'AGENT_LIVE_START_SOL']) delete process.env[k]; }
+  // 20) volume-bot rider: detection, dip entry, bot-stop exit; shadow by default = paper signal only, no position, no learning
+  { const M2 = require('../mind'); const t1 = t + 3600e3; const vm = { trades: [], vs: 40, vt: 800e6, complete: false }; let vs = 40, vt = 800e6;
+    const push = (at, sol, buy, user) => { const pvs = vs, pvt = vt, k = vs * vt; vs = buy ? vs + sol : vs - sol; vt = k / vs; vm.trades.push({ at, sol, buy, user, vs, vt, pvs, pvt }); vm.vs = vs; vm.vt = vt; };
+    // 3 wallets wash 0.5 SOL clips every 4 s for 3 min (range-bound), then the price dips to the range low
+    for (let i = 0; i < 44; i++) push(t1 - 180e3 + i * 4e3, 0.5, i % 2 === 0, 'BOT' + (Math.floor(i / 2) % 3));
+    push(t1 - 6e3, 0.6, false, 'BOT0'); push(t1 - 3e3, 0.6, false, 'BOT1'); push(t1 - 2e3, 0.5, false, 'BOT2'); push(t1 - 1e3, 0.2, true, 'BOT2');
+    const v = M2.volbotState(vm, t1); assert.ok(v && v.bots.length === 3 && v.entry, 'volume bot detected with a dip entry: ' + JSON.stringify(v && { b: v.bots.length, r: v.rangePct, pos: v.pos, ok: v.ok }));
+    assert.strictEqual(M2.volbotExit(vm, t1 + 10e3, v.bots, t1, v.clip), null, 'bot still active');
+    assert.ok(/stopped/.test(M2.volbotExit(vm, t1 + 120e3, v.bots, t1, v.clip)), 'bot-stop exit');
+    vm.trades.push({ at: t1 + 5e3, sol: 2, buy: false, user: 'WHALE', vs, vt, pvs: vs, pvt: vt }); assert.ok(/dumped/.test(M2.volbotExit(vm, t1 + 6e3, v.bots, t1, v.clip)), 'dump exit');
+    vm.trades.pop();
+    assert.ok(M2.armParams().volbot.shadow && !M2.armParams().volbot.enabled, 'volbot ships in shadow mode');
+    const tSave = t; t = t1; let sc = 0; const sa = mk(async () => { sc++; return cleanRep(); }); await sa.start(); const vmint = 'VolBot1111111111111111111111111111111pump'; mints.set(vmint, vm);
+    sa.onTrade({ mint: vmint, vs: vm.vs, vt: vm.vt }, vm); await settle();
+    assert.strictEqual(sa.st.positions.length, 0, 'shadow arm never opens a position'); assert.strictEqual(sa.st.shadow.open.length, 1, 'shadow paper signal logged');
+    t = t1 + 120e3; sa._test.safeTick(); assert.strictEqual(sa.st.shadow.closed.length, 1, 'shadow closed by bot-stop'); assert.ok(/stopped/.test(sa.st.shadow.closed[0].why));
+    assert.strictEqual(sa.st.bandit.volbot.all.n, 0, 'shadow does not teach the bandit'); assert.ok(sa.status().shadow.arms.volbot.closed === 1);
+    // stricter rug filters when it does trade
+    const { volbotGate } = require('../agent'); const young = cleanRep({ creation: { time: new Date(t1 - 3 * 60e3).toISOString() } });
+    assert.ok(volbotGate(young, t1).some((x) => /min old/.test(x)), 'young coin rejected'); assert.deepStrictEqual(volbotGate(cleanRep({ creation: { time: new Date(t1 - 30 * 60e3).toISOString() } }), t1), []);
+    assert.ok(volbotGate(cleanRep({ creation: { time: new Date(t1 - 30 * 60e3).toISOString() }, dev: { wallet: 'C', hasSold: true, holdingPctSupply: 1 } }), t1).length, 'dev sell history rejected');
+    t = tSave; mints.delete(vmint); }
   console.log('agent tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });
