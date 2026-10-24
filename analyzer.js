@@ -410,7 +410,7 @@ function scoreRisk(r) {
   return { level, levelEn, score, flags, disclaimer: { es: 'Señales automáticas on-chain, no son consejo financiero. Un riesgo BAJO no garantiza nada.', en: 'Automated on-chain signals, not financial advice. LOW risk guarantees nothing.' } };
 }
 
-module.exports = { analyze };
+module.exports = { analyze, rpc };
 
 if (require.main === module) {
   analyze(process.argv[2]).then((r) => console.log(JSON.stringify(r, null, 2))).catch((e) => { console.error('ERROR', e.message); process.exit(1); });

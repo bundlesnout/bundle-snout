@@ -31,7 +31,8 @@ Watches pump.fun live and alerts Telegram subscribers when a coin passes **70 %*
 
 **Data sources (all free, no keys):**
 - pump.fun public frontend API `GET /coins?sort=last_trade_timestamp&complete=false` — top 100 most recently traded, not-yet-graduated coins every 15 s. Curve progress = `(793.1M − real_token_reserves) / 793.1M`.
-- PumpPortal websocket `wss://pumpportal.fun/api/data` (`subscribeNewToken`, `subscribeMigration`) for live liveness/stats. (Its per-token trade stream needs a funded key, so it's not used.)
+- PumpPortal websocket `wss://pumpportal.fun/api/data` (`subscribeNewToken`, `subscribeMigration`, free). Every new pump.fun coin is tracked **on-chain**: its bonding-curve account is read in batches of 100 with Helius `getMultipleAccounts` (1 credit per batch, 49-byte slice), every 15–30 s while young/hot, slower as it ages; dead coins are dropped (<3 % after 30 min, <10 % after 2 h, <30 % after 6 h, all after 24 h). ≈3–8k credits/day. (PumpPortal's per-token trade stream needs a funded key, so it's not used.)
+- `RADAR_SOURCE=auto` (default) uses both; the pump.fun API is paused 30 min after 3 failures (it returns **403 from Render's datacenter IPs**, so in production the on-chain tracker does the work and only sees coins created after the last boot).
 - Helius RPC only through the existing analyzer: **one scan per mint** when it crosses the threshold (~30 RPC calls ≈ 40 credits), capped by `RADAR_MAX_SCANS_PER_DAY` (300 ≈ 12k credits/day ≈ 370k/month of the free 1M).
 
 **Clean = every check passes** (any missing data = not clean):
