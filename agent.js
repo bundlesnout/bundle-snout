@@ -64,7 +64,7 @@ const ACFG = () => ({
 });
 const r1 = (x) => Math.round(x * 10) / 10, r4 = (x) => Math.round(x * 1e4) / 1e4, r6 = (x) => Math.round(x * 1e6) / 1e6;
 const madridDay = (t = Date.now()) => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Europe/Madrid' });
-const sym = (s, mint) => '$' + (s || mint.slice(0, 4) + '…');
+const sym = (s, mint) => '$' + ((String(s || '').trim().replace(/^\$+/, '').trim()) || mint.slice(0, 4) + '…');
 const LAMPORTS = 1e9;
 const IDENTITY = {
   name: 'ALMA', handle: 'SpaniardDev', meaning: '"alma" is Spanish for "soul"',
@@ -121,6 +121,15 @@ function cleanSummary(rep) {
   const b = rep.bundle || {}, d = rep.dev || {}, h = rep.holders || {};
   return `My scanner says clean: ${b.multiWalletTxs ?? 0} bundle txs, creation block ${b.sameSlotPctSupply ?? 0}%, dev holds ${d.holdingPctSupply ?? '?'}% and hasn't sold, top-10 ${h.top10Pct ?? '?'}%`;
 }
+// extra rug filters for the volume-bot arm (on top of the scanner gate): older coin, smaller dev and top-10 stakes
+function volbotGate(rep, t = Date.now()) {
+  const f = []; const age = rep.creation?.time ? (t - Date.parse(rep.creation.time)) / 60e3 : null;
+  if (age == null) f.push('creation time unknown'); else if (age < 10) f.push(`coin is only ${Math.round(age)} min old (volume-bot rule: ≥10 min)`);
+  if (!(rep.dev?.holdingPctSupply < 5)) f.push(`dev holds ${rep.dev?.holdingPctSupply ?? '?'}% (volume-bot rule: <5%)`);
+  if (rep.dev?.hasSold) f.push('dev has sold before');
+  if (!(rep.holders?.top10Pct < 25)) f.push(`top-10 hold ${rep.holders?.top10Pct ?? '?'}% (volume-bot rule: <25%)`);
+  return f;
+}
 const shortFail = (x) => x.replace(/\s*\(.*?\)\s*/g, ' ').trim();
 
 function createAgent({ scalper = null, store = null, log = console.log, now = () => Date.now(), analyze = null, cleanCheck = null, radarCfg = null, rpc = null, setCreditTag = () => 'other', fetchFn = (...a) => fetch(...a), params = undefined, quiet = false, instincts = true, executor = null } = {}) {
@@ -143,6 +152,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     bandit: Object.assign(M.newBandit(), { _prior: priors }), regime: M.newRegime(), peak: cfg.paperStartSol, streak: 0, hibernateDay: null,
     equityHist: [], weightsHist: [], weights: null, dayStats: M.newDay(cfg.paperStartSol), diaries: [], fundings: [], fundSeen: [], eurPerSol: null, eurAt: null,
     affect: VT.newAffect(t0), limbo: null, revivals: [], life: 1, vitalKey: null, privilege: null, liveBaseline: null, capitalIn: 0, payout: null, paperArchive: null, liveStartedAt: null, volAccPaid: false,
+    shadow: { since: new Date(t0).toISOString(), signals: 0, open: [], closed: [], byArm: {}, seen: {} },
     lastThinkAt: 0, lastSitOutLogAt: 0, lastEqAt: 0, lastWAt: 0, lastRegAt: 0, lastFundAt: 0, lastEurAt: 0,
   };
   if (cfg.mode === 'live') {
@@ -185,12 +195,48 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   function watchOnly(tr, m, t) {
     if ((m.agentWatch || 0) > t - 3000) return; m.agentWatch = t;
     if (st.positions.some((p) => p.mint === tr.mint)) return;
-    const sigs = M.armSignals(m, t, cfg.ride, arms).filter((s) => s.f.progress >= cfg.minProg && s.f.progress <= cfg.maxProg);
+    const sigs = liveSigs(m, t);
     markEval(tr.mint, t); if (!sigs.length) return;
     const s = sigs[0]; const sy = scalper?.symbol?.(tr.mint) || null;
     cand(tr.mint, sy, { arm: s.arm, progress: r1(s.f.progress), ev: null, need: null, margin: null, verdict: 'hold', why: `${armLabel(s.arm).toLowerCase()} setup at ${r1(s.f.progress)}% of the curve; on hold: ${holdWhy()}` });
   }
 
+  // signals of arms allowed to trade (shadow arms only log paper signals, see shadowObserve)
+  const liveSigs = (m, t) => M.armSignals(m, t, cfg.ride, arms).filter((s) => arms[s.arm]?.enabled && s.f.progress >= cfg.minProg && s.f.progress <= cfg.maxProg);
+  // ---- shadow arms: paper signals only, logged publicly with a paper outcome (same costs and exits as a real trade);
+  // never touch the treasury, never feed the bandit. No scanner call (it costs credits), so rug filters are NOT applied.
+  const SHADOW_SIZE = 0.02;
+  function shadowObserve(tr, m, t) {
+    const sh = st.shadow; if (!Object.values(arms).some((a) => a.shadow)) return;
+    for (const p of sh.open) if (p.mint === tr.mint) shadowExit(p, m, t, tr);
+    if (m.complete || (m.agentShadow || 0) > t - 3000) return; m.agentShadow = t;
+    if (sh.open.some((p) => p.mint === tr.mint) || (sh.seen[tr.mint] || 0) > t || sh.open.length >= 10) return;
+    let s = null; const av = arms.volbot; // the only shadow-capable arm today; computed directly (cheaper than all arm tests)
+    if (av?.shadow) { const f60 = features(m, t, 60e3); if (f60 && f60.progress >= Math.max(cfg.minProg, av.prog[0]) && f60.progress <= Math.min(cfg.maxProg, av.prog[1])) { const vb = M.volbotState(m, t); if (vb?.entry) s = { arm: 'volbot', f: f60, vb, facts: vb.facts }; } }
+    if (!s) return;
+    const ap = arms[s.arm]; const bq = E.buyQuote(m.vs, m.vt, SHADOW_SIZE, { curveFeePct: cfg.curveFeePct, routeFeePct: routeFee(), netSol: cfg.txFeeSol });
+    const symbol = scalper?.symbol?.(tr.mint) || null;
+    const p = { id: crypto.randomUUID().slice(0, 8), arm: s.arm, mint: tr.mint, symbol, at: t, openedAt: iso(t), solIn: bq.solIn, tok: bq.tok, cost: r6(SHADOW_SIZE + cfg.txFeeSol), tp: ap.tp, sl: ap.sl, hold: ap.hold, bots: s.vb?.bots || [], clip: s.vb?.clip || 0, facts: s.facts, vs: m.vs, vt: m.vt };
+    sh.open.push(p); sh.signals++; sh.seen[tr.mint] = t + 30 * 60e3; dirty = true;
+    actLog('shadow', `Paper signal only (shadow arm, no money): ${armLabel(s.arm).toLowerCase()} on ${sym(symbol, tr.mint)}: ${s.facts}.`, { mint: tr.mint, symbol });
+  }
+  function shadowExit(p, m, t, tr = null) {
+    if (tr) { p.vs = tr.vs; p.vt = tr.vt; }
+    const val = Math.max(0, sellValue(p.vs, p.vt, p, cfg)); const pct = ((val - p.cost) / p.cost) * 100; const age = (t - p.at) / 60e3;
+    let why = null;
+    if (m?.complete) why = 'the coin graduated'; else if (pct >= p.tp) why = `take profit +${r1(pct)}% net`; else if (pct <= -p.sl) why = `stop loss ${r1(pct)}%`;
+    else if (age >= p.hold) why = `time stop after ${r1(age)} min`; else if (p.arm === 'volbot') why = M.volbotExit(m, t, p.bots, p.at, p.clip);
+    if (!why) return;
+    const sh = st.shadow; sh.open = sh.open.filter((x) => x !== p); const pnl = r6(val - p.cost);
+    sh.closed.unshift({ arm: p.arm, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt, closedAt: iso(t), heldMin: r1(age), pnlSol: pnl, pnlPct: r1(pct), why, facts: p.facts }); sh.closed.length = Math.min(sh.closed.length, 60);
+    const a = sh.byArm[p.arm] || (sh.byArm[p.arm] = { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0 }); a.n++; if (pnl > 0) a.wins++; if (/^take profit/.test(why)) a.tpHits++; a.netSol = r6(a.netSol + pnl); a.sumPct = r1(a.sumPct + pct); dirty = true;
+  }
+  function shadowTick(t) { for (const p of [...st.shadow.open]) shadowExit(p, scalper?.mints?.get(p.mint), t); }
+  function shadowStatus() {
+    const sh = st.shadow; const armsOut = Object.fromEntries(M.ARM_KEYS.filter((k) => arms[k].shadow || sh.byArm[k]).map((k) => { const a = sh.byArm[k] || { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0 };
+      return [k, { label: arms[k].label, shadow: !!arms[k].shadow, closed: a.n, wins: a.wins, winRate: a.n ? r1((a.wins / a.n) * 100) : null, tpHitRatePct: a.n ? r1((a.tpHits / a.n) * 100) : null, avgPct: a.n ? r1(a.sumPct / a.n) : null, netSolAt002: a.netSol }]; }));
+    return { note: `Shadow = paper signals only: a ${SHADOW_SIZE} SOL paper fill at the observed price with my real direct-route costs and the arm's exits. No money moves, my beliefs do not learn from it, and my scanner (rug filters) is not run on these coins.`, since: sh.since, signals: sh.signals, arms: armsOut, open: sh.open.map((p) => ({ arm: p.arm, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt, facts: p.facts })), closed: sh.closed.slice(0, 30) };
+  }
   const curMood = () => moodNow();
   const moodBase = () => M.mood({ ddPct: dd().ddPct, regime: st.regime.label, dayPnl: st.dayPnl, streak: st.streak, open: st.positions.length, halted: st.halted || !cfg.enabled, hibernating: st.hibernateDay === st.day });
   function moodNow() {
@@ -291,13 +337,14 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     M.regimeObserve(st.regime, t, tr.sol || 0, m.trades?.length === 1 && tr.vt > 1060e6);
     if (excluded(tr.mint)) return; // never even evaluated
     ACT.seen.set(tr.mint, t);
+    try { shadowObserve(tr, m, t); } catch (e) { noteError('shadow', e); }
     for (const pos of st.positions) if (pos.mint === tr.mint) { pos.vs = tr.vs; pos.vt = tr.vt; pos.lastAt = t; pos.complete = m.complete; checkExit(pos); }
     if (m.complete) return;
     if (busy || blockers()) return watchOnly(tr, m, t);
     if ((m.agentEval || 0) > t - 3000) return; m.agentEval = t;
     const seen = st.seen[tr.mint]; if (seen && seen > t) return;
     if (st.positions.some((p) => p.mint === tr.mint)) return;
-    const sigs = M.armSignals(m, t, cfg.ride, arms).filter((s) => s.f.progress >= cfg.minProg && s.f.progress <= cfg.maxProg);
+    const sigs = liveSigs(m, t);
     markEval(tr.mint, t); if (!sigs.length) return;
     rollDay(); st.totals.signals++; st.dayStats.signals++;
     // Thompson sampling: draw one plausible "true edge" per firing arm from my current beliefs; act on the best draw.
@@ -349,6 +396,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       const s = rep.symbol || rep.metadata?.symbol || symbol;
       const fails = gate(rep, cfg, cleanCheck, radarCfg);
       if (excluded(mint)) fails.unshift('this is the agent\'s own coin');
+      if (sg.arm === 'volbot') fails.push(...volbotGate(rep, now()));
       if (fails.length) {
         cand(mint, s, { gate: 'fail', verdict: 'rejected', why: `scanner said no: ${shortFail(fails[0]).slice(0, 90)}` });
         st.totals.rejected++; st.dayStats.rejected++; const k = shortFail(fails[0]).slice(0, 40); st.dayStats.rejects[k] = (st.dayStats.rejects[k] || 0) + 1;
@@ -364,14 +412,14 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       const ap = arms[sg.arm];
       const reason = M.V.buy({ sym: sym(s, mint), facts: sg.facts, arm: sg.arm, s: sg.smp, size: z.size, regime: st.regime.label, clean: cleanSummary(rep), ap }) + (z.ddMult < 1 ? ` Betting ${Math.round(z.ddMult * 100)}% of normal size because I'm in drawdown.` : '') + (z.survivalMult < 1 ? ` Survival sizing ×${z.survivalMult} (signal ${vit().signal}%, pain ${pol().pain}).` : '') + ` (Rules: TP +${ap.tp}% / SL -${ap.sl}% / max ${ap.hold} min.)`;
       cand(mint, s, { verdict: 'bought', why: `scanner clean, edge +${r1(sg.smp.ev)}%: bought ${z.size} SOL` });
-      await openPosition({ mint, symbol: s, size: z.size, vs: cur.vs, vt: cur.vt, reason, signal: sg.arm, progress: sg.f.progress, belief: { p: r4(sg.smp.p), ev: r1(sg.smp.ev), kelly: r4(sg.smp.kelly) }, volPct: volPctOf(cur, now()), dev: rep.dev?.wallet || rep.curve?.creatorOnCurve || null });
+      await openPosition({ mint, symbol: s, size: z.size, vs: cur.vs, vt: cur.vt, reason, signal: sg.arm, progress: sg.f.progress, belief: { p: r4(sg.smp.p), ev: r1(sg.smp.ev), kelly: r4(sg.smp.kelly) }, volPct: volPctOf(cur, now()), dev: rep.dev?.wallet || rep.curve?.creatorOnCurve || null, bots: sg.vb?.bots || null, clip: sg.vb?.clip || 0 });
     } finally { busy = false; ACT.scanning = null; ACT.lastScanEndAt = now(); }
   }
 
-  async function openPosition({ mint, symbol, size, vs, vt, reason, signal: kind = 'dip', progress, belief = null, volPct = 0, dev = null }) {
+  async function openPosition({ mint, symbol, size, vs, vt, reason, signal: kind = 'dip', progress, belief = null, volPct = 0, dev = null, bots = null, clip = 0 }) {
     if (excluded(mint)) throw new Error('refusing to trade excluded coin');
     const ap = arms[kind] || { tp: cfg.tpPct, sl: cfg.slPct, hold: cfg.maxHoldMin };
-    const base = { mint, symbol, kind, arm: kind, regime: regimeNow(), tp: ap.tp, sl: ap.sl, hold: ap.hold, belief, openAt: now(), lastAt: now(), progress, reason, dev, entryVs: vs, entryVt: vt };
+    const base = { mint, symbol, kind, arm: kind, regime: regimeNow(), tp: ap.tp, sl: ap.sl, hold: ap.hold, belief, openAt: now(), lastAt: now(), progress, reason, dev, bots, clip, entryVs: vs, entryVt: vt };
     let pos;
     if (cfg.mode === 'paper') {
       const bq = E.buyQuote(vs, vt, size, { curveFeePct: cfg.curveFeePct, routeFeePct: routeFee(), netSol: cfg.txFeeSol });
@@ -384,7 +432,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       st.paperCash = r6(st.paperCash - cost - once);
     } else {
       let res;
-      try { res = await liveSwap('buy', mint, size, null, { volPct }); } catch (e) { st.totals.liveErrors++; return decide({ action: e.skip ? 'SKIP' : 'ERROR', mint, symbol, reason: e.skip ? `${sym(symbol, mint)}: ${e.message}` : `My buy failed, nothing spent: ${e.message.slice(0, 160)}` }); }
+      try { res = await liveSwap('buy', mint, size, null, { volPct }); } catch (e) { if (e.skip) st.totals.execSkips = (st.totals.execSkips || 0) + 1; else st.totals.liveErrors++; return decide({ action: e.skip ? 'SKIP' : 'ERROR', mint, symbol, reason: e.skip ? `${sym(symbol, mint)}: ${e.message}` : `My buy failed, nothing spent: ${e.message.slice(0, 160)}` }); }
       const once = st.volAccPaid ? 0 : E.NET().volAccRentLamports / LAMPORTS; st.volAccPaid = true; // first buy also opens pump.fun's per-wallet account, once
       if (once && res.costs) res.costs.oneTimeAccountSol = r6(once);
       pos = { ...base, id: res.sig.slice(0, 8), solIn: size, tok: res.tokDelta, cost: r6(-res.solDelta - once), entryPrice: (-res.solDelta) / Math.max(res.tokDelta, 1e-9), vs, vt, tx: res.sig, ata: res.ata, tokenProgram: res.tokenProgram, costs: { route: res.route, venue: res.venue, buy: res.costs } };
@@ -405,6 +453,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     else if (pnlPct >= tp) why = `take profit: +${r1(pnlPct)}% ≥ +${tp}%`;
     else if (pnlPct <= -sl) why = `stop loss: ${r1(pnlPct)}% ≤ -${sl}%`;
     else if (age >= hold) why = `time stop: ${r1(age)} min held, ${pnlPct >= 0 ? '+' : ''}${r1(pnlPct)}%${t - pos.lastAt > 120e3 ? ' (no trades for ' + Math.round((t - pos.lastAt) / 60e3) + ' min)' : ''}`;
+    else if (pos.arm === 'volbot' && pos.bots) { const w = M.volbotExit(scalper?.mints?.get(pos.mint), t, pos.bots, pos.openAt, pos.clip || 0); if (w) why = `${w}, closing at ${pnlPct >= 0 ? '+' : ''}${r1(pnlPct)}%`; }
     if (why) closePosition(pos, why).catch((e) => out('[agent] close error ' + e.message));
   }
 
@@ -672,6 +721,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     if (t - ACT.lastBeatAt >= 60e3) { ACT.lastBeatAt = t; const a = activity(); if (['researching', 'trading', 'resting', 'paused', 'hibernating', 'reconnecting'].includes(a.key)) actLog('research', a.headline); }
     if (t - ACT.lastAliveSaveAt >= 5 * 60e3) { ACT.lastAliveSaveAt = t; dirty = true; } // heartbeat in the saved state: lets me measure any downtime after a restart
     for (const pos of [...st.positions]) checkExit(pos);
+    shadowTick(t); for (const [k, v] of Object.entries(st.shadow.seen)) if (v < t) delete st.shadow.seen[k];
     for (const [k, v] of Object.entries(st.seen)) if (v < t) delete st.seen[k];
     rollDay();
     if (t - st.lastRegAt >= 60e3) { st.lastRegAt = t; const ch = M.regimeUpdate(st.regime, t); if (ch) think(M.V.regime({ ...ch, heat: st.regime.heat, lpm: st.regime.launchesPerMin }), 'regime'); st.dayStats.regimes[st.regime.label] = (st.dayStats.regimes[st.regime.label] || 0) + 1; }
@@ -685,7 +735,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   }
   function snapshot() {
     const j = { v: 2, mode: cfg.mode, bornAt: st.bornAt, paperCash: st.paperCash, paperStart: st.paperStart, positions: st.positions.map(({ closing, ...p }) => p), trades: st.trades, decisions: st.decisions.slice(0, 30), thoughts: st.thoughts.slice(0, 50), seen: st.seen, day: st.day, dayPnl: st.dayPnl, scansDay: st.scansDay, scansToday: st.scansToday, totals: st.totals,
-      bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn, payout: st.payout, paperArchive: st.paperArchive, liveStartedAt: st.liveStartedAt, volAccPaid: st.volAccPaid,
+      bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn, payout: st.payout, paperArchive: st.paperArchive, liveStartedAt: st.liveStartedAt, volAccPaid: st.volAccPaid, shadow: st.shadow,
       activity: { log: ACT.log.slice(0, 30), downtimes: ACT.downtimes.slice(0, 20), dayKey: ACT.dayKey, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday }, savedAt: new Date(now()).toISOString() };
     return 'gz:' + zlib.gzipSync(JSON.stringify(j)).toString('base64');
   }
@@ -708,7 +758,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     }
     Object.assign(st, { paperCash: j.paperCash ?? st.paperCash, paperStart: j.paperStart ?? st.paperStart, positions: j.positions || [], trades: j.trades || [], decisions: j.decisions || [], seen: j.seen || {}, day: j.day || st.day, dayPnl: j.dayPnl || 0, scansDay: j.scansDay || st.scansDay, scansToday: j.scansToday || 0, totals: { ...st.totals, ...(j.totals || {}) } });
     if (j.v === 2) {
-      for (const k of ['bornAt', 'thoughts', 'peak', 'streak', 'hibernateDay', 'equityHist', 'weightsHist', 'weights', 'dayStats', 'diaries', 'fundings', 'fundSeen', 'eurPerSol', 'affect', 'limbo', 'revivals', 'life', 'vitalKey', 'privilege', 'liveBaseline', 'capitalIn', 'payout', 'paperArchive', 'liveStartedAt', 'volAccPaid']) if (j[k] != null) st[k] = j[k];
+      for (const k of ['bornAt', 'thoughts', 'peak', 'streak', 'hibernateDay', 'equityHist', 'weightsHist', 'weights', 'dayStats', 'diaries', 'fundings', 'fundSeen', 'eurPerSol', 'affect', 'limbo', 'revivals', 'life', 'vitalKey', 'privilege', 'liveBaseline', 'capitalIn', 'payout', 'paperArchive', 'liveStartedAt', 'volAccPaid', 'shadow']) if (j[k] != null) st[k] = j[k];
       if (j.bandit) for (const k of M.ARM_KEYS) if (j.bandit[k]) st.bandit[k] = { ...st.bandit[k], ...j.bandit[k] };
       if (j.regime) st.regime = { ...st.regime, ...j.regime };
     } else st.peak = Math.max(st.paperCash, st.paperStart);
@@ -772,7 +822,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       balance: cfg.mode === 'paper' ? { source: 'paper', startSol: st.paperStart, cashSol: st.paperCash, equitySol: eq } : { source: 'on-chain', sol: st.liveBalance, equitySol: eq },
       solUsd, eurPerSol: st.eurPerSol,
       pnl: { realizedSol: st.totals.realizedSol, unrealizedSol: unreal, todaySol: st.dayPnl, dailyLossLimitSol: cfg.dailyLossSol, day: st.day },
-      stats: { closedTrades: st.totals.trades, wins: st.totals.wins, winRate: st.totals.trades ? r1((st.totals.wins / st.totals.trades) * 100) : null, signals: st.totals.signals, sitOut: st.totals.sitOut, scans: st.totals.scans, rejectedByScanner: st.totals.rejected, scansToday: st.scansToday, maxScansPerDay: cfg.maxScansPerDay, scanErrors: st.totals.scanErrors, liveErrors: st.totals.liveErrors,
+      stats: { closedTrades: st.totals.trades, wins: st.totals.wins, winRate: st.totals.trades ? r1((st.totals.wins / st.totals.trades) * 100) : null, signals: st.totals.signals, sitOut: st.totals.sitOut, scans: st.totals.scans, rejectedByScanner: st.totals.rejected, scansToday: st.scansToday, maxScansPerDay: cfg.maxScansPerDay, scanErrors: st.totals.scanErrors, liveErrors: st.totals.liveErrors, execSkips: st.totals.execSkips || 0,
         drawdownPct: d.ddPct, maxDrawdownPct: Math.max(r1(mdd * 100), d.ddPct || 0), peakSol: r6(st.peak), avgPnlPct: closed.length ? r1(closed.reduce((a, x) => a + (x.pnlPct || 0), 0) / closed.length) : null },
       mind: { mood: md, regime: { label: st.regime.label, heat: st.regime.heat, tradesPerMin: st.regime.tradesPerMin, solPerMin: st.regime.volPerMin, launchesPerMin: st.regime.launchesPerMin, since: st.regime.since ? new Date(st.regime.since).toISOString() : null },
         drawdown: d, streak: st.streak, weights: st.weights, weightsHist: st.weightsHist, equityHist: st.equityHist, arms: M.armTable(st.bandit, regimeNow(), arms, cfg.feePct), thoughts: st.thoughts.slice(0, 40),
@@ -781,10 +831,10 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       bodyFund: { ...fund(), basis: cfg.mode === 'live' ? 'on-chain wallet balance + open positions' : 'real on-chain wallet balance only (paper P&L never counts)', workingCapitalSol: cfg.workingCapitalSol, purchases, paperEquitySol: cfg.mode === 'paper' ? eq : null },
       fundings: st.fundings, fundingTotalSol: r6(st.fundings.reduce((a, f) => a + f.sol, 0)), feeSplit: FEE_SPLIT(), diaryDays: st.diaries.length,
       rules: { maxTradeSol: cfg.maxTradeSol, sizePctOfBalance: cfg.sizePct, minTradeSol: cfg.minTradeSol, reserveSol: cfg.reserveSol, maxOpen: cfg.maxOpen, takeProfitPct: cfg.tpPct, stopLossPct: cfg.slPct, maxHoldMin: cfg.maxHoldMin, dailyLossLimitSol: cfg.dailyLossSol, coinCooldownMin: cfg.cooldownMin, curveProgressPct: [cfg.minProg, cfg.maxProg], feesPerSidePct: cfg.feePct, txFeeSol: cfg.txFeeSol, maxCostShareOfEdge: cfg.maxCostShare, maxImpactPct: cfg.maxImpactPct,
-        signals: Object.fromEntries(M.ARM_KEYS.map((k) => [k, `${arms[k].idea} (exits +${arms[k].tp}% / -${arms[k].sl}% / ${arms[k].hold} min${arms[k].enabled ? '' : ', disabled'})`])),
+        signals: Object.fromEntries(M.ARM_KEYS.map((k) => [k, `${arms[k].idea} (exits +${arms[k].tp}% / -${arms[k].sl}% / ${arms[k].hold} min${arms[k].enabled ? '' : arms[k].shadow ? ', SHADOW: paper signals only' : ', disabled'})`])),
         scannerGate: 'no multi-wallet bundle txs, no dev-paid creation-block buys, creation block <10% supply, early wallets <10%, dev holds <10% and has not sold, top-10 <30%, risk not HIGH, not Mayhem Mode, SOL-quoted curve, not created by the dev wallet',
         neverTrades: [...cfg.exclude], protectedWallets: [...cfg.protectedWallets] },
-      execution: execution(),
+      execution: execution(), shadow: shadowStatus(),
       payout: payoutStatus(), paperArchive: st.paperArchive ? { ...st.paperArchive, trades: st.paperArchive.trades.slice(0, 30) } : null,
       positions: open, trades: st.trades, decisions: st.decisions,
       stream: scalper?.streamInfo?.() || null, persistence: store ? { backend: store.name, saves: st.saves, lastSaveAt: st.lastSaveAt, lastSaveError: st.lastSaveError } : { backend: 'memory' },
@@ -868,4 +918,4 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   };
 }
 
-module.exports = { createAgent, ACFG, parseSecret, signal, gate, DEV_WALLET, IDENTITY, FEE_SPLIT };
+module.exports = { createAgent, ACFG, parseSecret, signal, gate, volbotGate, DEV_WALLET, IDENTITY, FEE_SPLIT };
