@@ -54,7 +54,7 @@ assert.strictEqual(R.tradeFees(ammTx('So1111111111111111111111111111111111111111
   await off.refresh(); let st = off.status();
   assert.strictEqual(st.state, 'launching_soon'); assert.strictEqual(st.meta.rpcCalls, 0);
   assert.strictEqual(st.shelf[0].volumeNeededUsd, 8333); assert.ok(/dev keeps the cards/i.test(st.statement));
-  assert.strictEqual(st.coin.ticker, 'DEVRIPS'); assert.strictEqual(st.coin.x, 'https://x.com/ZEtxeandia30374', 'X link default (env RIPS_X_URL overrides)');
+  assert.strictEqual(st.coin.ticker, 'DEVRIPS'); assert.strictEqual(st.coin.x, 'https://x.com/SpaniardDev', 'X link default (env RIPS_X_URL overrides)');
   assert.deepStrictEqual([st.nextPack.priceUsd, st.nextPack.pct, st.nextPack.volumeLeftUsd], [25, 0, 8333]);
 
   // 6) end-to-end: one claim, one pack bought by the dev, one manual memo from a stranger (shown, not counted)

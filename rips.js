@@ -321,7 +321,13 @@ function createRips(opts = {}) {
   }
   async function solPrice() {
     if (st.solUsd && now() - st.solAt < 300e3) return;
-    try { const r = await j('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'); if (r?.solana?.usd > 1) { st.solUsd = r.solana.usd; st.solAt = now(); } } catch {}
+    // CoinGecko often rate-limits shared hosts: fall back to Kraken, then DexScreener (wSOL pairs)
+    const srcs = [
+      async () => (await j('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'))?.solana?.usd,
+      async () => Number((await j('https://api.kraken.com/0/public/Ticker?pair=SOLUSD'))?.result?.SOLUSD?.c?.[0]),
+      async () => Number((await j('https://api.dexscreener.com/tokens/v1/solana/So11111111111111111111111111111111111111112'))?.find?.((p) => /^USD/.test(p.quoteToken?.symbol || ''))?.priceUsd),
+    ];
+    for (const src of srcs) { try { const v = await src(); if (v > 1) { st.solUsd = v; st.solAt = now(); return; } } catch {} }
   }
   async function shelf() {
     if (st.shelf && now() - st.shelfAt < 900e3) return;
@@ -360,7 +366,7 @@ function createRips(opts = {}) {
     return {
       state: configured ? 'live' : 'launching_soon',
       statement: 'Creator fees open packs live. The dev keeps the cards. Not financial advice.',
-      coin: { ca: configured ? CA : null, devWallet: configured ? DEV : null, ticker: env.RIPS_TICKER || 'DEVRIPS', name: env.RIPS_NAME || 'Fees Rip Packs', x: env.RIPS_X_URL || 'https://x.com/ZEtxeandia30374',
+      coin: { ca: configured ? CA : null, devWallet: configured ? DEV : null, ticker: env.RIPS_TICKER || 'DEVRIPS', name: env.RIPS_NAME || 'Fees Rip Packs', x: env.RIPS_X_URL || 'https://x.com/SpaniardDev',
         pumpUrl: configured ? `https://pump.fun/coin/${CA}` : null, creatorVaults: configured ? V : null, accounts: configured ? C : null,
         createdAt: c.createdAt, createdSig: c.createdSig, market: st.market },
       fees: {
