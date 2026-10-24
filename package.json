@@ -12,7 +12,7 @@
     "radar:dryrun": "node scripts/radar-dryrun.js",
     "scalp:dryrun": "node scripts/scalp-dryrun.js",
     "agent:livecheck": "node scripts/agent-livecheck.js",
-    "test": "node tests/clean.test.js && node tests/telegram.test.js && node tests/picks.test.js && node tests/scalp.test.js && node tests/rips.test.js && node tests/pages.test.js && node tests/agent.test.js && node tests/vitals.test.js"
+    "test": "node tests/clean.test.js && node tests/telegram.test.js && node tests/picks.test.js && node tests/scalp.test.js && node tests/rips.test.js && node tests/pages.test.js && node tests/agent.test.js && node tests/vitals.test.js && node tests/activity.test.js"
   },
   "keywords": [],
   "author": "",

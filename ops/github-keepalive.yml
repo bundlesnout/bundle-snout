@@ -1,15 +1,24 @@
+# To enable: copy to .github/workflows/keepalive.yml and push (needs a GitHub token with the "workflow" scope: gh auth refresh -s workflow).
+# Keeps the free Render web service awake so ALMA trades 24/7.
+# Render free web services sleep after 15 min without inbound traffic; the app's own self-ping does not count
+# (observed: it slept 18:52-19:26 UTC on 2026-10-24 with the self-ping running). This hits the public URL from outside.
 name: keepalive
-# Backstop that WAKES the free Render service if it ever spun down (the app also self-pings every 10 min
-# while running). GitHub's scheduler is best-effort, so runs can be delayed; that's fine as a backstop.
 on:
   schedule:
-    - cron: '*/10 * * * *'
-  workflow_dispatch: {}
-concurrency: { group: keepalive, cancel-in-progress: true }
+    - cron: '*/5 * * * *'   # GitHub runs this "at most" every 5 min; delays of a few minutes are normal
+  workflow_dispatch:
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
-      - name: Ping /healthz (retries cover the ~1 min cold start)
-        run: curl -fsS --retry 5 --retry-delay 15 --retry-all-errors --max-time 90 "https://bundle-snout.onrender.com/healthz?src=gha"
+      - name: Ping /health (wakes the service if it is asleep)
+        run: |
+          for i in 1 2 3 4 5 6; do
+            out=$(curl -sS -m 60 -w ' HTTP %{http_code} in %{time_total}s' https://bundle-snout.onrender.com/health) && echo "$out" && exit 0
+            echo "attempt $i failed, retrying"; sleep 20
+          done
+          exit 1

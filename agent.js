@@ -138,6 +138,45 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   }
   let busy = false, dirty = false, lastSave = 0; const timers = [];
   const out = (x) => { if (!quiet) log(x); };
+  // ---- live activity: what I'm doing right now (for /api/agent "activity" and the page's "Right now" panel)
+  const ACT = { log: [], seen: new Map(), evals: new Map(), cands: new Map(), dayKey: madridDay(t0), coinsDay: new Set(), checksToday: 0, coinsTodayCarry: 0,
+    scanning: null, lastEvalAt: 0, lastScanEndAt: 0, ticks: 0, lastTickAt: 0, errors: 0, lastError: null, lastErrorAt: null, lastBeatAt: 0, lastAliveSaveAt: 0, downtimes: [] };
+  const iso = (t) => new Date(t).toISOString();
+  const armLabel = (k) => arms[k]?.label || k;
+  function actLog(kind, text, extra = {}) {
+    const e = { at: iso(now()), kind, text: String(text).slice(0, 280), ...extra };
+    if (kind === 'research' && ACT.log[0]?.kind === 'research') ACT.log[0] = e; else ACT.log.unshift(e); // one rolling research line between events
+    if (ACT.log.length > 30) ACT.log.length = 30;
+  }
+  function noteError(where, e) {
+    ACT.errors++; ACT.lastError = `${where}: ${String(e?.message || e).slice(0, 160)}`; ACT.lastErrorAt = iso(now());
+    out('[agent] ' + where + ' error (recovered) ' + (e?.stack || e));
+    if (ACT.errors <= 3 || ACT.errors % 50 === 0) actLog('error', `Something broke in my ${where} loop (${String(e?.message || e).slice(0, 100)}). I caught it and kept going.`);
+  }
+  function cand(mint, symbol, x) {
+    const c = { ...(ACT.cands.get(mint) || {}), mint, symbol: symbol || ACT.cands.get(mint)?.symbol || null, ...x, at: now() };
+    ACT.cands.set(mint, c); if (ACT.cands.size > 400) ACT.cands.delete(ACT.cands.keys().next().value); return c;
+  }
+  function markEval(mint, t) {
+    ACT.evals.set(mint, t); ACT.lastEvalAt = t; ACT.checksToday++;
+    const d = madridDay(t); if (d !== ACT.dayKey) { ACT.dayKey = d; ACT.coinsDay.clear(); ACT.checksToday = 1; ACT.coinsTodayCarry = 0; }
+    if (ACT.coinsDay.size < 60000) ACT.coinsDay.add(mint);
+  }
+  function holdWhy() {
+    if (st.limbo) return 'in limbo'; if (!cfg.enabled) return 'kill switch on'; if (st.halted) return 'halted';
+    if (busy) return 'scanner busy with another coin'; if (st.dayPnl <= -cfg.dailyLossSol) return 'daily loss limit hit';
+    if (st.hibernateDay === st.day) return 'hibernating'; const pl = pol(); if (pl.cooling) return 'resting after a loss';
+    if (st.positions.length >= pl.maxOpen) return 'position slots full'; if (freeBalance() - cfg.reserveSol < cfg.minTradeSol) return 'balance too low'; return 'on hold';
+  }
+  // While I can't open a trade I keep looking: same strategy checks, no sampling and no scanner credits, so decisions are unchanged.
+  function watchOnly(tr, m, t) {
+    if ((m.agentWatch || 0) > t - 3000) return; m.agentWatch = t;
+    if (st.positions.some((p) => p.mint === tr.mint)) return;
+    const sigs = M.armSignals(m, t, cfg.ride, arms).filter((s) => s.f.progress >= cfg.minProg && s.f.progress <= cfg.maxProg);
+    markEval(tr.mint, t); if (!sigs.length) return;
+    const s = sigs[0]; const sy = scalper?.symbol?.(tr.mint) || null;
+    cand(tr.mint, sy, { arm: s.arm, progress: r1(s.f.progress), ev: null, need: null, margin: null, verdict: 'hold', why: `${armLabel(s.arm).toLowerCase()} setup at ${r1(s.f.progress)}% of the curve; on hold: ${holdWhy()}` });
+  }
 
   const curMood = () => moodNow();
   const moodBase = () => M.mood({ ddPct: dd().ddPct, regime: st.regime.label, dayPnl: st.dayPnl, streak: st.streak, open: st.positions.length, halted: st.halted || !cfg.enabled, hibernating: st.hibernateDay === st.day });
@@ -152,7 +191,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     return moodBase();
   }
   const think = (text, kind = 'thought', extra = {}) => { st.thoughts.unshift({ at: new Date(now()).toISOString(), kind, text, mood: curMood().key, ...extra }); st.thoughts.length = Math.min(st.thoughts.length, cfg.keep.thoughts); dirty = true; };
-  const decide = (d) => { d.at = new Date(now()).toISOString(); st.decisions.unshift(d); st.decisions.length = Math.min(st.decisions.length, cfg.keep.decisions); st.lastDecisionAt = d.at; dirty = true; think(d.reason, d.action.toLowerCase(), { mint: d.mint, symbol: d.symbol, arm: d.signal }); out(`[agent] ${d.action} ${d.symbol || ''} ${d.reason}`); };
+  const decide = (d) => { d.at = new Date(now()).toISOString(); st.decisions.unshift(d); st.decisions.length = Math.min(st.decisions.length, cfg.keep.decisions); st.lastDecisionAt = d.at; dirty = true; think(d.reason, d.action.toLowerCase(), { mint: d.mint, symbol: d.symbol, arm: d.signal }); actLog(d.action.toLowerCase(), d.reason, { mint: d.mint || null, symbol: d.symbol || null }); out(`[agent] ${d.action} ${d.symbol || ''} ${d.reason}`); };
   const equity = () => { const pos = st.positions.reduce((a, p) => a + (p.value ?? p.cost), 0); if (cfg.mode === 'paper') return r6(st.paperCash + pos); return st.liveBalance == null ? null : r6(st.liveBalance + pos); };
   const dd = () => { const e = equity(); if (e == null) return { ddPct: 0, mult: 1, level: 'ok' }; if (e > st.peak) st.peak = e; return M.ddState(e, st.peak, cfg); };
   const rollDay = () => {
@@ -229,22 +268,28 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   }
 
   // ---- stream hook (called by the scalper for every bonding-curve trade)
-  function onTrade(tr, m) {
+  function onTrade(tr, m) { try { onTradeInner(tr, m); } catch (e) { noteError('market', e); } }
+  function onTradeInner(tr, m) {
     const t = now();
     M.regimeObserve(st.regime, t, tr.sol || 0, m.trades?.length === 1 && tr.vt > 1060e6);
     if (excluded(tr.mint)) return; // never even evaluated
+    ACT.seen.set(tr.mint, t);
     for (const pos of st.positions) if (pos.mint === tr.mint) { pos.vs = tr.vs; pos.vt = tr.vt; pos.lastAt = t; pos.complete = m.complete; checkExit(pos); }
-    if (busy || m.complete || blockers()) return;
+    if (m.complete) return;
+    if (busy || blockers()) return watchOnly(tr, m, t);
     if ((m.agentEval || 0) > t - 3000) return; m.agentEval = t;
     const seen = st.seen[tr.mint]; if (seen && seen > t) return;
     if (st.positions.some((p) => p.mint === tr.mint)) return;
-    const sigs = M.armSignals(m, t, cfg.ride, arms).filter((s) => s.f.progress >= cfg.minProg && s.f.progress <= cfg.maxProg); if (!sigs.length) return;
+    const sigs = M.armSignals(m, t, cfg.ride, arms).filter((s) => s.f.progress >= cfg.minProg && s.f.progress <= cfg.maxProg);
+    markEval(tr.mint, t); if (!sigs.length) return;
     rollDay(); st.totals.signals++; st.dayStats.signals++;
     // Thompson sampling: draw one plausible "true edge" per firing arm from my current beliefs; act on the best draw.
     // Each draw must clear an EV bar set by my vital state + pain + distrust of that strategy (survival instinct).
     const rk = regimeNow(); let best = null;
     for (const s of sigs) { const smp = M.sampleArm(st.bandit, s.arm, rk, arms[s.arm], cfg.feePct, R); const p = pol(s.arm); const margin = smp.ev - p.minEvPct; if (!best || margin > best.margin) best = { ...s, smp, pol: p, margin }; }
+    const symNow = scalper?.symbol?.(tr.mint) || null; const cb = { arm: best.arm, progress: r1(best.f.progress), ev: r1(best.smp.ev), need: r1(best.pol.minEvPct), margin: r1(best.margin) };
     if (best.margin <= 0 || best.smp.kelly <= 0) {
+      cand(tr.mint, symNow, { ...cb, verdict: 'pass', why: best.smp.ev <= 0 ? `${armLabel(best.arm).toLowerCase()} setup, but my belief is ${r1(best.smp.ev)}% per trade: not worth it` : `${armLabel(best.arm).toLowerCase()} setup, edge ${r1(best.smp.ev)}% is below my bar of ${r1(best.pol.minEvPct)}%` });
       st.totals.sitOut++; st.dayStats.sitOut++; st.seen[tr.mint] = t + cfg.sitOutMin * 60e3;
       const extraBar = best.smp.ev > 0 && best.smp.kelly > 0; if (extraBar) { st.totals.survivalSkips = (st.totals.survivalSkips || 0) + 1; st.dayStats.survivalSkips = (st.dayStats.survivalSkips || 0) + 1; }
       if (t - st.lastSitOutLogAt > 180e3) {
@@ -257,14 +302,21 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     // credit pacing for the scanner (Helius): allowance grows through the Madrid day
     const [hh, mm] = new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Europe/Madrid', hour12: false }).split(':').map(Number);
     const allowance = Math.min(cfg.maxScansPerDay, 10 + cfg.maxScansPerDay * ((hh * 60 + mm) / 1440));
-    if (st.scansToday >= allowance || t - st.lastScanAt < cfg.scanGapSec * 1000) return;
-    scanAndEnter(tr.mint, m, best).catch((e) => { st.totals.scanErrors++; busy = false; out('[agent] scan error ' + e.message); });
+    if (st.scansToday >= allowance || t - st.lastScanAt < cfg.scanGapSec * 1000) {
+      const wait = st.scansToday >= allowance ? 'scanner budget for now is used up' : `scanner free in ${Math.max(1, Math.ceil((st.lastScanAt + cfg.scanGapSec * 1000 - t) / 1000))}s`;
+      cand(tr.mint, symNow, { ...cb, verdict: 'watch', why: `${armLabel(best.arm).toLowerCase()} setup, edge +${r1(best.smp.ev)}% clears my bar of ${r1(best.pol.minEvPct)}%; ${wait}` });
+      return;
+    }
+    cand(tr.mint, symNow, { ...cb, verdict: 'scanning', why: `${armLabel(best.arm).toLowerCase()} setup, edge +${r1(best.smp.ev)}% vs bar ${r1(best.pol.minEvPct)}%: running my scanner` });
+    scanAndEnter(tr.mint, m, best).catch((e) => { st.totals.scanErrors++; busy = false; ACT.scanning = null; noteError('scanner', e); });
   }
 
   async function scanAndEnter(mint, m, sg) {
     busy = true; st.lastScanAt = now(); st.scansToday++; st.totals.scans++; st.dayStats.scans++;
     st.seen[mint] = now() + cfg.cooldownMin * 60e3;
     const symbol = scalper?.symbol?.(mint) || null;
+    ACT.scanning = { mint, symbol, arm: sg.arm, startedAt: now(), ev: r1(sg.smp.ev), need: r1(sg.pol?.minEvPct ?? 0) };
+    actLog('scan', `Checking ${sym(symbol, mint)} with my scanner: ${armLabel(sg.arm).toLowerCase()} setup at ${r1(sg.f.progress)}% of the curve, edge +${r1(sg.smp.ev)}% vs my bar ${r1(sg.pol?.minEvPct ?? 0)}%.`, { mint, symbol });
     try {
       const prev = setCreditTag('agent'); let rep;
       try { rep = await analyze(mint); } finally { setCreditTag(prev); }
@@ -272,18 +324,21 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       const fails = gate(rep, cfg, cleanCheck, radarCfg);
       if (excluded(mint)) fails.unshift('this is the agent\'s own coin');
       if (fails.length) {
+        cand(mint, s, { gate: 'fail', verdict: 'rejected', why: `scanner said no: ${shortFail(fails[0]).slice(0, 90)}` });
         st.totals.rejected++; st.dayStats.rejected++; const k = shortFail(fails[0]).slice(0, 40); st.dayStats.rejects[k] = (st.dayStats.rejects[k] || 0) + 1;
         return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: M.V.reject({ sym: sym(s, mint), arm: sg.arm, fails: fails.slice(0, 3).join('; ') }) });
       }
-      const b = blockers(); if (b) return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: M.V.blocked({ sym: sym(s, mint), b }) });
+      cand(mint, s, { gate: 'pass' });
+      const b = blockers(); if (b) { cand(mint, s, { verdict: 'pass', why: 'scanner clean, but ' + holdWhy() }); return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: M.V.blocked({ sym: sym(s, mint), b }) }); }
       const cur = scalper?.mints?.get(mint) || m;
       if (cur.complete) return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: `${sym(s, mint)} graduated while I was scanning it.` });
       const z = sizeFor(sg.smp, sg.pol || pol(sg.arm));
       if (!z.size) return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: `${sym(s, mint)} is clean, but my sizing rules leave no room for a trade right now.` });
       const ap = arms[sg.arm];
       const reason = M.V.buy({ sym: sym(s, mint), facts: sg.facts, arm: sg.arm, s: sg.smp, size: z.size, regime: st.regime.label, clean: cleanSummary(rep), ap }) + (z.ddMult < 1 ? ` Betting ${Math.round(z.ddMult * 100)}% of normal size because I'm in drawdown.` : '') + (z.survivalMult < 1 ? ` Survival sizing ×${z.survivalMult} (signal ${vit().signal}%, pain ${pol().pain}).` : '') + ` (Rules: TP +${ap.tp}% / SL -${ap.sl}% / max ${ap.hold} min.)`;
+      cand(mint, s, { verdict: 'bought', why: `scanner clean, edge +${r1(sg.smp.ev)}%: bought ${z.size} SOL` });
       await openPosition({ mint, symbol: s, size: z.size, vs: cur.vs, vt: cur.vt, reason, signal: sg.arm, progress: sg.f.progress, belief: { p: r4(sg.smp.p), ev: r1(sg.smp.ev), kelly: r4(sg.smp.kelly) } });
-    } finally { busy = false; }
+    } finally { busy = false; ACT.scanning = null; ACT.lastScanEndAt = now(); }
   }
 
   async function openPosition({ mint, symbol, size, vs, vt, reason, signal: kind = 'dip', progress, belief = null }) {
@@ -480,8 +535,14 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   }
 
   // ---- housekeeping (every 5 s live; called directly by the backtest replay)
+  function safeTick() { try { tick(); } catch (e) { noteError('housekeeping', e); } }
   function tick() {
-    const t = now();
+    const t = now(); ACT.ticks++; ACT.lastTickAt = t;
+    for (const [k, v] of ACT.seen) if (v < t - 60e3) ACT.seen.delete(k);
+    for (const [k, v] of ACT.evals) if (v < t - 60e3) ACT.evals.delete(k);
+    for (const [k, v] of ACT.cands) if (v.at < t - 15 * 60e3) ACT.cands.delete(k);
+    if (t - ACT.lastBeatAt >= 60e3) { ACT.lastBeatAt = t; const a = activity(); if (['researching', 'trading', 'resting', 'paused', 'hibernating', 'reconnecting'].includes(a.key)) actLog('research', a.headline); }
+    if (t - ACT.lastAliveSaveAt >= 5 * 60e3) { ACT.lastAliveSaveAt = t; dirty = true; } // heartbeat in the saved state: lets me measure any downtime after a restart
     for (const pos of [...st.positions]) checkExit(pos);
     for (const [k, v] of Object.entries(st.seen)) if (v < t) delete st.seen[k];
     rollDay();
@@ -494,7 +555,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   }
   function snapshot() {
     const j = { v: 2, mode: cfg.mode, bornAt: st.bornAt, paperCash: st.paperCash, paperStart: st.paperStart, positions: st.positions.map(({ closing, ...p }) => p), trades: st.trades, decisions: st.decisions.slice(0, 30), thoughts: st.thoughts.slice(0, 50), seen: st.seen, day: st.day, dayPnl: st.dayPnl, scansDay: st.scansDay, scansToday: st.scansToday, totals: st.totals,
-      bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn, savedAt: new Date(now()).toISOString() };
+      bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn,
+      activity: { log: ACT.log.slice(0, 30), downtimes: ACT.downtimes.slice(0, 20), dayKey: ACT.dayKey, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday }, savedAt: new Date(now()).toISOString() };
     return 'gz:' + zlib.gzipSync(JSON.stringify(j)).toString('base64');
   }
   function restore(raw) {
@@ -522,6 +584,15 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       let af = VT.newAffect(sells.length ? Date.parse(sells[0].at) : now()); for (const x of sells) af = VT.feel(af, { t: Date.parse(x.at), arm: x.arm || 'dip', pnlPct: x.pnlPct, pnlSol: x.pnlSol }).affect;
       st.affect = af; st.affectRebuiltFrom = sells.length; }
     st.restoredFrom = j.savedAt;
+    if (j.activity) {
+      ACT.log = Array.isArray(j.activity.log) ? j.activity.log.slice(0, 30) : []; ACT.downtimes = j.activity.downtimes || [];
+      if (j.activity.dayKey === madridDay(now())) { ACT.coinsTodayCarry = j.activity.coinsToday || 0; ACT.checksToday = j.activity.checksToday || 0; }
+    }
+    const gap = j.savedAt ? now() - Date.parse(j.savedAt) : 0;
+    if (gap > 7 * 60e3) { // state is saved at least every 5 min while I run, so a bigger gap means I was not running
+      const min = Math.round(gap / 60e3); ACT.downtimes.unshift({ from: j.savedAt, to: iso(now()), min }); ACT.downtimes.length = Math.min(ACT.downtimes.length, 20);
+      actLog('wake', `I was not running for about ${min} min (server restart or sleep). Picking up where I left off.`);
+    } else actLog('wake', 'Restarted (new version or server restart). State restored, back to research.');
   }
   async function save(force = false) {
     if (!store || (!dirty && !force)) return; const t = now(); if (!force && t - lastSave < cfg.saveMin * 60e3) return;
@@ -558,8 +629,41 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
         neverTrades: [...cfg.exclude], protectedWallets: [...cfg.protectedWallets] },
       positions: open, trades: st.trades, decisions: st.decisions,
       stream: scalper?.streamInfo?.() || null, persistence: store ? { backend: store.name, saves: st.saves, lastSaveAt: st.lastSaveAt, lastSaveError: st.lastSaveError } : { backend: 'memory' },
-      lastDecisionAt: st.lastDecisionAt,
+      lastDecisionAt: st.lastDecisionAt, activity: activity(),
     };
+  }
+  function activity() {
+    const t = now(); const pl = pol(); const si = scalper?.streamInfo?.() || null;
+    const streamAgoSec = si?.lastAt ? Math.round((t - Date.parse(si.lastAt)) / 1000) : null;
+    const lastMin = (map) => { let n = 0; for (const v of map.values()) if (v >= t - 60e3) n++; return n; };
+    const scannedLastMin = lastMin(ACT.evals), activeLastMin = lastMin(ACT.seen);
+    const ORDER = { scanning: 0, watch: 1, bought: 2, hold: 3, pass: 4, rejected: 5 };
+    const cands = [...ACT.cands.values()].filter((c) => c.at >= t - 5 * 60e3 && !st.positions.some((p) => p.mint === c.mint))
+      .sort((a, b) => (ORDER[a.verdict] ?? 9) - (ORDER[b.verdict] ?? 9) || (b.margin ?? -99) - (a.margin ?? -99) || b.at - a.at).slice(0, 6)
+      .map((c) => ({ mint: c.mint, symbol: c.symbol, label: sym(c.symbol, c.mint), arm: c.arm, armLabel: c.arm ? armLabel(c.arm) : null, progressPct: c.progress ?? null, edgePct: c.ev ?? null, barPct: c.need ?? null, marginPct: c.margin ?? null, scanner: c.gate || null, verdict: c.verdict, why: c.why, agoSec: Math.round((t - c.at) / 1000) }));
+    const allowance = (() => { const [hh, mm] = new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Europe/Madrid', hour12: false }).split(':').map(Number); return Math.floor(Math.min(cfg.maxScansPerDay, 10 + cfg.maxScansPerDay * ((hh * 60 + mm) / 1440))); })();
+    const nextScannerSec = Math.max(0, Math.ceil((st.lastScanAt + cfg.scanGapSec * 1000 - t) / 1000));
+    let key = 'researching', label = 'Researching', detail = '';
+    const minsLeft = (u) => Math.max(1, Math.ceil((u - t) / 60e3));
+    if (st.limbo) { key = 'limbo'; label = 'Limbo'; detail = 'My treasury fell below the floor. I no longer trade.'; }
+    else if (!cfg.enabled) { key = 'stopped'; label = 'Stopped'; detail = 'The kill switch is on.'; }
+    else if (st.halted) { key = 'halted'; label = 'Halted'; detail = st.halted; }
+    else if (ACT.scanning) { const sc = ACT.scanning; key = 'evaluating'; label = `Evaluating ${sym(sc.symbol, sc.mint)}`; detail = `Running my scanner on a ${armLabel(sc.arm).toLowerCase()} setup (edge +${sc.ev}% vs bar ${sc.need}%), ${Math.round((t - sc.startedAt) / 1000)}s so far.`; }
+    else if (st.positions.length) { const p = st.positions[0]; key = 'trading'; label = `In a trade: ${sym(p.symbol, p.mint)}${p.pnlPct != null ? ` (${p.pnlPct >= 0 ? '+' : ''}${p.pnlPct}%)` : ''}`; detail = `Held ${r1((t - p.openAt) / 60e3)} min · exits +${p.tp}% / -${p.sl}% / ${p.hold} min.${st.positions.length > 1 ? ` ${st.positions.length} positions open.` : ''} ${st.positions.length < pl.maxOpen ? 'Still researching for another.' : 'Still watching the market while I hold.'}`; }
+    else if (pl.cooling) { key = 'resting'; label = `Resting after a loss (${minsLeft(pl.cooldownUntil)} min left)`; detail = 'Still watching the market, not buying until the cooldown ends.'; }
+    else if (st.dayPnl <= -cfg.dailyLossSol) { key = 'paused'; label = 'Paused: daily loss limit'; detail = 'No new trades until midnight (Madrid). Still watching.'; }
+    else if (st.hibernateDay === st.day) { key = 'hibernating'; label = 'Hibernating after a deep drawdown'; detail = 'Back tomorrow with small bets. Still watching.'; }
+    else if (!si || !si.connected || streamAgoSec == null || streamAgoSec > 60) { key = 'reconnecting'; label = 'Reconnecting to the market'; detail = si?.lastAt ? `No trades received for ${streamAgoSec}s. Reconnecting to the Solana stream.` : 'Connecting to the Solana trade stream.'; }
+    else if (freeBalance() - cfg.reserveSol < cfg.minTradeSol) { key = 'paused'; label = 'Balance too low to trade'; detail = 'Still watching.'; }
+    const watching = cands.filter((c) => ['watch', 'scanning', 'hold', 'pass', 'rejected'].includes(c.verdict)).slice(0, 3);
+    const scanTxt = `scanned ${scannedLastMin} coin${scannedLastMin === 1 ? '' : 's'} in the last minute`;
+    const watchTxt = watching.length ? `, watching: ${watching.map((c) => `${c.label} (${c.why})`).join('; ')}` : ', nothing worth a closer look yet';
+    const headline = ['limbo', 'stopped', 'halted'].includes(key) ? `${label}. ${detail}` : key === 'evaluating' ? `${label}: ${detail}` : `${label} — ${scanTxt}${watchTxt}`;
+    return { key, label, headline, detail, now: iso(t), scannedLastMin, activeCoinsLastMin: activeLastMin, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday,
+      lastScanAt: ACT.lastEvalAt ? iso(ACT.lastEvalAt) : null, scanner: { checksToday: st.scansToday, dailyBudget: cfg.maxScansPerDay, allowedSoFarToday: allowance, lastAt: st.lastScanAt ? iso(st.lastScanAt) : null, nextSlotInSec: nextScannerSec, minGapSec: cfg.scanGapSec, running: ACT.scanning ? { mint: ACT.scanning.mint, symbol: ACT.scanning.symbol } : null },
+      candidates: cands, log: ACT.log.slice(0, 30), openPositions: st.positions.length,
+      stream: { connected: !!si?.connected, lastTradeAgoSec: streamAgoSec, coinsTracked: si?.mintsTracked ?? null },
+      loop: { running: ACT.lastTickAt > 0 && t - ACT.lastTickAt < 20e3, ticks: ACT.ticks, lastTickAt: ACT.lastTickAt ? iso(ACT.lastTickAt) : null, uptimeSec: Math.round((t - t0) / 1000), errorsCaught: ACT.errors, lastError: ACT.lastError, lastErrorAt: ACT.lastErrorAt, downtimes: ACT.downtimes.slice(0, 10) } };
   }
   function vitalsStatus() {
     const v = vit(); const p = pol(); const a = VT.affectAt(st.affect, now()); const f = fund();
@@ -593,14 +697,15 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       if (cfg.mode === 'live' && st.liveBaseline == null && st.liveBalance != null) st.liveBaseline = cfg.liveStartSol ?? st.liveBalance;
       maybeRevive(); checkVitals();
       if (!st.thoughts.length) think(IDENTITY.story[0], 'birth');
+      if (!st.restoredFrom) actLog('wake', 'Started. Watching the pump.fun trade stream.');
       updateWeights(true);
-      timers.push(setInterval(tick, 5000), setInterval(refreshBalance, 120e3), setInterval(() => reconcile().catch(() => {}), 600e3));
+      timers.push(setInterval(safeTick, 5000), setInterval(refreshBalance, 120e3), setInterval(() => reconcile().catch(() => {}), 600e3));
       if (cfg.mode === 'live') reconcile().catch(() => {}); timers.forEach((x) => x.unref?.());
       out(`[agent] ALMA ${cfg.mode.toUpperCase()} ${cfg.enabled ? 'enabled' : 'DISABLED'} wallet ${address || 'none'}; arms ${M.ARM_KEYS.filter((k) => arms[k].enabled).join(',')}; params ${P?.source || 'defaults'}; excludes ${[...cfg.exclude].join(',') || 'none'}${st.halted ? '; HALTED: ' + st.halted : ''}`);
     },
-    stop() { timers.forEach(clearInterval); }, save: () => save(true), onTrade, status, diary, tick, cfg, st, arms, equity,
+    stop() { timers.forEach(clearInterval); }, save: () => save(true), onTrade, status, activity, diary, tick, cfg, st, arms, equity,
     isBusy: () => busy,
-    _test: { checkVitals, maybeRevive, vit, pol, enterLimbo, sizeFor, blockers, reconcile, signal, gate, buildPortalTx, simulateGuard, openPosition, closePosition, checkExit, scanAndEnter, scanFunding, snapshot, restore, rollDay },
+    _test: { checkVitals, maybeRevive, vit, pol, enterLimbo, sizeFor, blockers, reconcile, signal, gate, buildPortalTx, simulateGuard, openPosition, closePosition, checkExit, scanAndEnter, scanFunding, snapshot, restore, rollDay, safeTick, ACT },
   };
 }
 

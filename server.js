@@ -26,6 +26,7 @@ app.get('/api/analyze/:mint', async (req, res) => {
   finally { busy--; }
 });
 app.get('/healthz', (_, res) => res.send('ok'));
+app.get('/health', (_, res) => { res.set('cache-control', 'no-store'); const a = agent?.activity?.(); res.json({ ok: true, uptimeSec: Math.round(process.uptime()), agent: a ? { activity: a.key, loopRunning: a.loop.running, scannedLastMin: a.scannedLastMin, streamConnected: a.stream.connected } : null }); });
 
 // ---- Bond Radar (watcher) + persistence
 const { createRadar } = require('./radar');
@@ -93,6 +94,7 @@ if (process.env.AGENT_BOOT !== '0' && scalper) {
 app.get('/agent', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent.html')));
 app.get('/api/agent', (_, res) => { res.set('cache-control', 'no-store'); res.json(agent ? agent.status() : { disabled: true }); });
 app.get('/agent/diary', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent-diary.html')));
+app.get('/api/agent/activity', (_, res) => { res.set('cache-control', 'no-store'); res.json(agent ? agent.activity() : { disabled: true }); }); // light, polled every few seconds by /agent
 app.get('/api/agent/diary', (_, res) => { res.set('cache-control', 'no-store'); res.json(agent ? agent.diary() : { disabled: true }); });
 app.get('/api/agent/backtest', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent-backtest.json')));
 // ---- Fee Rips tracker (/rips): creator fees -> Collector Crypt packs, read on-chain from the public RPC (0 Helius credits)
@@ -110,6 +112,10 @@ app.get('/api/rips/live', (_, res) => { res.set('cache-control', 'no-store'); re
 app.get('/dev', (_, res) => res.sendFile(path.join(__dirname, 'public', 'dev.html')));
 require('./tankloop').register(app); // $TANKLOOP landing (/tankloop), CA via env TANKLOOP_CA
 app.get('/api/rips/status', (_, res) => { res.set('cache-control', 'no-store'); res.json(rips ? rips.status() : { disabled: true }); });
+// Always-on: a stray async error must not kill the trader. Unhandled rejections are logged and ignored; an uncaught
+// exception saves state and exits so Render restarts the process cleanly (state is restored on boot).
+process.on('unhandledRejection', (e) => console.error('[process] unhandled rejection (ignored):', e?.stack || e));
+process.once('uncaughtException', async (e) => { console.error('[process] uncaught exception, saving and restarting:', e?.stack || e); try { await Promise.race([agent?.save(), new Promise((r) => setTimeout(r, 8000))]); } catch {} process.exit(1); });
 for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} try { await agent?.save(); } catch {} process.exit(0); });
 app.get('/api/radar/status', (_, res) => {
   res.set('cache-control', 'no-store');

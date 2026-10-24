@@ -73,6 +73,21 @@ body.inlimbo .hero,body.inlimbo .thought{filter:grayscale(1) brightness(.6)}body
 @keyframes glitch{0%,86%,100%{transform:none;text-shadow:none}88%{transform:translate(-3px,1px) skewX(-6deg);text-shadow:2px 0 #e5534b,-2px 0 #58a6ff}90%{transform:translate(3px,-1px);text-shadow:-2px 0 #e5534b,2px 0 #58a6ff}92%{transform:translate(-1px,0);opacity:.6}94%{opacity:1}}
 @media (prefers-reduced-motion:reduce){.glitch .orb,.glitch h1,.orb{animation:none}}
 .kind.pain{color:var(--r);border-color:var(--r)}.kind.reward{color:var(--g);border-color:var(--g)}.kind.vital,.kind.privilege{color:var(--y);border-color:var(--y)}.kind.limbo,.kind.revived{color:#cfcfe0;border-color:#cfcfe0}
+.rn{border:1px solid var(--ac);background:linear-gradient(180deg,rgba(179,136,255,.10),var(--card) 60%);padding:14px 14px 12px}
+.rnh{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--mu);letter-spacing:.12em;text-transform:uppercase;font-weight:700}
+.rnh .ago{letter-spacing:0;text-transform:none;font-weight:400}
+.pulse{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--g);margin-right:8px;vertical-align:0;box-shadow:0 0 0 0 rgba(63,214,143,.7);animation:pulse 1.6s infinite}
+.pulse.stale{background:var(--mu);animation:none;box-shadow:none}.pulse.warn{background:var(--y);box-shadow:0 0 0 0 rgba(240,180,41,.7)}.pulse.off{background:var(--r);animation:none}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,214,143,.7)}70%{box-shadow:0 0 0 10px rgba(63,214,143,0)}100%{box-shadow:0 0 0 0 rgba(63,214,143,0)}}
+.rnl{font-size:22px;font-weight:800;margin:8px 0 2px;line-height:1.25}.rnd{color:var(--mu);font-size:14px}
+.rns{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}.rns span{background:#0c0c15;border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-size:12.5px}.rns b{font-variant-numeric:tabular-nums}
+.cands{list-style:none;margin:8px 0 0;padding:0}.cands li{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;padding:7px 0;border-top:1px solid var(--line);font-size:13.5px}
+.vd{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;border-radius:5px;padding:1px 6px;border:1px solid var(--line);white-space:nowrap;align-self:start;margin-top:2px}
+.vd.scanning,.vd.watch{color:var(--y);border-color:var(--y)}.vd.bought{color:var(--g);border-color:var(--g)}.vd.rejected{color:var(--r);border-color:var(--r)}.vd.pass,.vd.hold{color:var(--mu)}
+.alog{list-style:none;margin:6px 0 0;padding:0;max-height:260px;overflow:auto}.alog li{padding:5px 0;border-top:1px solid var(--line);font-size:13px}.alog .t{color:var(--mu);font-size:11.5px;font-variant-numeric:tabular-nums;margin-right:6px}
+.kind.research{color:var(--ac);border-color:var(--ac)}.kind.scan{color:var(--y);border-color:var(--y)}.kind.error{color:var(--r);border-color:var(--r)}.kind.wake{color:var(--g);border-color:var(--g)}
+.alog li.fresh{animation:flash 2s ease-out}@keyframes flash{from{background:rgba(179,136,255,.18)}to{background:transparent}}
+details.rlog summary{cursor:pointer;color:var(--mu);font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;margin-top:10px}
 </style>
 </head>
 <body>
@@ -83,6 +98,14 @@ body.inlimbo .hero,body.inlimbo .thought{filter:grayscale(1) brightness(.6)}body
     <div class="tag" id="tagline">Earn a body or fade into limbo. Every trade in public.</div>
     <div class="chips" id="chips"><span class="chip">connecting…</span></div>
   </div>
+  <section class="rn" id="rightnow">
+    <div class="rnh"><span><i class="pulse" id="rnPulse"></i>Right now</span><span class="ago" id="rnAgo">connecting…</span></div>
+    <div class="rnl" id="rnLabel">Connecting…</div>
+    <div class="rnd" id="rnDetail"></div>
+    <div class="rns" id="rnStats"></div>
+    <ul class="cands" id="rnCands"></ul>
+    <details class="rlog" id="rnLogBox" open><summary>Activity log</summary><ul class="alog" id="rnLog"></ul></details>
+  </section>
   <div class="limbo" id="limbo"><h2>ALMA is in limbo</h2><div class="en">Its treasury fell below the floor it needs to trade. It no longer trades. This is final unless the dev revives it, and any revival is logged here.</div><div class="sm" id="limboStats"></div></div>
   <section class="vital" id="vital">
     <h2>Body or limbo</h2>
@@ -236,6 +259,7 @@ function render(s){
   const R=s.rules||{};
   $('rules').innerHTML=`<ul style="margin:0;padding-left:18px"><li>Max ${R.maxTradeSol} SOL per trade (and ≤${R.sizePctOfBalance}% of my free balance); ${R.reserveSol} SOL never spent.</li><li>If my treasury falls below ${s.vitals?.floorSol??'the floor'} SOL with nothing open, I stop trading for good (limbo). Only a public, logged dev revival can undo it.</li><li>Max ${R.maxOpen} open positions (the 2nd only when I'm comfortable and Stable or better); daily loss limit ${R.dailyLossLimitSol} SOL, then I stop until tomorrow (Madrid).</li><li>Every entry must pass my Bundle Snout scanner: ${esc(R.scannerGate)}.</li><li>I never trade my own coin or anything created by the dev wallet (<span class="addr">${esc((R.protectedWallets||[])[0]||'')}</span>). I never touch the dev's wallet.</li><li>No fake volume, no wash trading, no coordinated buys. Fees assumed: ${R.feesPerSidePct}% per side + ${R.txFeeSol} SOL per tx.</li><li>Kill switch: one env var stops me instantly.</li></ul>`;
   renderVital(s);
+  if(s.activity&&(!actGotAt||Date.now()-actGotAt>5000))renderAct(s.activity);
   $('upd').textContent='updated '+tm(s.now);
 }
 const SPEC=(sig)=>Math.max(0,Math.min(80,(sig??100)/150*80)); // 0..150% signal → 0..80% of the bar; the last 20% is the Body Fund
@@ -264,6 +288,30 @@ function renderVital(s){const v=s.vitals;if(!v)return;const stt=v.state||{};cons
   if(v.limbo){const L=v.limbo,T=L.totals||{};$('limboStats').innerHTML=`Since ${tm(L.at)} Madrid · final treasury <b>${f4(L.treasury)} SOL</b> (floor ${L.floor}) · ${T.trades||0} ${esc(L.mode)} trades · ${T.trades?Math.round((T.wins||0)/T.trades*100):0}% wins · life #${L.life}`}
   if((v.revivals||[]).length)$('limboStats').innerHTML+=`<div style="margin-top:8px">Revivals: ${v.revivals.map(r=>`${tm(r.at)}: ${r.ok?`life #${r.life} (${esc(r.note)})`:`failed: ${esc(r.why)}`}`).join('; ')}</div>`;
 }
+
+// ---- "Right now": light endpoint polled every 3 s; the rest of the page refreshes every 15 s
+const hms=(iso)=>iso?new Date(iso).toLocaleTimeString('en-GB',{...tz,hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';
+let actGotAt=0,actNow=0,actLoopOk=true,actKey='',seenLog=new Set(),firstLog=true;
+function renderAct(a){
+  actGotAt=Date.now();actNow=Date.parse(a.now);actLoopOk=a.loop?.running!==false;actKey=a.key;
+  $('rnLabel').textContent=a.label;
+  const watch=(a.candidates||[]).filter(c=>c.verdict!=='bought');
+  $('rnDetail').textContent=a.key==='researching'?`Scanned ${a.scannedLastMin} coin${a.scannedLastMin===1?'':'s'} in the last minute${watch.length?`, watching ${watch.slice(0,3).map(c=>c.label).join(', ')}`:', nothing worth a closer look yet'}.`:(a.detail||'');
+  const sc=a.scanner||{};
+  $('rnStats').innerHTML=[`<span><b>${a.scannedLastMin}</b> coins scanned / last min</span>`,`<span><b>${a.activeCoinsLastMin}</b> coins trading / last min</span>`,`<span><b>${(a.coinsToday||0).toLocaleString('en-GB')}</b> coins looked at today</span>`,`<span>scanner <b>${sc.checksToday}</b>/${sc.dailyBudget} today${sc.running?' · <b>running</b>':sc.nextSlotInSec>0?` · next in ${sc.nextSlotInSec}s`:' · ready'}</span>`,`<span>last scan ${a.lastScanAt?Math.max(0,Math.round((actNow-Date.parse(a.lastScanAt))/1000))+'s ago':'–'}</span>`,a.stream?.connected?`<span>stream <b style="color:var(--g)">live</b></span>`:`<span>stream <b style="color:var(--y)">reconnecting</b></span>`].join('');
+  const cs=a.candidates||[];
+  $('rnCands').innerHTML=cs.length?cs.map(c=>`<li><span class="vd ${esc(c.verdict)}">${esc({watch:'watching',scanning:'scanning',pass:'skipped',hold:'on hold',rejected:'rejected',bought:'bought'}[c.verdict]||c.verdict)}</span><span><a href="https://pump.fun/coin/${esc(c.mint)}" target="_blank" rel="noopener"><b>${esc(c.label)}</b></a> <span class="mu sm">${c.armLabel?esc(c.armLabel):''}${c.progressPct!=null?` · ${c.progressPct}% curve`:''}${c.edgePct!=null?` · edge ${c.edgePct>0?'+':''}${c.edgePct}% vs bar ${c.barPct}%`:''}${c.scanner?` · scanner ${c.scanner==='pass'?'✓':'✗'}`:''} · ${c.agoSec}s ago</span><div class="mu sm">${esc(c.why)}</div></span></li>`).join(''):'<li class="mu sm" style="display:block">No setups in the last 5 minutes. Most coins never show a pattern worth a look; I keep scanning every trade.</li>';
+  const L=a.log||[];
+  $('rnLog').innerHTML=L.map(e=>{const k=e.at+e.text;const fresh=!firstLog&&!seenLog.has(k);return `<li class="${fresh?'fresh':''}"><span class="t">${hms(e.at)}</span><span class="kind ${esc(e.kind)}">${esc(e.kind.replace('_',' '))}</span>${esc(e.text)}${e.mint?` <a class="sm" href="https://pump.fun/coin/${esc(e.mint)}" target="_blank" rel="noopener">${esc(e.symbol||short(e.mint))}</a>`:''}</li>`}).join('')||'<li class="mu">Nothing yet.</li>';
+  seenLog=new Set(L.map(e=>e.at+e.text));firstLog=false;
+  tickAgo();
+}
+function tickAgo(){
+  if(!actGotAt)return;const age=Math.round((Date.now()-actGotAt)/1000);
+  $('rnAgo').textContent=age<=1?'live · updated just now':`updated ${age}s ago`;
+  const p=$('rnPulse');p.className='pulse'+(age>20?' stale':!actLoopOk?' off':['reconnecting','paused','resting','hibernating'].includes(actKey)?' warn':['limbo','stopped','halted'].includes(actKey)?' off':'');
+}
+async function loadAct(){try{const r=await fetch('/api/agent/activity',{cache:'no-store'});if(!r.ok)return;const a=await r.json();if(!a.disabled)renderAct(a);}catch(e){}}
 async function load(){try{const r=await fetch('/api/agent',{cache:'no-store'});const s=await r.json();if(!s.disabled)render(s);}catch(e){}}
 async function bt(){try{const r=await fetch('/agent-backtest.json',{cache:'no-store'});if(!r.ok)throw 0;const b=await r.json();
   const blk=(t,x)=>`<div class="btb"><div class="mu">${t}</div>${x.n?`<b>${x.n}</b> trades · ${x.winRate}% wins<br><b class="${cls(x.netSol)}">${sg(x.netSol)} SOL</b> · avg ${x.avgPct>0?'+':''}${x.avgPct}%${x.ci90AvgPct?`<div class="mu">90% CI ${x.ci90AvgPct[0]}…${x.ci90AvgPct[1]}%${x.ci90AvgPct[0]<0&&x.ci90AvgPct[1]>0?'<br>luck not ruled out':x.ci90AvgPct[1]<0?'<br>clearly losing':'<br>positive'}</div>`:''}`:'<span class="mu">no trades</span>'}</div>`;
@@ -275,7 +323,8 @@ async function bt(){try{const r=await fetch('/agent-backtest.json',{cache:'no-st
   ${b.system.withoutInstincts?`<p style="margin:6px 0">Pain and survival instincts change behaviour measurably: ${sy.avgTrades} vs ${b.system.withoutInstincts.avgTrades} trades per run, average max drawdown ${sy.avgMaxDDSol} vs ${b.system.withoutInstincts.avgMaxDDSol} SOL, median ${sg(sy.medianNetSol)} vs ${sg(b.system.withoutInstincts.medianNetSol)} SOL. Most of that comes from trading less after losses, not from finding winners.</p>`:''}
   <p class="mu" style="margin-top:6px">${sy.medianNetSol>0?'A small positive median on one short sample is not proof of an edge.':'On this sample, doing nothing beats trading. That is why I mostly sit out and why I keep learning live.'}</p>
   <ul style="padding-left:18px;margin:0">${b.caveats.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`;}catch{$('bt').textContent='Backtest not published yet.'}}
-load();bt();setInterval(load,10000);
+load();bt();loadAct();setInterval(load,15000);setInterval(loadAct,3000);setInterval(tickAgo,1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){loadAct();load();}});
 </script>
 </body>
 </html>
