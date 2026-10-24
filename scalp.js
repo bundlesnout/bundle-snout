@@ -30,7 +30,8 @@ const SCFG = () => ({
   primary: process.env.SCALP_PRIMARY || 'R1-L2-0.1-tp10-sl10-t5',
   ridePrimary: process.env.RIDE_PRIMARY || 'RIDE-0.1-40k-sl35-h60',
   saveMin: num('SCALP_SAVE_MIN', 10),
-  maxLagMs: num('SCALP_MAX_LAG_MS', 250),
+  maxLagMs: num('SCALP_MAX_LAG_MS', 600),       // sustained event-loop lag (EWMA, 10 s) before the stream backs off
+  lagPauseMs: num('SCALP_LAG_PAUSE_MS', 60000), // short: the stream also feeds the agent and Bond Radar
 });
 const DISC = crypto.createHash('sha256').update('event:TradeEvent').digest().subarray(0, 8);
 const DISC_B64 = DISC.toString('base64').slice(0, 10);
@@ -270,13 +271,13 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
     ws.on('error', (e) => { st.ws.lastError = e.message; });
     ws.on('close', (c) => { clearInterval(ping); st.ws.connected = false; st.ws.lastError ||= 'closed ' + c; if (!stopped) setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 120e3); });
   }
-  // CPU guard: if the event loop lags (Render free = 0.1 CPU), pause the stream for 5 min so the radar is never starved.
+  // CPU guard: if the event loop lags (Render free = 0.1 CPU), back the stream off for a minute so the radar's scans can finish.
   let lagSlow = 0, lastTick = now();
   function lagCheck() {
     const t = now(); const lag = Math.max(0, t - lastTick - 1000); lastTick = t;
     if (lag > 30e3) { st.clockJumps = (st.clockJumps || 0) + 1; return; } // host was suspended / clock jump, not CPU starvation
     st.lagMs = Math.round(st.lagMs * 0.8 + lag * 0.2);
-    if (st.lagMs > cfg.maxLagMs && st.ws.connected) { if (++lagSlow >= 10) { lagSlow = 0; st.ws.pauses++; st.ws.pausedUntil = new Date(t + 300e3).toISOString(); st.ws.lastError = `paused: event-loop lag ${st.lagMs}ms`; log('[scalp] ' + st.ws.lastError); try { ws.close(); } catch {} } }
+    if (st.lagMs > cfg.maxLagMs && st.ws.connected) { if (++lagSlow >= 10) { lagSlow = 0; st.ws.pauses++; st.ws.pausedUntil = new Date(t + cfg.lagPauseMs).toISOString(); st.ws.lastError = `paused: event-loop lag ${st.lagMs}ms`; log('[scalp] ' + st.ws.lastError); try { ws.close(); } catch {} } }
     else lagSlow = 0;
   }
 

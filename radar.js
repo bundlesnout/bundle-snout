@@ -40,6 +40,7 @@ const CFG = () => ({
   geckoStaleMs: num('RADAR_GECKO_STALE_MS', 60000), // every 1 min while the trade stream is silent
   streamThrottleMs: num('RADAR_STREAM_THROTTLE_MS', 2000),
   maxTracked: num('RADAR_MAX_TRACKED', 30000),
+  scanGapMs: num('RADAR_SCAN_GAP_MS', 3000),
 });
 const GECKO = process.env.GECKO_API || 'https://api.geckoterminal.com/api/v2';
 const VIRTUAL_GAP = 279_900_000e6; // virtual - real token reserves on a standard curve (1.073B - 793.1M), raw units
@@ -97,7 +98,7 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
   };
   let ws = null, wsBackoff = 1000, pollTimer = null, chainTimer = null, stopped = false, working = false, apiPausedUntil = 0, apiFailStreak = 0, apiPauses = 0;
   const useApi = cfg.pumpApi && cfg.source !== 'chain', useChain = cfg.source !== 'api';
-  let geckoTimer = null, pruneTimer = null, geckoLastAt = 0;
+  let geckoTimer = null, pruneTimer = null, geckoLastAt = 0, lastScanEnd = 0;
   st.stream = { trades: 0, mints: 0, upserts: 0, lastAt: null };
   st.gecko = { enabled: cfg.gecko && useChain, polls: 0, ok: 0, fail: 0, added: 0, lastAt: null, lastError: null };
   if (!useApi) st.poll.disabled = 'pump.fun frontend API is behind a Cloudflare bot challenge (403 for servers); set RADAR_PUMP_API=1 to try it';
@@ -249,6 +250,7 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
     try {
       while (queue.length && !stopped) {
         const mint = queue.shift();
+        if (lastScanEnd && Date.now() - lastScanEnd < cfg.scanGapMs) await sleep(cfg.scanGapMs - (Date.now() - lastScanEnd)); // spread CPU on Render's 0.1 vCPU
         const day = new Date().toISOString().slice(0, 10);
         if (st.scans.day !== day) { st.scans.day = day; st.scans.today = 0; st.scans.deepToday = 0; for (const [m, v] of decided) if (v.budget) decided.delete(m); }
         if (st.scans.today >= cfg.maxScansPerDay) { st.scans.skippedBudget++; decided.set(mint, { at: Date.now(), clean: false, reasons: ['daily scan budget reached'], budget: true }); queued.delete(mint); continue; }
@@ -258,7 +260,7 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
         const t = tracked.get(mint) || { mint };
         let rep;
         setCreditTag('scan');
-        try { rep = await analyze(mint).finally(() => { queued.delete(mint); setCreditTag('other'); }); }
+        try { rep = await analyze(mint).finally(() => { queued.delete(mint); setCreditTag('other'); lastScanEnd = Date.now(); }); }
         catch (e) {
           st.scans.errors++; log(`[radar] analyze ${mint} failed: ${e.message}`);
           const prev = decided.get(mint);

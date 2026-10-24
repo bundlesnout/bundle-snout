@@ -1,5 +1,5 @@
 // Bond Radar data layer: trade stream -> progress -> queue; GeckoTerminal discovery -> on-chain tracker; pump.fun API off by default.
-process.env.RADAR_WS = '0';
+process.env.RADAR_WS = '0'; process.env.RADAR_SCAN_GAP_MS = '0';
 const assert = require('assert');
 const analyzer = require('../analyzer');
 const queued = []; const logs = [];
