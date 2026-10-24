@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>$DEVRIPS live: Fees Rip Packs</title>
+<meta name="description" content="Stream screen for Fees Rip Packs: creator fees open card packs live. The dev keeps the cards.">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/rips-favicon.png"><meta name="theme-color" content="#0d0a24">
+<style>
+:root{color-scheme:dark;--bg:#0d0a24;--card:#1a1440;--line:#2f2766;--gold:#ffd64a;--cyan:#82e6ff;--pink:#ff6fd8;--mut:#a8a3c9;--ok:#7dffa8;--bad:#ff8f9f;--u:min(.72vw,1.25vh)}
+@media (orientation:portrait){:root{--u:min(1.3vw,.72vh)}}
+[hidden]{display:none!important}*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#eeeaff;background:radial-gradient(120vmax 70vmax at 85% -10%,#3a1f7a 0,transparent 60%),radial-gradient(80vmax 60vmax at -10% 110%,#2a1460 0,transparent 60%),var(--bg);font-size:calc(var(--u)*2)}
+.app{height:100%;display:grid;gap:calc(var(--u)*1.6);padding:calc(var(--u)*2.2);grid-template-columns:1.3fr 1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"head feed" "main feed" "foot foot"}
+@media (orientation:portrait){.app{grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto;grid-template-areas:"head" "main" "feed" "foot"}}
+.card{background:linear-gradient(180deg,#1d1648,#150f38);border:1px solid var(--line);border-radius:calc(var(--u)*2);padding:calc(var(--u)*2)}
+header{grid-area:head;display:flex;align-items:center;gap:calc(var(--u)*2)}
+header img{width:calc(var(--u)*12);height:calc(var(--u)*12);border-radius:50%;border:calc(var(--u)*.5) solid var(--gold);flex:none;box-shadow:0 0 calc(var(--u)*4) #ffd64a55}
+h1{margin:0;font-size:calc(var(--u)*5);line-height:1.05;letter-spacing:.02em}h1 .t{color:var(--gold)}
+.tag{margin:calc(var(--u)*.6) 0 0;color:#d9d3ff;font-size:calc(var(--u)*2.2);font-weight:600}
+.live{display:inline-flex;align-items:center;gap:calc(var(--u)*.8);background:#ff3b6b;color:#fff;font-weight:900;border-radius:999px;padding:calc(var(--u)*.3) calc(var(--u)*1.4);font-size:calc(var(--u)*1.7);vertical-align:middle;letter-spacing:.08em}
+.live i{width:calc(var(--u)*1.1);height:calc(var(--u)*1.1);border-radius:50%;background:#fff;animation:blink 1.2s infinite}
+.soon{background:var(--pink);color:#25051f}
+@keyframes blink{50%{opacity:.2}}
+.main{grid-area:main;display:flex;flex-direction:column;gap:calc(var(--u)*1.6);min-height:0;overflow:hidden}
+@media (orientation:landscape){header img{width:calc(var(--u)*10);height:calc(var(--u)*10)}header h1{font-size:calc(var(--u)*4.3)}header .tag{font-size:calc(var(--u)*2)}}
+@media (orientation:portrait){.rip img,.rip .ph{max-height:calc(var(--u)*14)}}
+.lbl{color:var(--mut);text-transform:uppercase;letter-spacing:.12em;font-size:calc(var(--u)*1.6);font-weight:800}
+.np .row{display:flex;justify-content:space-between;align-items:baseline;gap:calc(var(--u)*1)}
+.ripc{min-height:calc(var(--u)*13);padding:calc(var(--u)*1.4) calc(var(--u)*2)}
+.np .pct{font-size:calc(var(--u)*6.4);font-weight:900;color:var(--gold);line-height:1}
+.np .nm{font-size:calc(var(--u)*2.6);font-weight:800}
+.bar{height:calc(var(--u)*4.2);border-radius:999px;background:#0b0820;border:1px solid var(--line);overflow:hidden;margin:calc(var(--u)*1.2) 0}
+.bar b{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--pink),var(--gold));border-radius:999px;transition:width 1.2s ease;min-width:calc(var(--u)*2)}
+.np .sub{font-size:calc(var(--u)*2.1);color:#d9d3ff}.np .sub b{color:#fff}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:calc(var(--u)*1.2)}
+.stat{padding:calc(var(--u)*1.4)}.stat .v{font-size:calc(var(--u)*4);font-weight:900;line-height:1.1;font-variant-numeric:tabular-nums}.stat .lbl{font-size:calc(var(--u)*1.35)}
+.rip{display:flex;gap:calc(var(--u)*2);align-items:center;flex:1;min-height:0;overflow:hidden;margin-top:calc(var(--u)*.8)}
+.rip img{height:100%;max-height:calc(var(--u)*22);aspect-ratio:5/7;object-fit:cover;border-radius:calc(var(--u)*1.2);border:2px solid var(--gold)}
+.rip .ph{height:100%;max-height:calc(var(--u)*18);aspect-ratio:5/7;border-radius:calc(var(--u)*1.2);border:2px dashed #5a4ea6;display:grid;place-items:center;color:#5a4ea6;font-weight:900;font-size:calc(var(--u)*4);flex:none}
+.rip .big{font-size:calc(var(--u)*3.4);font-weight:900}.rip .sm{color:var(--mut);font-size:calc(var(--u)*1.9)}
+.feed{grid-area:feed;display:flex;flex-direction:column;min-height:0}
+.feed ol{list-style:none;margin:calc(var(--u)*1) 0 0;padding:0;overflow:hidden;flex:1;display:flex;flex-direction:column;gap:calc(var(--u)*.8);-webkit-mask-image:linear-gradient(#000 85%,transparent);mask-image:linear-gradient(#000 85%,transparent)}
+.feed li{display:grid;grid-template-columns:auto 1fr auto auto;gap:calc(var(--u)*1.4);align-items:center;padding:calc(var(--u)*1) calc(var(--u)*1.4);border-radius:calc(var(--u)*1.2);background:#120c30;border:1px solid var(--line);font-size:calc(var(--u)*2.3);font-variant-numeric:tabular-nums}
+.feed li .s{font-weight:900;border-radius:calc(var(--u)*.7);padding:calc(var(--u)*.2) calc(var(--u)*1);font-size:calc(var(--u)*1.8);letter-spacing:.06em;min-width:calc(var(--u)*8);text-align:center}
+.feed li.buy .s{background:#123d2a;color:var(--ok)}.feed li.sell .s{background:#4a1626;color:var(--bad)}
+.feed li .w{color:var(--mut);font-family:ui-monospace,Menlo,Consolas,monospace}.feed li .a{font-weight:900}.feed li .t{color:var(--mut);font-size:calc(var(--u)*1.7)}
+.feed li.new{animation:in .7s ease-out}.feed li.new.buy{box-shadow:0 0 0 2px var(--ok) inset}.feed li.new.sell{box-shadow:0 0 0 2px var(--bad) inset}
+@keyframes in{from{transform:translateX(30%);opacity:0}to{transform:none;opacity:1}}
+.empty{color:var(--mut);font-size:calc(var(--u)*2.4);padding:calc(var(--u)*2) 0}
+footer{grid-area:foot;display:flex;align-items:center;gap:calc(var(--u)*2);flex-wrap:wrap}
+footer .ca{flex:1 1 60%;min-width:0;cursor:pointer}
+@media (orientation:portrait){footer{flex-direction:column;align-items:stretch;flex-wrap:nowrap}footer .ca{flex:none}footer .site,footer .site small{text-align:left}footer .ca code{font-size:calc(var(--u)*3.2)}}footer .ca code{display:block;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:800;color:var(--gold);font-size:calc(var(--u)*2.9);word-break:break-all;line-height:1.15}
+footer .site{font-weight:900;font-size:calc(var(--u)*2.6);color:var(--cyan);white-space:nowrap}
+footer .site small{display:block;color:var(--mut);font-size:calc(var(--u)*1.5);font-weight:600;text-align:right}
+/* holding screen */
+.hold{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:calc(var(--u)*3);padding:calc(var(--u)*4);text-align:center}
+.hold img{width:calc(var(--u)*22);height:calc(var(--u)*22);border-radius:50%;border:calc(var(--u)*.8) solid var(--gold);box-shadow:0 0 calc(var(--u)*8) #ffd64a66;animation:float 4s ease-in-out infinite}
+@keyframes float{50%{transform:translateY(calc(var(--u)*-1.5))}}
+.hold h1{font-size:calc(var(--u)*7)}.hold .tag{font-size:calc(var(--u)*3)}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:calc(var(--u)*2);width:100%;max-width:calc(var(--u)*130)}
+@media (orientation:portrait){.steps{grid-template-columns:1fr}}
+.step{text-align:left;display:flex;gap:calc(var(--u)*1.6);align-items:flex-start}.step .n{flex:none;width:calc(var(--u)*6);height:calc(var(--u)*6);border-radius:50%;background:var(--gold);color:#1a1000;font-weight:900;display:grid;place-items:center;font-size:calc(var(--u)*3)}
+.step b{display:block;font-size:calc(var(--u)*2.8)}.step span{color:#d9d3ff;font-size:calc(var(--u)*2.1)}
+.hold .site{font-size:calc(var(--u)*3.2);font-weight:900;color:var(--cyan)}
+</style></head>
+<body>
+<div class="hold" id="hold">
+  <img src="/rips-logo.jpg" alt="Fees Rip Packs logo">
+  <div><span class="live soon">LAUNCHING SOON</span>
+  <h1 style="margin-top:calc(var(--u)*1.5)">Fees Rip Packs <span class="t" style="color:var(--gold)">$DEVRIPS</span></h1>
+  <p class="tag">Creator fees open card packs live. The dev keeps the cards.</p></div>
+  <div class="steps">
+    <div class="step card"><div class="n">1</div><div><b>Every trade</b><span>pump.fun sends 0.30% of each trade to the creator as a fee.</span></div></div>
+    <div class="step card"><div class="n">2</div><div><b>Fees fill the bar</b><span>This coin's fees are read on-chain, trade by trade.</span></div></div>
+    <div class="step card"><div class="n">3</div><div><b>Packs get ripped</b><span>Each full bar opens a card pack in public, with its tx. The dev keeps the cards.</span></div></div>
+  </div>
+  <div class="site">bundle-snout.onrender.com/rips</div>
+</div>
+
+<div class="app" id="app" hidden>
+  <header>
+    <img src="/rips-logo.jpg" alt="Fees Rip Packs logo">
+    <div><h1>Fees Rip Packs <span class="t" id="tk">$DEVRIPS</span> <span class="live"><i></i>LIVE</span></h1>
+    <p class="tag">Creator fees open card packs live. The dev keeps the cards.</p></div>
+  </header>
+  <section class="main">
+    <div class="card np">
+      <div class="row"><div><div class="lbl">Next pack</div><div class="nm" id="npName">Starter pack</div></div><div class="pct" id="npPct">0%</div></div>
+      <div class="bar"><b id="npBar"></b></div>
+      <div class="sub" id="npSub">Reading fees on-chain...</div>
+    </div>
+    <div class="stats">
+      <div class="card stat"><div class="lbl">Trades</div><div class="v" id="sTr">-</div></div>
+      <div class="card stat"><div class="lbl">Buyers</div><div class="v" id="sBu">-</div></div>
+      <div class="card stat"><div class="lbl">Market cap</div><div class="v" id="sMc">-</div></div>
+      <div class="card stat"><div class="lbl">Curve</div><div class="v" id="sCu">-</div></div>
+    </div>
+    <div class="card ripc" style="flex:1;display:flex;flex-direction:column">
+      <div class="lbl">Last rip</div>
+      <div class="rip" id="rip"><div class="ph">?</div><div><div class="big">First rip soon</div><div class="sm">Opened in public, posted with the tx.</div></div></div>
+    </div>
+  </section>
+  <section class="card feed">
+    <div class="lbl">Live trades <span id="partial" class="mut" style="text-transform:none;letter-spacing:0"></span></div>
+    <ol id="feed"></ol>
+    <div class="empty" id="feedEmpty">Waiting for the first trade...</div>
+  </section>
+  <footer class="card">
+    <div class="ca" id="caBox" title="Click to copy"><div class="lbl" id="caLbl">CA (click to copy)</div><code id="ca"></code></div>
+    <div class="site">bundle-snout.onrender.com/rips<small>Not financial advice. No prizes for holders.</small></div>
+  </footer>
+</div>
+<script>
+const $=(i)=>document.getElementById(i);
+const esc=(s)=>String(s??'').replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fUsd=(n)=>n==null?'-':n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3).toFixed(1)+'K':'$'+n.toFixed(n<10?2:0);
+const fSol=(n)=>n==null?'-':(n<0.01?n.toFixed(4):n<1?n.toFixed(3):n.toFixed(2));
+const ago=(iso)=>{const s=Math.max(0,(Date.now()-Date.parse(iso))/1e3);return s<60?Math.round(s)+'s':s<3600?Math.round(s/60)+'m':Math.round(s/3600)+'h'};
+const packName=(n)=>(String(n||'').replace(/\b(pok[eé]mon|gacha|pack)\b/gi,'').replace(/\s+/g,' ').trim()||'Card')+' pack';
+const seen=new Set();let first=true;
+function render(d){
+  const live=d.state==='live'&&d.coin&&d.coin.ca;
+  $('hold').hidden=!!live;$('app').hidden=!live;if(!live)return;
+  $('tk').textContent='$'+(d.coin.ticker||'DEVRIPS');
+  $('ca').textContent=d.coin.ca;
+  const np=d.nextPack;
+  if(np){$('npName').textContent=packName(np.name)+' · $'+np.priceUsd;$('npPct').textContent=(np.priced?np.pct:0)+'%';$('npBar').style.width=(np.priced?np.pct:0)+'%';
+    $('npSub').innerHTML=np.priced?`Fees from this coin: <b>${fSol(d.fees.earnedSol)} SOL</b> (${fUsd(d.fees.earnedUsd)}) · <b>$${np.haveUsd.toFixed(2)}</b> of $${np.priceUsd}`:`Fees from this coin: <b>${fSol(d.fees.earnedSol)} SOL</b> · USD price loading`;}
+  else{$('npName').textContent='Next pack';$('npPct').textContent='-';$('npSub').textContent='Pack list loading';}
+  const s=d.stats||{};
+  $('sTr').textContent=s.trades??'-';$('sBu').textContent=s.buyers??'-';
+  $('sMc').textContent=s.mcapUsd!=null?fUsd(s.mcapUsd):s.mcapSol!=null?fSol(s.mcapSol)+' SOL':'-';
+  $('sCu').textContent=s.curvePct!=null?s.curvePct.toFixed(1)+'%':'-';
+  $('partial').textContent=d.fees.txPending>0?`(still reading ${d.fees.txPending} older tx)`:'';
+  const r=d.lastRip;
+  if(r){const c=r.card||{};$('rip').innerHTML=(c.image?`<img src="${esc(c.image)}" alt="">`:'<div class="ph">?</div>')+`<div><div class="big">${esc(c.name||'Card on its way')}</div><div class="sm">${r.priceUsd?'$'+r.priceUsd+' pack':'Card pack'}${r.rarity?' · '+esc(r.rarity):''}${r.paidBy==='dev'?' · paid by dev, not fees':''}</div><div class="sm">${d.packsOpened} pack${d.packsOpened===1?'':'s'} opened so far</div></div>`;}
+  const t=d.trades||[];$('feedEmpty').hidden=t.length>0;
+  $('feed').innerHTML=t.slice(0,14).map((x)=>{const n=!first&&!seen.has(x.id);return `<li class="${x.side}${n?' new':''}"><span class="s">${x.side.toUpperCase()}</span><span class="w">${esc(x.wallet)}</span><span class="a">${fSol(x.sol)} SOL</span><span class="t">${ago(x.at)}</span></li>`}).join('');
+  t.forEach((x)=>seen.add(x.id));first=false;
+}
+async function tick(){try{const d=await fetch('/api/rips/live',{cache:'no-store'}).then((r)=>r.json());if(!d.disabled)render(d);}catch(e){}}
+$('caBox').onclick=()=>{const v=$('ca').textContent;if(v&&navigator.clipboard)navigator.clipboard.writeText(v).then(()=>{$('caLbl').textContent='Copied';setTimeout(()=>$('caLbl').textContent='CA (click to copy)',1500)}).catch(()=>{});};
+tick();setInterval(tick,4000);
+</script>
+</body></html>

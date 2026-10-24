@@ -91,6 +91,10 @@ app.get('/rips', (_, res) => res.sendFile(path.join(__dirname, 'public', 'rips.h
 const ripsLogo = () => ((process.env.RIPS_LOGO || 'a').trim().toLowerCase() === 'b' ? 'b' : 'a');
 app.get('/rips-logo.jpg', (_, res) => { res.set('cache-control', 'public, max-age=300'); res.sendFile(path.join(__dirname, 'public', `rips-logo-${ripsLogo()}.jpg`)); });
 app.get('/rips-favicon.png', (_, res) => { res.set('cache-control', 'public, max-age=300'); res.sendFile(path.join(__dirname, 'public', `rips-favicon-${ripsLogo()}.png`)); });
+// Stream screen for the pump.fun livestream (screen-share this tab): same data as /rips, fast feed from /api/rips/live
+app.get('/live', (_, res) => res.sendFile(path.join(__dirname, 'public', 'live.html')));
+app.get('/rips/live', (_, res) => res.sendFile(path.join(__dirname, 'public', 'live.html')));
+app.get('/api/rips/live', (_, res) => { res.set('cache-control', 'no-store'); res.json(rips ? rips.live() : { disabled: true }); });
 app.get('/dev', (_, res) => res.sendFile(path.join(__dirname, 'public', 'dev.html')));
 app.get('/api/rips/status', (_, res) => { res.set('cache-control', 'no-store'); res.json(rips ? rips.status() : { disabled: true }); });
 for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} process.exit(0); });

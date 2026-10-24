@@ -30,6 +30,12 @@ let tf = R.tradeFees(real, { mint: SNOUT, pool: null });
 assert.strictEqual(tf.curveLamports, 481820); assert.strictEqual(tf.trades, 1); assert.deepStrictEqual([...tf.creators], ['9piBCsKoxYEs3MaE1eV6ZAEfGbyWDqEv23mRYo71X7ys']);
 assert.strictEqual(R.tradeFees(real, { mint: 'So11111111111111111111111111111111111111112', pool: null }).trades, 0, 'other coin of the same creator: not counted');
 assert.strictEqual(R.tradeFees({ ...real, meta: { ...real.meta, err: { x: 1 } } }, { mint: SNOUT }).trades, 0, 'failed tx');
+// 4c) live feed: individual trades from the same real tx (sell of 0.160606476 SOL), counted once despite log + emit_cpi copies
+const ct = R.curveTrades(real, SNOUT, 'sigX');
+assert.strictEqual(ct.length, 1); assert.strictEqual(ct[0].side, 'sell'); assert.strictEqual(ct[0].sol, 0.160606476);
+assert.strictEqual(ct[0].wallet, '3NUE8epmweWe67xHQCq1xhwJ737cJSCCjFo3ZNAtFVFn'); assert.strictEqual(ct[0].ts, 1792840269);
+assert.ok(Math.abs(ct[0].curvePct - 2.709) < 0.01, 'curve % ' + ct[0].curvePct); assert.ok(Math.abs(ct[0].mcapSol - 29.113) < 0.01, 'mcap SOL ' + ct[0].mcapSol);
+assert.strictEqual(R.curveTrades(real, 'So11111111111111111111111111111111111111112', 's').length, 0, 'other mint');
 assert.strictEqual(R.coinAccounts(SNOUT).bondingCurve, 'GWfgfrRVju5Bh9U9Ssiv59uMTzjo8zyoPysEZDEUDtnw');
 // PumpSwap BuyEvent (synthetic, layout verified on mainnet): pool@120, coin_creator@312, bps@344, fee@352
 const crypto = require('crypto'); const { PublicKey } = require('@solana/web3.js');
@@ -112,6 +118,16 @@ assert.strictEqual(R.tradeFees(ammTx('So1111111111111111111111111111111111111111
   assert.ok(mine.verified && mine.rarity === 'Uncommon' && mine.card.name === 'Test Card PSA 10' && mine.card.image === 'https://img/x.jpg');
   assert.strictEqual(st.packs.list.find((p) => p.memo === M2).verified, false);
   assert.strictEqual(st.coin.market.symbol, 'RIPS');
+  // live screen data: the one real trade of this coin, last verified rip, no invented numbers
+  let L = r.live();
+  assert.strictEqual(L.state, 'live'); assert.strictEqual(L.coin.ca, CA); assert.strictEqual(L.trades.length, 1);
+  assert.deepStrictEqual([L.trades[0].side, L.trades[0].sol, L.trades[0].wallet], ['sell', 0.1606, '3NUE...FVFn']);
+  assert.deepStrictEqual([L.stats.trades, L.stats.buys, L.stats.sells, L.stats.buyers], [1, 0, 1, 0]);
+  assert.strictEqual(L.stats.curvePct, 2.71); assert.ok(L.stats.mcapUsd > 2900 && L.stats.mcapUsd < 2920, 'mcap from curve * SOL price');
+  assert.ok(L.lastRip && L.lastRip.card.name === 'Test Card PSA 10'); assert.strictEqual(L.packsOpened, 2);
+  await r.livePoll(); assert.strictEqual(r.status().fees.thisCoin.txPending, 0, 'live poll does not re-queue known sigs');
+  await r.drainFees(); assert.strictEqual(r.live().stats.trades, 1, 'no double counting in the feed');
+  assert.strictEqual(off.live().state, 'launching_soon'); assert.strictEqual(off.live().trades.length, 0); assert.strictEqual(off.live().coin.ca, null);
   // second refresh is incremental: no double counting
   await r.refresh(); st = r.status();
   await r.drainFees();

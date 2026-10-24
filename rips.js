@@ -63,6 +63,27 @@ function tradeFees(tx, { mint, pool }) {
   return out;
 }
 
+// Individual bonding-curve trades of ONE coin from a raw tx (same TradeEvent as tradeFees; layout checked on a real SNOUT sell):
+//  mint@8, sol_amount@40, token_amount@48, is_buy@56, user@57, timestamp@89, virtual_sol@97, virtual_token@105, real_sol@113, real_token@121
+const INITIAL_REAL_TOKENS = 793100000e6; // tokens sold on the curve before it completes (6 decimals)
+function curveTrades(tx, mint, sig) {
+  const out = []; if (!tx || tx.meta?.err) return out; const seen = new Set();
+  const hexes = [];
+  for (const l of tx.meta?.logMessages || []) if (l.startsWith('Program data: ')) hexes.push(Buffer.from(l.slice(14), 'base64').toString('hex'));
+  if (bs58) for (const g of tx.meta?.innerInstructions || []) for (const ix of g.instructions || []) {
+    try { const d = Buffer.from(bs58.decode(ix.data)); if (d.subarray(0, 8).toString('hex') === EMIT_CPI) hexes.push(d.subarray(8).toString('hex')); } catch {}
+  }
+  let i = 0;
+  for (const h of hexes) {
+    if (seen.has(h) || h.slice(0, 16) !== D_TRADE) continue; seen.add(h);
+    const b = Buffer.from(h, 'hex'); if (b.length < 129 || new PublicKey(b.subarray(8, 40)).toBase58() !== mint) continue;
+    const vsol = Number(b.readBigUInt64LE(97)); const vtok = Number(b.readBigUInt64LE(105)); const rtok = Number(b.readBigUInt64LE(121));
+    out.push({ sig, i: i++, side: b[56] ? 'buy' : 'sell', sol: Number(b.readBigUInt64LE(40)) / 1e9, wallet: new PublicKey(b.subarray(57, 89)).toBase58(),
+      ts: Number(b.readBigInt64LE(89)), mcapSol: vtok ? (vsol / vtok) * 1e6 : null /* (SOL/token) x 1e9 supply */, curvePct: Math.max(0, Math.min(100, 100 - (rtok * 100) / INITIAL_REAL_TOKENS)) });
+  }
+  return out;
+}
+
 function vaults(dev) {
   const d = new PublicKey(dev);
   const curve = PublicKey.findProgramAddressSync([Buffer.from('creator-vault'), d.toBuffer()], PUMP)[0];
@@ -105,7 +126,8 @@ function createRips(opts = {}) {
   const st = { startedAt: new Date(now()).toISOString(), lastRefreshAt: null, lastError: null, refreshes: 0, rpcCalls: 0,
     unclaimed: { curveSol: 0, ammSol: 0 }, claims: [], seenSigs: new Set(), retries: new Map(), lastTxError: null, newest: null, memos: new Map(), packs: new Map(), cards: new Map(),
     market: null, solUsd: null, shelf: null, shelfAt: 0, solAt: 0,
-    coin: { createdAt: null, createdSig: null, listed: new Set(), queue: [], done: 0, curveLamports: 0, ammLamports: 0, trades: 0, creators: new Set(), newest: {}, backfilled: {}, lastError: null, rateLimited: 0 } };
+    coin: { createdAt: null, createdSig: null, listed: new Set(), queue: [], done: 0, curveLamports: 0, ammLamports: 0, trades: 0, creators: new Set(), newest: {}, backfilled: {}, lastError: null, rateLimited: 0 },
+    live: { trades: [], keys: new Set(), buyers: new Set(), buys: 0, sells: 0, buySol: 0, sellSol: 0, last: null, newestSig: null, polls: 0, lastError: null } };
   const C = B58.test(CA) ? coinAccounts(CA) : null;
   const devPaid = new Set(String(env.RIPS_DEV_PAID || '').split(/[\s,]+/).filter(Boolean).map((x) => x.replace(/:(open|dev)$/, '')));
   for (const raw of String(env.RIPS_EXTRA || '').split(/[\s,]+/)) if (/:dev$/.test(raw)) devPaid.add(raw.replace(/:dev$/, '').replace(/:open$/, ''));
@@ -151,6 +173,7 @@ function createRips(opts = {}) {
         if (!tx) { st.coin.queue.push(st.coin.queue.shift()); n++; if (gapMs) await sleep(gapMs); continue; } // not yet available: retry later
         const r = tradeFees(tx, { mint: CA, pool: C.pumpswapPool });
         st.coin.curveLamports += r.curveLamports; st.coin.ammLamports += r.ammLamports; st.coin.trades += r.trades; r.creators.forEach((c) => st.coin.creators.add(c));
+        addTrades(curveTrades(tx, CA, sig));
         st.coin.queue.shift(); st.coin.done++; n++; st.coin.backoff = 0;
       } catch (e) {
         st.coin.lastError = e.message;
@@ -161,10 +184,49 @@ function createRips(opts = {}) {
     }
     return n;
   }
+  function addTrades(list) {
+    const L = st.live;
+    for (const t of list) {
+      const k = t.sig + ':' + t.i; if (L.keys.has(k)) continue; L.keys.add(k);
+      if (t.side === 'buy') { L.buys++; L.buySol += t.sol; L.buyers.add(t.wallet); } else { L.sells++; L.sellSol += t.sol; }
+      if (!L.last || t.ts >= L.last.ts) L.last = t;
+      L.trades.push(t);
+    }
+    L.trades.sort((a, b) => b.ts - a.ts || b.i - a.i); if (L.trades.length > 60) L.trades.length = 60;
+  }
+  // Fast poll of the bonding curve (1 cheap call): new signatures jump to the FRONT of the fee queue so the live feed stays fresh.
+  async function livePoll() {
+    const list = await rpc('getSignaturesForAddress', [C.bondingCurve, { limit: 40, ...(st.live.newestSig ? { until: st.live.newestSig } : {}), commitment: 'confirmed' }]);
+    st.live.polls++;
+    if (!list?.length) return;
+    st.live.newestSig = list[0].signature;
+    for (const s of [...list].reverse()) { if (s.err || st.coin.listed.has(s.signature)) continue; st.coin.listed.add(s.signature); st.coin.queue.unshift(s.signature); }
+  }
+  async function liveLoop() {
+    const ms = Number(env.RIPS_LIVE_MS || 6000);
+    while (!stopped) { try { await livePoll(); st.live.lastError = null; } catch (e) { st.live.lastError = e.message; } await sleep(ms); }
+  }
   async function feeLoop() {
     while (!stopped) {
-      try { const n = await drainFees(200); if (!n) await sleep(15000); } catch { await sleep(15000); }
+      try { const n = await drainFees(200); if (!n) await sleep(3000); } catch { await sleep(15000); }
     }
+  }
+  function live() {
+    const L = st.live; const c = st.coin; const coinSol = (c.curveLamports + c.ammLamports) / 1e9;
+    const usd = (sol) => (st.solUsd && sol != null ? +(sol * st.solUsd).toFixed(2) : null);
+    const s = status(); const lastRip = s.packs.list.find((p) => p.verified) || null;
+    const curveMcap = L.last?.mcapSol ?? null;
+    return {
+      state: s.state, coin: { ca: s.coin.ca, ticker: s.coin.ticker, name: s.coin.name, pumpUrl: s.coin.pumpUrl, createdAt: c.createdAt },
+      nextPack: s.nextPack, fees: { earnedSol: +coinSol.toFixed(9), earnedUsd: usd(coinSol), complete: s.fees.thisCoin.complete, txPending: c.queue.length },
+      stats: { trades: L.buys + L.sells, buys: L.buys, sells: L.sells, buyers: L.buyers.size, buySol: +L.buySol.toFixed(4), sellSol: +L.sellSol.toFixed(4),
+        curvePct: L.last ? +L.last.curvePct.toFixed(2) : null, mcapSol: curveMcap == null ? null : +curveMcap.toFixed(2),
+        mcapUsd: curveMcap != null ? usd(curveMcap) : (st.market?.mcapUsd ?? null), lastTradeAt: L.last ? new Date(L.last.ts * 1000).toISOString() : null,
+        partial: c.queue.length > 0, scope: 'bonding curve trades read so far from the public Solana RPC' },
+      trades: L.trades.slice(0, 25).map((t) => ({ id: t.sig + ':' + t.i, sig: t.sig, side: t.side, sol: +t.sol.toFixed(4), wallet: t.wallet.slice(0, 4) + '...' + t.wallet.slice(-4), at: new Date(t.ts * 1000).toISOString() })),
+      lastRip: lastRip && { packType: lastRip.packType, priceUsd: lastRip.priceUsd, paidBy: lastRip.paidBy, boughtAt: lastRip.boughtAt, rarity: lastRip.rarity, insuredValueUsd: lastRip.insuredValueUsd, card: lastRip.card ? { name: lastRip.card.name, image: lastRip.card.image, link: lastRip.card.link } : null, purchaseSig: lastRip.purchaseSig },
+      packsOpened: s.packs.opened, solUsd: st.solUsd, now: new Date(now()).toISOString(), lastError: L.lastError,
+    };
   }
 
   let rent0 = null;
@@ -323,9 +385,9 @@ function createRips(opts = {}) {
   }
 
   return {
-    refresh, status, configured, drainFees,
-    start() { refresh(); timer = setInterval(refresh, Number(env.RIPS_REFRESH_MS || 180000)); timer.unref?.(); if (configured) feeLoop(); },
+    refresh, status, live, configured, drainFees, livePoll,
+    start() { refresh(); timer = setInterval(refresh, Number(env.RIPS_REFRESH_MS || 180000)); timer.unref?.(); if (configured) { feeLoop(); liveLoop(); } },
     stop() { stopped = true; clearInterval(timer); },
   };
 }
-module.exports = { createRips, vaults, coinAccounts, tradeFees, memoFrom, parseCoreAsset, vaultDeltas, CREATOR_FEE_PCT };
+module.exports = { createRips, vaults, coinAccounts, tradeFees, curveTrades, memoFrom, parseCoreAsset, vaultDeltas, CREATOR_FEE_PCT };
