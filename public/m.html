@@ -12,149 +12,199 @@
 <link rel="icon" type="image/png" href="/alma-icon-192.png">
 <link rel="apple-touch-icon" href="/alma-icon-192.png">
 <style>
-:root{--bg:#07070d;--card:#10101a;--line:#22223a;--tx:#eeeef8;--mu:#9a9ab8;--ac:#b388ff;--g:#3fd68f;--r:#ff6b63;--y:#f0b429;--b:#58a6ff}
-*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--tx);font:17px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;-webkit-text-size-adjust:100%}
+:root{--bg:#07070d;--card:#10101a;--line:#22223a;--tx:#eeeef8;--mu:#9a9ab8;--ac:#b388ff;--g:#3fd68f;--r:#ff5d55;--y:#f0b429;--b:#58a6ff}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;-webkit-text-size-adjust:100%}
 a{color:var(--ac);text-decoration:none}
-main{max-width:980px;margin:0 auto;padding:calc(10px + env(safe-area-inset-top)) 12px calc(40px + env(safe-area-inset-bottom))}
-header{position:sticky;top:0;z-index:5;background:rgba(7,7,13,.92);backdrop-filter:blur(8px);display:flex;align-items:center;gap:10px;padding:8px 2px 10px;border-bottom:1px solid var(--line);margin-bottom:10px}
-header h1{font-size:22px;letter-spacing:.16em;margin:0;font-weight:800}
-.badge{font-weight:800;font-size:14px;letter-spacing:.08em;border-radius:8px;padding:3px 9px;border:2px solid var(--y);color:var(--y)}
-.badge.live{border-color:var(--g);color:var(--g)}
-.upd{margin-left:auto;display:flex;align-items:center;gap:7px;color:var(--mu);font-size:14px;white-space:nowrap}
-.dot{width:11px;height:11px;border-radius:50%;background:var(--g);box-shadow:0 0 0 0 rgba(63,214,143,.7)}
+body.live{box-shadow:inset 0 3px 0 var(--r)}
+header{display:flex;align-items:center;gap:8px;padding:calc(6px + env(safe-area-inset-top)) 12px 6px;height:calc(44px + env(safe-area-inset-top))}
+header h1{font-size:20px;letter-spacing:.14em;margin:0;font-weight:800}
+.badge{font-weight:800;font-size:13px;letter-spacing:.05em;border-radius:8px;padding:3px 8px;border:2px solid var(--y);color:var(--y);white-space:nowrap}
+.badge.live{border-color:var(--r);background:var(--r);color:#fff;animation:lv 2s ease-in-out infinite}
+@keyframes lv{50%{box-shadow:0 0 12px var(--r)}}
+.upd{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--mu);font-size:13px;white-space:nowrap}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--g)}
 .dot.pulse{animation:pulse 1s ease-out}.dot.stale{background:var(--y)}.dot.dead{background:var(--r)}
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,214,143,.8)}100%{box-shadow:0 0 0 14px rgba(63,214,143,0)}}
-.grid{display:grid;grid-template-columns:1fr;gap:12px}
-@media(min-width:600px){.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}}
-section{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
-h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mu);margin:0 0 8px;font-weight:700}
-.big{font-size:34px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
-.mid{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
-.sub{color:var(--mu);font-size:14.5px}
-.row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
-.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
-.kv div{background:#0b0b14;border:1px solid var(--line);border-radius:12px;padding:8px}
-.kv b{display:block;font-size:20px;font-variant-numeric:tabular-nums}.kv span{color:var(--mu);font-size:12.5px;text-transform:uppercase;letter-spacing:.06em}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,214,143,.8)}100%{box-shadow:0 0 0 12px rgba(63,214,143,0)}}
+/* above the fold: exactly one screen */
+.fold{height:calc(100svh - 44px - env(safe-area-inset-top));display:flex;flex-direction:column;gap:8px;padding:0 10px 10px;max-width:1100px;margin:0 auto}
+.col{display:flex;flex-direction:column;gap:8px;min-height:0}
+.col.feedcol{flex:1}
+@media(min-width:600px){.fold{flex-direction:row}.fold>.col{flex:1}}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+h2{font-size:11.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--mu);margin:0 0 4px;font-weight:700;display:flex;justify-content:space-between;gap:8px}
+h2 span{letter-spacing:0;text-transform:none;font-weight:600}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.big{font-size:30px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+.mid{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}
+.sub{color:var(--mu);font-size:13px}
 .pos{color:var(--g)}.neg{color:var(--r)}
-.bar{height:18px;background:#1a1a2a;border-radius:99px;overflow:hidden;margin:10px 0 6px}.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#7c4dff,#3fd68f);border-radius:99px;transition:width .6s}
-.head{font-size:19px;font-weight:600;margin:2px 0 6px}
-ul.list{list-style:none;margin:0;padding:0}ul.list li{padding:10px 0;border-top:1px solid var(--line)}ul.list li:first-child{border-top:0}
-.tag{display:inline-block;font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--mu);margin-right:4px}
-.v-scanning,.v-watch{color:var(--b);border-color:var(--b)}.v-bought{color:var(--g);border-color:var(--g)}.v-hold{color:var(--y);border-color:var(--y)}.v-pass,.v-rejected{color:var(--mu)}
-.sym{font-weight:700;font-size:18px}
-.empty{color:var(--mu);font-size:15px;padding:4px 0}
-.err{display:none;background:#2a1012;border:1px solid var(--r);color:#ffb3ae;border-radius:12px;padding:10px;margin-bottom:10px;font-size:15px}
-footer{margin-top:16px;display:flex;gap:14px;flex-wrap:wrap;font-size:15px}
+.bar{height:9px;background:#1a1a2a;border-radius:99px;overflow:hidden;margin:6px 0 3px}.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#7c4dff,#3fd68f);border-radius:99px;transition:width .6s}
+.now{font-size:15px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.chart{position:relative}.chart canvas{display:block;width:100%;height:110px}
+.chart .ov{position:absolute;right:4px;top:0;text-align:right;font-variant-numeric:tabular-nums}
+.feed{flex:1;min-height:0;display:flex;flex-direction:column}
+.feed ul{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1;min-height:0}
+.feed li{display:grid;grid-template-columns:42px 50px 1fr auto;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums}
+.feed li:first-child{border-top:0}
+.feed .t{color:var(--mu);font-size:12.5px}.feed .k{font-weight:800;font-size:12px;border-radius:6px;padding:1px 0;text-align:center}
+.k.BUY{background:#12304f;color:var(--b)}.k.SELL{background:#3a1f2a;color:#ffb3ae}.k.FUND,.k.IN{background:#123a29;color:var(--g)}.k.PAYOUT{background:#3a2f10;color:var(--y)}.k.WALLET{background:#22223a;color:var(--mu)}
+.feed .c{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.feed .c small{color:var(--mu)}
+.feed .r{text-align:right;font-weight:700;white-space:nowrap}.feed .r small{display:block;font-weight:400;color:var(--mu);font-size:11.5px}
+.empty{color:var(--mu);font-size:14px;padding:4px 0}
+.err{display:none;background:#2a1012;border:1px solid var(--r);color:#ffb3ae;border-radius:10px;padding:6px 10px;font-size:13px}
+.more{max-width:1100px;margin:0 auto;padding:0 10px 40px;display:grid;gap:8px}
+@media(min-width:600px){.more{grid-template-columns:1fr 1fr}}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
+.kv div{background:#0b0b14;border:1px solid var(--line);border-radius:10px;padding:6px 8px}.kv b{display:block;font-size:17px}.kv span{color:var(--mu);font-size:11.5px;text-transform:uppercase}
+ul.list{list-style:none;margin:0;padding:0}ul.list li{padding:7px 0;border-top:1px solid var(--line);font-size:14px}ul.list li:first-child{border-top:0}
+.tag{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:999px;padding:0 7px;color:var(--mu);margin-left:4px}
+.v-scanning,.v-watch{color:var(--b);border-color:var(--b)}.v-bought{color:var(--g);border-color:var(--g)}.v-hold{color:var(--y);border-color:var(--y)}
+footer{display:flex;gap:14px;flex-wrap:wrap;font-size:14px;padding:4px 2px}
 </style>
 </head>
 <body>
-<main>
 <header>
-  <h1>ALMA</h1><span id="mode" class="badge">PAPER</span>
+  <h1>ALMA</h1><span id="mode" class="badge">…</span>
   <div class="upd"><span id="ago">connecting…</span><span id="dot" class="dot"></span></div>
 </header>
-<div id="err" class="err"></div>
-<div class="grid">
-  <section>
-    <h2>Wallet (on-chain)</h2>
-    <div class="big" id="wsol">–</div>
-    <div class="sub" id="wsub">reading Solana…</div>
-    <div class="kv">
-      <div><span>Today</span><b id="today">–</b></div>
-      <div><span>Unrealized</span><b id="unreal">–</b></div>
-      <div><span>Win rate</span><b id="wr">–</b></div>
-    </div>
-    <div class="sub" id="paperline" style="margin-top:8px"></div>
-  </section>
-  <section>
-    <h2>Vitals</h2>
-    <div class="row"><div class="big" id="vital">–</div><div class="mid" id="vstate">–</div></div>
-    <div class="sub" id="state">–</div>
-    <div class="kv">
-      <div><span>Mood</span><b id="mood" style="font-size:16px">–</b></div>
-      <div><span>Pain</span><b id="pain">–</b></div>
-      <div><span>Comfort</span><b id="comfort">–</b></div>
-    </div>
-  </section>
-  <section class="wide">
-    <h2>Right now</h2>
-    <div class="head" id="headline">–</div>
-    <div class="sub" id="detail"></div>
-    <h2 style="margin-top:14px">Top candidates</h2>
-    <ul class="list" id="cands"><li class="empty">–</li></ul>
-  </section>
-  <section class="wide">
-    <h2>Risk-free goal</h2>
-    <div class="row"><div class="mid" id="goalnow">–</div><div class="sub" id="goaltarget">target –</div></div>
-    <div class="bar"><i id="goalbar"></i></div>
-    <div class="sub" id="goalnote">When the wallet reaches the target, the starting 0.1858 SOL goes back to the funder once. ALMA keeps trading on profits only.</div>
-  </section>
+<div class="fold">
+  <div class="col">
+    <div id="err" class="err"></div>
+    <section>
+      <h2><span id="balLabel">Wallet (on-chain)</span><span id="wsub"></span></h2>
+      <div class="row"><div class="big" id="wsol">–</div><div style="text-align:right"><div class="mid" id="today">–</div><div class="sub" id="todayLbl">today</div></div></div>
+      <div class="bar"><i id="goalbar"></i></div>
+      <div class="row sub"><span id="goalnow">Risk-free goal</span><span id="goaltarget"></span></div>
+    </section>
+    <section>
+      <h2>Right now <span id="vit"></span></h2>
+      <div class="now" id="headline">–</div>
+    </section>
+    <section class="chart" id="chartBox">
+      <h2><span id="chTitle">Price</span><span id="chSub"></span></h2>
+      <canvas id="cv"></canvas>
+      <div class="ov" style="top:26px"><div class="mid" id="chBig"></div><div class="sub" id="chSmall"></div></div>
+    </section>
+  </div>
+  <div class="col feedcol">
+    <section class="feed">
+      <h2>Transactions <span id="feedSub"></span></h2>
+      <ul id="feed"><li class="empty">–</li></ul>
+    </section>
+  </div>
+</div>
+<div class="more">
   <section>
     <h2>Open positions</h2>
     <ul class="list" id="positions"><li class="empty">–</li></ul>
   </section>
   <section>
-    <h2>Last trades</h2>
-    <ul class="list" id="trades"><li class="empty">–</li></ul>
+    <h2>Vitals</h2>
+    <div class="row"><div class="big" id="vital">–</div><div class="mid" id="vstate">–</div></div>
+    <div class="sub" id="state">–</div>
+    <div class="kv"><div><span>Mood</span><b id="mood" style="font-size:14px">–</b></div><div><span>Pain</span><b id="pain">–</b></div><div><span>Comfort</span><b id="comfort">–</b></div></div>
   </section>
+  <section>
+    <h2>Risk-free goal</h2>
+    <div class="sub" id="goalnote">When the wallet doubles, the starting SOL goes back to the funder once. ALMA keeps trading on profits only.</div>
+  </section>
+  <section>
+    <h2>Top candidates</h2>
+    <ul class="list" id="cands"><li class="empty">–</li></ul>
+  </section>
+  <section>
+    <h2>Activity log</h2>
+    <ul class="list" id="log"><li class="empty">–</li></ul>
+  </section>
+  <footer><a href="/agent">Full ALMA page →</a><a href="/agent/diary">Diary</a><a id="solscan" href="https://solscan.io/account/4iUUembrP2xMBeP4RbkYciZa1yFpp1YM87Uk5Y9dD1qy" target="_blank" rel="noopener">Wallet on Solscan</a></footer>
 </div>
-<footer><a href="/agent">Full ALMA page →</a><a href="/agent/diary">Diary</a><a id="solscan" href="https://solscan.io/account/4iUUembrP2xMBeP4RbkYciZa1yFpp1YM87Uk5Y9dD1qy" target="_blank" rel="noopener">Wallet on Solscan</a></footer>
-</main>
 <script>
 const $ = (id) => document.getElementById(id);
 const START = 0.1858, TARGET = 0.3716;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const n = (x) => (x == null || isNaN(x) ? null : Number(x));
+const n = (x) => (x == null || x === '' || isNaN(x) ? null : Number(x));
 const sol = (x, d = 4) => (n(x) == null ? '–' : `${Number(x).toFixed(d)} SOL`);
 const sgn = (x, d = 4) => (n(x) == null ? '–' : `${x > 0 ? '+' : ''}${Number(x).toFixed(d)}`);
+const pct = (x) => (n(x) == null ? '' : `${x > 0 ? '+' : ''}${Number(x).toFixed(1)}%`);
 const cls = (x) => (n(x) == null || x === 0 ? '' : x > 0 ? 'pos' : 'neg');
-const ago = (iso) => { if (!iso) return ''; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
+const ago = (iso) => { if (!iso) return ''; const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
 const hhmm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
-let lastOk = 0, fails = 0, busy = false;
+const usd = (x) => (x >= 1e6 ? `$${(x / 1e6).toFixed(2)}M` : x >= 1e3 ? `$${(x / 1e3).toFixed(1)}k` : `$${Math.round(x)}`);
+let lastOk = 0, fails = 0, busy = false, lastData = null;
+
+function drawChart(c, entry) {
+  const cv = $('cv'), dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr; const x = cv.getContext('2d'); x.scale(dpr, dpr); x.clearRect(0, 0, W, H);
+  const pts = c?.points || []; if (pts.length < 2) { x.fillStyle = '#9a9ab8'; x.font = '13px sans-serif'; x.fillText('waiting for trades on this coin…', 6, H / 2); return; }
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0] || t0 + 1; let lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1]));
+  if (entry) { lo = Math.min(lo, entry); hi = Math.max(hi, entry); } const pad = (hi - lo) * 0.08 || hi * 0.01; lo -= pad; hi += pad;
+  const X = (t) => ((t - t0) / Math.max(1, t1 - t0)) * (W - 4) + 2, Y = (v) => H - 4 - ((v - lo) / (hi - lo)) * (H - 8);
+  x.strokeStyle = '#22223a'; x.lineWidth = 1; for (let i = 1; i < 4; i++) { x.beginPath(); x.moveTo(0, (H * i) / 4); x.lineTo(W, (H * i) / 4); x.stroke(); }
+  const up = pts[pts.length - 1][1] >= (entry || pts[0][1]); const col = up ? '#3fd68f' : '#ff5d55';
+  const gr = x.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, up ? 'rgba(63,214,143,.28)' : 'rgba(255,93,85,.28)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  x.beginPath(); pts.forEach((p, i) => (i ? x.lineTo(X(p[0]), Y(p[1])) : x.moveTo(X(p[0]), Y(p[1])))); x.lineTo(X(t1), H); x.lineTo(X(t0), H); x.closePath(); x.fillStyle = gr; x.fill();
+  x.beginPath(); pts.forEach((p, i) => (i ? x.lineTo(X(p[0]), Y(p[1])) : x.moveTo(X(p[0]), Y(p[1])))); x.strokeStyle = col; x.lineWidth = 2; x.stroke();
+  if (entry) { x.setLineDash([5, 4]); x.strokeStyle = '#f0b429'; x.lineWidth = 1.2; x.beginPath(); x.moveTo(0, Y(entry)); x.lineTo(W, Y(entry)); x.stroke(); x.setLineDash([]); x.fillStyle = '#f0b429'; x.font = '11px sans-serif'; x.fillText('entry', 4, Y(entry) - 3); }
+  const lp = pts[pts.length - 1]; x.fillStyle = col; x.beginPath(); x.arc(X(lp[0]), Y(lp[1]), 3.5, 0, 7); x.fill();
+}
 
 function render(d) {
-  const live = d.mode === 'live';
-  $('mode').textContent = live ? 'LIVE' : 'PAPER'; $('mode').className = 'badge' + (live ? ' live' : '');
-  const w = d.wallet || {};
+  lastData = d; const live = d.mode === 'live';
+  document.body.classList.toggle('live', live);
+  $('mode').textContent = live ? 'LIVE · REAL MONEY' : 'PAPER · simulated'; $('mode').className = 'badge' + (live ? ' live' : '');
+  const w = d.wallet || {}, p = d.pnl || {}, st = d.stats || {}, b = d.balance || {}, v = d.vitals || {}, a = d.activity || {};
   $('wsol').textContent = sol(w.sol);
-  $('wsub').textContent = `${d.solUsd && w.sol != null ? `≈ $${(w.sol * d.solUsd).toFixed(2)} · ` : ''}read ${ago(w.at) || '–'}`;
+  $('balLabel').textContent = live ? 'Real wallet · trading' : 'Real wallet · untouched';
+  $('wsub').textContent = `${d.solUsd && w.sol != null ? `≈ $${(w.sol * d.solUsd).toFixed(2)} · ` : ''}${ago(w.at)}`;
   if (w.solscan) $('solscan').href = w.solscan;
-  const p = d.pnl || {};
-  $('today').textContent = sgn(p.todaySol); $('today').className = cls(p.todaySol);
-  $('unreal').textContent = sgn(p.unrealizedSol); $('unreal').className = cls(p.unrealizedSol);
-  const st = d.stats || {};
-  $('wr').textContent = st.winRate == null ? '–' : `${st.winRate}%`;
-  const b = d.balance || {};
-  $('paperline').textContent = live ? `Equity ${sol(b.equitySol)} · ${st.closedTrades ?? 0} closed trades` : `Paper equity ${sol(b.equitySol)} (start ${sol(b.startSol, 3)}) · ${st.closedTrades ?? 0} closed trades · real wallet untouched`;
-  const v = d.vitals || {};
+  $('today').textContent = sgn(p.todaySol); $('today').className = 'mid ' + cls(p.todaySol);
+  $('todayLbl').textContent = live ? 'P&L today (SOL)' : 'paper P&L today';
+  // risk-free goal (API payout field when present: {start, goal, treasurySol, done, payout:{tx}})
+  const pay = d.payout || null;
+  const start = n(pay?.start ?? pay?.startSol) || START, target = n(pay?.goal ?? pay?.targetSol) || TARGET;
+  const cur = live ? n(pay?.treasurySol) ?? n(w.sol) : n(w.sol);
+  const done = !!(pay && (pay.done || pay.status === 'done'));
+  const gp = done ? 100 : cur == null ? 0 : Math.max(0, Math.min(100, (cur / target) * 100));
+  $('goalbar').style.width = `${gp}%`;
+  $('goalnow').textContent = done ? 'Risk-free ✓ principal returned' : `Risk-free goal ${gp.toFixed(0)}%`;
+  $('goaltarget').textContent = `${sol(cur, 3)} / ${target.toFixed(3)}`;
+  const ptx = pay?.payout?.tx || pay?.tx;
+  $('goalnote').innerHTML = done ? `The starting ${start.toFixed(4)} SOL went back to the funder${ptx ? ` · <a href="https://solscan.io/tx/${esc(ptx)}" target="_blank" rel="noopener">tx</a>` : ''}. ALMA now trades on profits only.`
+    : `Start ${start.toFixed(4)} SOL → target ${target.toFixed(4)} SOL. When reached, the starting SOL goes back to the funder once and ALMA keeps trading on profits only.${pay?.status ? ` Status: ${esc(pay.status)}.` : ''}${live ? '' : ' Paper mode: the real wallet is not trading yet.'}`;
+  $('headline').textContent = a.headline || a.label || '–';
+  $('vit').innerHTML = v.signal == null ? '' : `signal <b style="color:${esc(v.state?.color || '')}">${Number(v.signal).toFixed(0)}%</b>`;
+  // chart: open position first, else the coin being watched
+  const c = (d.charts || [])[0] || null; const pos = c ? (d.positions || []).find((x) => x.mint === c.mint) : null;
+  const buy = c ? (d.feed || []).find((f) => f.kind === 'BUY' && f.mint === c.mint && f.price) : null;
+  if (c) {
+    $('chTitle').innerHTML = `${pos ? 'Holding' : 'Watching'} <b style="color:var(--tx)">$${esc(c.symbol || c.mint.slice(0, 6))}</b>`;
+    $('chSub').textContent = `5 min · ${ago(c.lastAt)}`;
+    const ch = c.points.length > 1 ? (c.points[c.points.length - 1][1] / c.points[0][1] - 1) * 100 : null;
+    if (pos) { $('chBig').textContent = pct(pos.pnlPct); $('chBig').className = 'mid ' + cls(pos.pnlPct); $('chSmall').textContent = `${sol(pos.costSol)} in`; }
+    else { $('chBig').textContent = pct(ch); $('chBig').className = 'mid ' + cls(ch); $('chSmall').textContent = d.solUsd ? `MC ${usd(c.mcSol * d.solUsd)}` : ''; }
+    drawChart(c, pos && buy ? buy.price : null);
+  } else { $('chTitle').textContent = 'Price'; $('chSub').textContent = ''; $('chBig').textContent = ''; $('chSmall').textContent = ''; drawChart(null); }
+  // transactions feed
+  const fd = d.feed || [];
+  $('feedSub').textContent = `${fd.length} latest${live ? '' : ' · paper trades + real wallet'}`;
+  $('feed').innerHTML = fd.length ? fd.map((f) => {
+    const sw = f.kind === 'BUY' || f.kind === 'SELL'; const link = f.tx ? `<a href="https://solscan.io/tx/${esc(f.tx)}" target="_blank" rel="noopener">${sw ? `$${esc(f.symbol || '?')}` : 'Solscan'} ↗</a>` : sw ? `$${esc(f.symbol || f.mint?.slice(0, 6))}` : '';
+    const sub = sw ? `${f.mcSol && d.solUsd ? `MC ${usd(f.mcSol * d.solUsd)}` : ''}${f.mode === 'paper' ? ' · paper' : ''}` : f.kind === 'FUND' ? 'funding in' : f.kind === 'PAYOUT' ? 'principal returned' : 'wallet tx';
+    const right = f.kind === 'SELL' ? `<span class="${cls(f.pnlSol)}">${sgn(f.pnlSol)}</span><small>${pct(f.pnlPct)} · ${sol(f.sol, 3)}</small>` : `<span class="${f.kind === 'FUND' ? 'pos' : ''}">${f.kind === 'BUY' || f.kind === 'PAYOUT' ? '−' : f.sol > 0 ? '+' : ''}${Math.abs(f.sol ?? 0).toFixed(4)}</span><small>SOL</small>`;
+    return `<li title="${esc(f.reason || '')}"><span class="t">${hhmm(f.at)}</span><span class="k ${esc(f.kind)}">${esc(f.kind)}</span><span class="c">${link}<br><small>${esc(sub)}</small></span><span class="r">${right}</span></li>`;
+  }).join('') : '<li class="empty">No transactions yet.</li>';
+  // below the fold
+  const ps = d.positions || [];
+  $('positions').innerHTML = ps.length ? ps.map((x) => `<li><div class="row"><b>$${esc(x.symbol || x.mint?.slice(0, 6))}</b><span class="mid ${cls(x.pnlPct)}">${pct(x.pnlPct) || '–'}</span></div><div class="sub">${sol(x.costSol)} in · ${x.ageMin ?? '?'} min · TP +${x.exits?.tp ?? '?'}% / SL -${x.exits?.sl ?? '?'}%${x.tx ? ` · <a href="https://solscan.io/tx/${esc(x.tx)}" target="_blank" rel="noopener">tx</a>` : ''}</div></li>`).join('') : '<li class="empty">No open positions.</li>';
   $('vital').textContent = v.signal == null ? '–' : `${Number(v.signal).toFixed(1)}%`;
   $('vstate').textContent = v.state?.label || '–'; $('vstate').style.color = v.state?.color || '';
-  $('state').textContent = `State: ${d.state || '–'}${d.halted ? ` (${d.halted})` : ''}${d.regime ? ` · market ${d.regime.label}` : ''}${v.cooldownUntil && Date.parse(v.cooldownUntil) > Date.now() ? ` · cooling down until ${hhmm(v.cooldownUntil)}` : ''}`;
+  $('state').textContent = `State: ${d.state || '–'}${d.regime ? ` · market ${d.regime.label}` : ''}${v.cooldownUntil && Date.parse(v.cooldownUntil) > Date.now() ? ` · cooling down until ${hhmm(v.cooldownUntil)}` : ''}${live ? '' : ` · paper equity ${sol(b.equitySol)}`} · win rate ${st.winRate ?? '–'}% (${st.closedTrades ?? 0})`;
   $('mood').textContent = d.mood?.label || '–'; $('mood').style.color = d.mood?.color || '';
   $('pain').textContent = v.pain == null ? '–' : Number(v.pain).toFixed(1);
   $('comfort').textContent = v.comfort == null ? '–' : Number(v.comfort).toFixed(1);
-  const a = d.activity || {};
-  $('headline').textContent = a.headline || a.label || '–';
-  $('detail').textContent = [a.detail, a.coinsToday != null ? `${a.coinsToday} coins seen today` : ''].filter(Boolean).join(' · ');
   const cs = a.candidates || [];
-  $('cands').innerHTML = cs.length ? cs.slice(0, 5).map((c) => `<li><div class="row"><span class="sym">${esc(c.label || c.symbol || c.mint?.slice(0, 6))}</span><span><span class="tag v-${esc(c.verdict)}">${esc(c.verdict)}</span><span class="tag">${esc(c.armLabel || c.arm || '')}</span></span></div><div class="sub">${esc(c.why || '')}${c.progressPct != null ? ` · curve ${c.progressPct}%` : ''}</div></li>`).join('') : '<li class="empty">No candidates in the last 5 minutes.</li>';
-  // risk-free goal: prefer the API's payout field when present
-  const pay = d.payout || null;
-  const start = n(pay?.startSol ?? pay?.principalSol ?? pay?.sol) || START;
-  const target = n(pay?.targetSol ?? pay?.goalSol) || (pay?.mult ? start * pay.mult : TARGET);
-  const cur = n(pay?.currentSol ?? pay?.balanceSol) ?? n(w.sol);
-  const done = !!(pay && (pay.done || pay.paid || pay.returned || pay.returnedAt || pay.paidAt || pay.tx));
-  const pct = done ? 100 : cur == null ? 0 : Math.max(0, Math.min(100, ((cur - start) / (target - start)) * 100));
-  $('goalnow').textContent = done ? 'Principal returned ✓' : `${sol(cur)} · ${pct.toFixed(0)}%`;
-  $('goaltarget').textContent = `${start.toFixed(4)} → ${target.toFixed(4)} SOL`;
-  $('goalbar').style.width = `${pct}%`;
-  const ptx = pay?.tx || pay?.payoutTx;
-  $('goalnote').innerHTML = done ? `The starting ${start.toFixed(4)} SOL went back to the funder${ptx ? ` · <a href="https://solscan.io/tx/${esc(ptx)}" target="_blank" rel="noopener">tx</a>` : ''}. ALMA now trades on profits only.`
-    : `When the wallet reaches ${target.toFixed(4)} SOL, the starting ${start.toFixed(4)} SOL goes back to the funder once. ALMA keeps trading on profits only.${pay ? '' : ' (payout status not reported yet)'}`;
-  const ps = d.positions || [];
-  $('positions').innerHTML = ps.length ? ps.map((x) => { const pl = x.valueSol != null ? x.valueSol - x.costSol : null; return `<li><div class="row"><span class="sym">$${esc(x.symbol || x.mint?.slice(0, 6))}</span><span class="mid ${cls(x.pnlPct)}">${x.pnlPct == null ? '–' : `${x.pnlPct > 0 ? '+' : ''}${Number(x.pnlPct).toFixed(1)}%`}</span></div><div class="sub">${sol(x.costSol)} in · ${pl == null ? '' : `<span class="${cls(pl)}">${sgn(pl)} SOL</span> · `}${x.ageMin ?? '?'} min · TP +${x.exits?.tp ?? '?'}% / SL -${x.exits?.sl ?? '?'}%${x.arm ? ` · ${esc(x.arm)}` : ''}</div></li>`; }).join('') : '<li class="empty">No open positions.</li>';
-  const ts = d.trades || [];
-  $('trades').innerHTML = ts.length ? ts.map((t) => { const sell = t.side === 'SELL'; return `<li><div class="row"><span><span class="tag ${sell ? '' : 'v-watch'}">${esc(t.side)}</span><span class="sym">$${esc(t.symbol || t.mint?.slice(0, 6))}</span></span><span class="${sell ? cls(t.pnlSol) : ''}" style="font-weight:700">${sell ? `${sgn(t.pnlSol)} SOL${t.pnlPct != null ? ` (${t.pnlPct > 0 ? '+' : ''}${t.pnlPct}%)` : ''}` : sol(t.sol)}</span></div><div class="sub">${esc(t.reason || '')}${t.tx ? ` · <a href="https://solscan.io/tx/${esc(t.tx)}" target="_blank" rel="noopener">tx</a>` : ''} · ${hhmm(t.at)}${t.mode === 'paper' ? ' · paper' : ''}</div></li>`; }).join('') : '<li class="empty">No trades yet.</li>';
+  $('cands').innerHTML = cs.length ? cs.slice(0, 6).map((c) => `<li><b>${esc(c.label || c.symbol)}</b><span class="tag v-${esc(c.verdict)}">${esc(c.verdict)}</span><span class="tag">${esc(c.armLabel || c.arm || '')}</span><div class="sub">${esc(c.why || '')}</div></li>`).join('') : '<li class="empty">No candidates in the last 5 minutes.</li>';
+  $('log').innerHTML = (a.log || []).map((l) => `<li><span class="sub">${hhmm(l.at)}</span> ${esc(l.text)}</li>`).join('') || '<li class="empty">–</li>';
 }
 
 async function tick() {
@@ -172,6 +222,7 @@ async function tick() {
 setInterval(() => { if (!lastOk) return; const s = Math.round((Date.now() - lastOk) / 1000); $('ago').textContent = `updated ${s}s ago`; if (s > 15) $('dot').className = 'dot ' + (s > 60 ? 'dead' : 'stale'); }, 1000);
 setInterval(tick, 3000); tick();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+window.addEventListener('resize', () => { if (lastData) render(lastData); });
 </script>
 </body>
 </html>

@@ -37,10 +37,13 @@ const { createPicker } = require('./picks');
 let picker = null;
 // ---- Bot-Volume Scalper + Ride-to-Bonding (PAPER TRADING ONLY; free public Solana RPC log stream, 0 Helius credits)
 const createdSyms = new Map(); // mint -> symbol, fed by the radar's PumpPortal create stream
+const mref = new Map(); // mint -> scalper's live market object (last ~5 min of trades), for the /m price charts
+setInterval(() => { const t = Date.now(); for (const [k, m] of mref) if (t - (m.lastAt || 0) > 600e3) mref.delete(k); }, 60e3).unref();
 let scalper = null;
 if (process.env.SCALP_ENABLED !== '0') {
   const { createScalper, renderEnvStore } = require('./scalp');
   scalper = createScalper({ store: renderEnvStore(), symbolOf: (m) => createdSyms.get(m), onTradeHook: (tr, m) => {
+    mref.set(tr.mint, m);
     try { agent?.onTrade(tr, m); } catch (e) { console.error('[agent] trade hook', e.message); }
     try { radar?.onTrade(tr, { symbol: createdSyms.get(tr.mint) || null, solUsd: scalper?.solUsd?.() }); } catch (e) { console.error('[radar] trade hook', e.message); } // Bond Radar's primary source
   } });
@@ -112,6 +115,32 @@ function walletBalance() {
     .finally(() => { walletBal.at = Date.now(); walletBal.pending = null; });
   return walletBal.pending;
 }
+// wallet history (funding, payout, swaps) straight from the chain: signatures cached 20 s, each tx's SOL delta cached forever
+const walletTx = { list: [], at: 0, pending: null, deltas: new Map() };
+const rpcCall = (method, params) => fetch(MOBILE_RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(8000), body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })
+  .then((r) => r.json()).then((j) => { if (j.error) throw new Error(j.error.message); return j.result; });
+function walletHistory() {
+  if (Date.now() - walletTx.at < 20e3 || walletTx.pending) return walletTx.pending || Promise.resolve();
+  walletTx.pending = (async () => {
+    const sigs = await rpcCall('getSignaturesForAddress', [AGENT_WALLET, { limit: 15 }]);
+    for (const x of sigs) {
+      if (x.err || walletTx.deltas.has(x.signature)) continue;
+      const tx = await rpcCall('getTransaction', [x.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }]).catch(() => null);
+      if (!tx) continue;
+      const keys = tx.transaction.message.accountKeys.map((k) => k.pubkey || k); const i = keys.indexOf(AGENT_WALLET);
+      walletTx.deltas.set(x.signature, i < 0 ? null : { sol: (tx.meta.postBalances[i] - tx.meta.preBalances[i]) / 1e9, from: keys[0], signer: keys[0] === AGENT_WALLET });
+    }
+    walletTx.list = sigs.filter((x) => !x.err && walletTx.deltas.get(x.signature)).map((x) => ({ tx: x.signature, at: new Date((x.blockTime || 0) * 1000).toISOString(), ...walletTx.deltas.get(x.signature) }));
+  })().catch(() => {}).finally(() => { walletTx.at = Date.now(); walletTx.pending = null; });
+  return walletTx.pending;
+}
+function chartOf(mint, symbol, why) {
+  const m = mref.get(mint); if (!m || !m.trades?.length) return null;
+  const tr = m.trades; const step = Math.max(1, Math.ceil(tr.length / 150)); const pts = [];
+  for (let i = 0; i < tr.length; i += step) pts.push([tr[i].at, tr[i].vs / tr[i].vt]);
+  const last = tr[tr.length - 1]; if (pts[pts.length - 1][0] !== last.at) pts.push([last.at, last.vs / last.vt]);
+  return { mint, symbol, why, price: last.vs / last.vt, mcSol: (last.vs / last.vt) * 1e9, lastAt: new Date(m.lastAt).toISOString(), points: pts };
+}
 function mobileView(s) {
   const a = s.activity || {}; const v = s.vitals || {}; const aff = v.affect || {};
   const pay = s.payout || s.riskFree || s.principal || null;
@@ -126,13 +155,34 @@ function mobileView(s) {
     activity: { key: a.key, label: a.label, headline: a.headline, detail: a.detail, scannedLastMin: a.scannedLastMin, coinsToday: a.coinsToday, candidates: a.candidates || [], log: (a.log || []).slice(0, 8), stream: a.stream || null },
     positions: s.positions || [],
     trades: (s.trades || []).slice(0, 10).map((t) => ({ side: t.side, symbol: t.symbol, mint: t.mint, arm: t.arm, sol: t.sol, pnlSol: t.pnlSol, pnlPct: t.pnlPct, reason: t.reason, tx: t.tx, at: t.at, mode: t.mode, heldMin: t.heldMin })),
+    feed: feedOf(s), charts: chartsOf(s),
     payout: pay,
   };
+}
+function chartsOf(s) {
+  const want = []; for (const p of s.positions || []) want.push([p.mint, p.symbol, 'position']);
+  for (const c of s.activity?.candidates || []) if (want.length < 2 && !want.some((w) => w[0] === c.mint)) want.push([c.mint, c.symbol, 'watching']);
+  return want.map((w) => chartOf(...w)).filter(Boolean).slice(0, 2);
+}
+// every transaction: ALMA's buys/sells (paper or live) + every on-chain wallet movement (funding, payout, swaps) not already listed
+function feedOf(s) {
+  const trades = s.trades || []; const tokOf = new Map(trades.filter((t) => t.side === 'BUY' && t.tok).map((t) => [t.posId, t.tok]));
+  const out = trades.slice(0, 40).map((t) => { const tok = t.tok || tokOf.get(t.posId); const price = tok ? t.sol / tok : null;
+    return { kind: t.side, at: t.at, symbol: t.symbol, mint: t.mint, sol: t.sol, price, mcSol: price ? price * 1e9 : null, pnlSol: t.pnlSol ?? null, pnlPct: t.pnlPct ?? null, reason: t.reason, tx: t.tx || null, mode: t.mode }; });
+  const known = new Set(out.map((x) => x.tx).filter(Boolean)); const pay = s.payout?.payout;
+  for (const w of walletTx.list) {
+    if (known.has(w.tx)) continue;
+    const kind = pay?.tx === w.tx || (w.signer && w.sol < 0 && w.from === AGENT_WALLET && Math.abs(Math.abs(w.sol) - (pay?.sol || -1)) < 0.001) ? 'PAYOUT' : w.sol > 0 && !w.signer ? 'FUND' : w.signer ? 'WALLET' : 'IN';
+    out.push({ kind, at: w.at, sol: Math.round(w.sol * 1e6) / 1e6, tx: w.tx, mode: 'live', from: w.signer ? null : w.from });
+  }
+  for (const f of s.fundings || []) if (f.tx && !out.some((x) => x.tx === f.tx)) out.push({ kind: 'FUND', at: f.at, sol: f.sol, tx: f.tx, mode: 'live', from: f.from, reason: f.source });
+  return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 30);
 }
 app.get(['/m', '/agent/live'], (_, res) => res.sendFile(path.join(__dirname, 'public', 'm.html')));
 app.get('/api/agent/m', async (_, res) => {
   res.set('cache-control', 'no-store');
   if (!agent) return res.json({ disabled: true });
+  walletHistory();
   await Promise.race([walletBalance(), new Promise((r) => setTimeout(r, 2500))]);
   try { res.json(mobileView(agent.status())); } catch (e) { res.status(500).json({ error: e.message }); }
 });

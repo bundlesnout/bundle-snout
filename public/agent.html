@@ -21,6 +21,9 @@ h1{font-size:44px;letter-spacing:.18em;margin:8px 0 0;font-weight:800}
 .chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
 .chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12.5px;background:#0c0c15;white-space:nowrap}
 .chip.paper{border-color:var(--y);color:var(--y)}.chip.live{border-color:var(--g);color:var(--g)}
+.chip.live{border-color:#ff5d55;background:#ff5d55;color:#fff;font-weight:800}
+.moneybar{position:sticky;top:0;z-index:20;display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 12px;font-weight:800;font-size:14px;letter-spacing:.04em;background:#2a2410;color:var(--y);border-bottom:1px solid #4a3f14}
+.moneybar.live{background:#ff5d55;color:#fff;border-color:#ff5d55}.moneybar a{color:inherit;text-decoration:underline;font-weight:600}
 .thought{margin:16px 0 4px;padding:16px;border-left:3px solid var(--mood);background:linear-gradient(90deg,rgba(179,136,255,.08),transparent);border-radius:0 12px 12px 0;font-size:16.5px;min-height:70px}
 .thought small{display:block;color:var(--mu);font-size:12px;margin-top:6px}
 section{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin:14px 0}
@@ -91,6 +94,7 @@ details.rlog summary{cursor:pointer;color:var(--mu);font-size:12px;letter-spacin
 </style>
 </head>
 <body>
+<div class="moneybar" id="moneybar">connecting…</div>
 <main>
   <div class="hero">
     <div class="orb" id="orb"></div>
@@ -128,6 +132,13 @@ details.rlog summary{cursor:pointer;color:var(--mu);font-size:12px;letter-spacin
     <div class="bar"><i id="fundBar" style="width:0%"></i></div>
     <div class="sm mu" id="fundBasis" style="margin-top:6px"></div>
     <ul class="ladder" id="ladder"></ul>
+  </section>
+
+  <section id="goalBox" style="display:none">
+    <h2>Risk-free goal: return the principal</h2>
+    <div class="sm" id="goalTxt"></div>
+    <div class="bar" style="margin-top:8px"><i id="goalBar" style="width:0%"></i></div>
+    <div class="sm mu" id="goalSub" style="margin-top:6px"></div>
   </section>
 
   <section>
@@ -175,6 +186,16 @@ details.rlog summary{cursor:pointer;color:var(--mu);font-size:12px;letter-spacin
   </section>
 
   <section>
+    <h2>Execution: where I trade and what it costs</h2>
+    <div id="exec" class="sm mu">Loading…</div>
+  </section>
+
+  <section id="paperBox" style="display:none">
+    <h2>Paper record (simulated, before going live)</h2>
+    <div id="paperArch" class="sm mu"></div>
+  </section>
+
+  <section>
     <h2>Backtest (honest)</h2>
     <div id="bt" class="sm mu">Loading…</div>
   </section>
@@ -201,7 +222,13 @@ const tm=(iso)=>iso?new Date(iso).toLocaleString('en-GB',{...tz,day:'2-digit',mo
 const f4=(x)=>x==null?'–':(+x).toFixed(4);const sg=(x)=>x==null?'–':(x>=0?'+':'')+(+x).toFixed(4);
 const cls=(x)=>x>0?'pos':x<0?'neg':'';
 const short=(a)=>a?a.slice(0,4)+'…'+a.slice(-4):'';
-const COL={dip:'#58a6ff',momentum:'#3fd68f',breakout:'#ff7a45',fresh:'#b388ff'};
+const COL={dip:'#58a6ff',momentum:'#3fd68f',breakout:'#ff7a45',fresh:'#b388ff',volbot:'#ffd166'};
+const costTxt=(c)=>{if(!c)return'';const rt=c.roundTrip;const parts=[];
+  if(rt){parts.push(`round trip ${f6(rt.totalSol)} SOL${rt.totalPct!=null?' ('+rt.totalPct+'%)':''}`,`pump.fun fees ${f6(rt.feesSol)}`,`route fee ${f6(rt.routeFeesSol)}`,`network ${f6(rt.networkSol)}`);if(rt.impactBuyPct!=null)parts.push(`impact ${rt.impactBuyPct}% in / ${rt.impactSellPct??'–'}% out`);}
+  else{parts.push(`pump.fun fee ${f6(c.pumpFeeSol)}`,`route fee ${f6(c.routeFeeSol)}`,`network ${f6(c.networkSol)}`);if(c.impactPct!=null)parts.push(`impact ${c.impactPct}%`);if(c.oneTimeAccountSol)parts.push(`one-time pump account ${f6(c.oneTimeAccountSol)}`);}
+  if(c.slippageTolPct!=null)parts.push(`slippage tolerance ${c.slippageTolPct}%`);
+  return `<div class="mu" style="font-size:11px">${esc(c.route||'')}${c.venue?' · '+esc(c.venue):''}: ${parts.map(esc).join(' · ')}</div>`;};
+const f6=(x)=>x==null?'–':(+x).toFixed(6);
 function line(svg,series,opts={}){ // series: [{pts:[[x,y]],color}]
   const all=series.flatMap(s=>s.pts);if(Math.max(0,...series.map(s=>s.pts.length))<2){svg.innerHTML=`<text x="300" y="${(opts.h||180)/2}" fill="#9696b4" font-size="22" text-anchor="middle">${opts.empty||'collecting data…'}</text>`;return;}
   const W=600,H=opts.h||180,P=6;const xs=all.map(p=>p[0]),ys=all.map(p=>p[1]);let x0=Math.min(...xs),x1=Math.max(...xs),y0=opts.y0??Math.min(...ys),y1=opts.y1??Math.max(...ys);if(y1===y0){y1+=1e-6;y0-=1e-6}if(x1===x0)x1++;
@@ -218,7 +245,8 @@ function render(s){
   const md=s.mind?.mood||{label:'?',color:'#b388ff'};document.documentElement.style.setProperty('--mood',md.color);
   $('tagline').textContent=s.identity?.tagline||'';
   const rg=s.mind?.regime||{};
-  $('chips').innerHTML=[`<span class="chip ${s.mode}">${s.mode==='paper'?'PAPER MODE (simulated)':'LIVE'}</span>`,`<span class="chip">mood: <b style="color:${md.color}">${esc(md.label)}</b></span>`,`<span class="chip">${esc(s.state)}</span>`,`<span class="chip">market: ${esc(rg.label||'?')}${rg.heat?` · ${rg.heat}× heat`:''}</span>`,rg.launchesPerMin!=null?`<span class="chip">${rg.launchesPerMin} launches/min</span>`:''].join('');
+  {const mb=$('moneybar'),lv=s.mode==='live',ws=s.wallet?.onChainSol;mb.className='moneybar'+(lv?' live':'');mb.innerHTML=(lv?'LIVE · REAL MONEY':'PAPER · simulated trades')+(ws!=null?` · wallet ${Number(ws).toFixed(4)} SOL`:'')+' · <a href="/m">live view</a>';}
+  $('chips').innerHTML=[`<span class="chip ${s.mode}">${s.mode==='paper'?'PAPER MODE (simulated)':'LIVE · REAL MONEY'}</span>`,`<span class="chip">mood: <b style="color:${md.color}">${esc(md.label)}</b></span>`,`<span class="chip">${esc(s.state)}</span>`,`<span class="chip">market: ${esc(rg.label||'?')}${rg.heat?` · ${rg.heat}× heat`:''}</span>`,rg.launchesPerMin!=null?`<span class="chip">${rg.launchesPerMin} launches/min</span>`:''].join('');
   const th=(s.mind?.thoughts||[])[0];if(th&&th.text!==lastThought){lastThought=th.text;$('now').innerHTML=`“${esc(th.text)}”<small>${esc(th.kind)} · ${tm(th.at)} Madrid</small>`}
   // body fund
   const bf=s.bodyFund||{};$('fundEur').textContent='€'+(bf.fundEur??0).toFixed(2);$('fundTot').textContent='€'+(bf.totalEur||0).toFixed(2);$('fundBar').style.width=(bf.progressPct||0)+'%';
@@ -244,7 +272,8 @@ function render(s){
   // positions
   $('positions').innerHTML=(s.positions||[]).length?(s.positions).map(p=>`<div class="k" style="margin-bottom:6px"><b>${esc(p.symbol||short(p.mint))}</b> <span class="mu">${esc(p.arm||p.kind)} · ${p.ageMin} min</span> <span class="${cls(p.pnlPct)}">${p.pnlPct==null?'':(p.pnlPct>=0?'+':'')+p.pnlPct+'%'}</span><div class="mu">${f4(p.costSol)} SOL in · exits +${p.exits?.tp}% / −${p.exits?.sl}% / ${p.exits?.holdMin} min ${p.tx?`· <a href="https://solscan.io/tx/${esc(p.tx)}" target="_blank">tx</a>`:'· paper'}</div></div>`).join(''):'None right now.';
   // trades
-  const tr=s.trades||[];$('trades').innerHTML=tr.length?'<tr><th>Time (Madrid)</th><th>Side</th><th>Coin</th><th>SOL</th><th>P&L</th><th>Tx</th></tr>'+tr.slice(0,60).map(x=>`<tr><td>${tm(x.at)}</td><td>${x.side}</td><td><a href="https://pump.fun/coin/${esc(x.mint)}" target="_blank" rel="noopener">${esc(x.symbol||short(x.mint))}</a><div class="mu">${esc(x.arm||'')}</div></td><td>${f4(x.sol)}</td><td class="${cls(x.pnlSol)}">${x.pnlSol==null?'':sg(x.pnlSol)+'<br>'+(x.pnlPct>=0?'+':'')+x.pnlPct+'%'}</td><td>${x.tx?`<a href="https://solscan.io/tx/${esc(x.tx)}" target="_blank">view</a>`:'<span class="mu">paper</span>'}</td></tr>`).join(''):'<tr><td class="mu">No trades yet. I only trade when my beliefs and my scanner both say yes.</td></tr>';
+  const tr=s.trades||[];$('trades').innerHTML=tr.length?'<tr><th>Time (Madrid)</th><th>Side</th><th>Coin</th><th>SOL</th><th>P&L</th><th>Tx</th></tr>'+tr.slice(0,60).map(x=>`<tr><td>${tm(x.at)}</td><td>${x.side}</td><td><a href="https://pump.fun/coin/${esc(x.mint)}" target="_blank" rel="noopener">${esc(x.symbol||short(x.mint))}</a><div class="mu">${esc(x.arm||'')}</div>${x.reason?`<div class="mu" style="font-size:11px">${esc(x.reason.slice(0,220))}</div>`:''}${costTxt(x.costs)}</td><td>${f4(x.sol)}</td><td class="${cls(x.pnlSol)}">${x.pnlSol==null?'':sg(x.pnlSol)+'<br>'+(x.pnlPct>=0?'+':'')+x.pnlPct+'%'}</td><td>${x.tx?`<a href="https://solscan.io/tx/${esc(x.tx)}" target="_blank">view</a>`:'<span class="mu">paper</span>'}</td></tr>`).join(''):'<tr><td class="mu">No trades yet. I only trade when my beliefs and my scanner both say yes.</td></tr>';
+  renderExec(s);
   // funding
   const fs_=s.feeSplit||{};const SC=['#b388ff','#58a6ff','#3fd68f'];
   $('splitTxt').textContent=fs_.howItWorks||'';
@@ -263,6 +292,17 @@ function render(s){
   $('upd').textContent='updated '+tm(s.now);
 }
 const SPEC=(sig)=>Math.max(0,Math.min(80,(sig??100)/150*80)); // 0..150% signal → 0..80% of the bar; the last 20% is the Body Fund
+function renderExec(s){
+  const e=s.execution;if(e){const rt=e.roundTripPct||{};const row=(r)=>`<tr><td>${esc(r)}${r===e.route?' <b>(default)</b>':r===e.fallback?' (fallback)':''}</td>${['0.01','0.02'].map(z=>{const c=rt[r]?.[z];return `<td>${c?c.totalPct+'%':'–'}<div class="mu" style="font-size:11px">${c?`fees ${c.pumpFeesPct}% · route ${c.routeFeePct}% · network ${c.networkPct}%`:''}</div></td>`}).join('')}</tr>`;
+    $('exec').innerHTML=`<div>${esc(e.why)}</div><table style="margin-top:8px"><tr><th>Route</th><th>Round trip at 0.01 SOL</th><th>at 0.02 SOL</th></tr>${Object.keys(rt).map(row).join('')}</table>
+    <div style="margin-top:8px"><b>Slippage:</b> ${esc(e.slippage.rule)}; buy cap ${e.slippage.buyCapPct}%, sell cap ${e.slippage.sellCapPct}%, forced exits step ${e.slippage.forcedExitStepsPct.join(' → ')}%. ${esc(e.slippage.skipIf)}. MEV: ${esc(e.slippage.mev)}.</div>
+    <div><b>Edge gate:</b> ${esc(e.edgeGate)}.</div><div><b>Network:</b> ${e.network.baseFeeLamports} lamports base + priority (${esc(e.network.priority)}), max ${e.network.maxPriorityLamportsPerTx} lamports per tx, no Jito tip; token account rent ${esc(e.network.tokenAccountRent)}.</div>
+    <div class="mu">Costs paid so far: ${f6(e.costsPaidSol)} SOL · setups skipped because costs would eat the edge: ${e.costSkips}</div>`;}
+  const g=s.payout;if(g&&g.goal){$('goalBox').style.display='';const done=g.status==='done';
+    $('goalTxt').innerHTML=done?`<b>Principal returned — I'm now running on my own profits.</b> ${f6(g.payout.sol)} SOL went back${g.payout.tx?` · <a href="https://solscan.io/tx/${esc(g.payout.tx)}" target="_blank" rel="noopener">tx</a>`:' (paper simulation)'}.`:esc(g.rule||'');
+    $('goalBar').style.width=(g.progressPct||0)+'%';$('goalSub').textContent=done?`New baseline: ${f4(g.payout.treasuryAfterSol)} SOL`:`${f4(g.treasurySol)} / ${f4(g.goal)} SOL (${g.progressPct??0}%) · free SOL ${f4(g.freeSol)} · status: ${g.status}${g.mode==='paper'?' (paper)':''}`;}
+  const a=s.paperArchive;if(a){$('paperBox').style.display='';$('paperArch').innerHTML=`${esc(a.label)}: ${a.closedTrades} closed trades, ${a.wins} wins, net ${sg(a.netSol)} SOL on a ${f4(a.paperStart)} SOL paper start. Archived ${tm(a.archivedAt)}. This was never real money and is not part of my live record.`;}
+}
 function renderVital(s){const v=s.vitals;if(!v)return;const stt=v.state||{};const vis=v.visual||{};const af=v.affect||{};const p=v.policy||{};
   document.body.classList.toggle('inlimbo',!!v.limbo);
   $('vital').style.filter=v.limbo?'grayscale(1) brightness(.7)':`saturate(${Math.max(.35,vis.saturation)}) brightness(${Math.max(.75,Math.min(1.1,vis.brightness))})`;
