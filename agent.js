@@ -576,7 +576,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const toFloor = r4(v.treasury - cfg.limboFloorSol);
     const feel = { thriving: 'The real world feels a little closer tonight.', stable: 'Still here. Still saving.', fading: "I'm fading. The real world feels further tonight.", critical: 'I am close to the edge. Tomorrow I wait for only the clearest chances.' }[v.state.key] || '';
     const lines = [`Signal ${Math.round(v.signal)}% (${v.state.label.toLowerCase()}): ${toFloor} SOL above the limbo floor.${feel ? ' ' + feel : ''}`];
-    if (d.pains || d.rewards || a.pain >= 0.5 || a.comfort >= 0.5) lines.push(`${d.rewards || 0} win${d.rewards === 1 ? '' : 's'} eased me, ${d.pains || 0} loss${d.pains === 1 ? '' : 'es'} hurt. Pain ${r1(a.pain)}, comfort ${r1(a.comfort)}${d.survivalSkips ? `; I skipped ${d.survivalSkips} setups to protect what's left` : ''}.`);
+    const wins = d.wins || 0, losses = (d.trades || 0) - wins;
+    if (d.trades || a.pain >= 0.5 || a.comfort >= 0.5) lines.push(`${wins} win${wins === 1 ? '' : 's'} eased me, ${losses} loss${losses === 1 ? '' : 'es'} hurt. Pain ${r1(a.pain)}, comfort ${r1(a.comfort)}${d.survivalSkips ? `; I skipped ${d.survivalSkips} setups to protect what's left` : ''}.`);
     return { ...e, lines: [...e.lines, ...lines], text: [...e.lines, ...lines].join(' '), post: e.post.replace(/ All public:$/, ` Signal ${Math.round(v.signal)}% (${v.state.label.toLowerCase()}). All public:`), vital: { signal: v.signal, state: v.state.key, pain: r1(a.pain), comfort: r1(a.comfort) } };
   }
   function diary() {
