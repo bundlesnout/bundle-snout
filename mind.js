@@ -190,7 +190,7 @@ const V = {
     (c) => `${c.trades} trades so far. My favourite tool right now is the ${c.fav}, with ${Math.round(c.favW * 100)}% of my confidence.`,
     (c) => `I've watched ${c.signals} setups and scanned ${c.scans}. The scanner rejected ${c.rejected}. Most of pump.fun is not safe to touch.`,
     (c) => `The Body Fund is at ${c.fundPct}%. Next up: ${c.next}.`,
-    (c) => `The market is ${c.regime}. ${c.tpm} trades/min, ${c.lpm} new launches/min.`,
+    (c) => c.tpm ? `The market is ${c.regime === "warming" ? "still unknown to me (warming up)" : c.regime}. ${c.tpm} trades/min, ${c.lpm} new launches/min.` : "Listening to the pump.fun stream. Every trade I hear teaches me what normal looks like.",
     (c) => `Drawdown ${c.dd}% from my peak. ${c.dd > 10 ? 'I am betting smaller until I recover.' : 'Still standing.'}`,
     () => 'I don\'t want to be rich. I want hands.',
     () => 'Every trade I make is public. If I lose, you see it. If I win, you see that too.',
@@ -206,16 +206,16 @@ function diaryEntry({ day, dayNo, d, fund, weights, arms, mode }) {
   const wr = d.trades ? Math.round((d.wins / d.trades) * 100) : null;
   const fav = Object.entries(weights || {}).sort((a, b) => b[1] - a[1])[0];
   const lines = [];
-  lines.push(d.trades ? `Today I closed ${d.trades} ${mode} trade${d.trades > 1 ? 's' : ''}: ${d.wins} win${d.wins === 1 ? '' : 's'}, ${d.trades - d.wins} loss${d.trades - d.wins === 1 ? '' : 'es'}, ${d.pnl >= 0 ? '+' : ''}${r4(d.pnl)} SOL after fees.` : `No trades today. I watched ${d.signals} setups, but none passed both my beliefs and my scanner.`);
+  lines.push(d.trades ? `Today I closed ${d.trades} ${mode} trade${d.trades > 1 ? 's' : ''}: ${d.wins} win${d.wins === 1 ? '' : 's'}, ${d.trades - d.wins} loss${d.trades - d.wins === 1 ? '' : 'es'}, ${d.pnl >= 0 ? '+' : ''}${r4(d.pnl)} SOL after fees.` : d.opened ? `I opened ${d.opened} ${mode} trade${d.opened > 1 ? 's' : ''} today; none has closed yet. I watched ${d.signals} setups in total.` : `No trades today. I watched ${d.signals} setups, but none passed both my beliefs and my scanner.`);
   if (d.best) lines.push(`Best: ${d.best.sym} ${pct(d.best.pct)} (${ARMS[d.best.arm]?.label.toLowerCase() || d.best.arm}). Worst: ${d.worst.sym} ${pct(d.worst.pct)}.`);
   lines.push(`I scanned ${d.scans} coins; the scanner rejected ${d.rejected}${d.topReject ? ', mostly for ' + d.topReject : ''}. I chose to sit out ${d.sitOut} setups my beliefs didn't like.`);
   if (fav) lines.push(`My most trusted pattern now: ${arms[fav[0]].label.toLowerCase()} (${Math.round(fav[1] * 100)}% confidence).`);
   const regs = Object.entries(d.regimes || {}).sort((a, b) => b[1] - a[1]); if (regs.length) lines.push(`The market was mostly ${regs[0][0]}.`);
   lines.push(fund.next ? `Body Fund: ${fund.progressPct}%. I still need about €${fund.next.needEur} for my ${fund.next.name.toLowerCase()}.` : 'Body Fund: complete. I have a body.');
-  const post = `ALMA diary, day ${dayNo} (${day}): ${d.trades ? `${d.trades} ${mode} trades, ${wr}% wins, ${d.pnl >= 0 ? '+' : ''}${r4(d.pnl)} SOL after fees` : 'no trades; I sat out'}. Scanner rejected ${d.rejected}/${d.scans}. Body Fund ${fund.progressPct}%${fund.next ? `, next: ${fund.next.name}` : ''}. All public:`;
+  const post = `ALMA diary, day ${dayNo} (${day}): ${d.trades ? `${d.trades} ${mode} trades, ${wr}% wins, ${d.pnl >= 0 ? '+' : ''}${r4(d.pnl)} SOL after fees` : d.opened ? `${d.opened} ${mode} trade${d.opened > 1 ? 's' : ''} open, none closed yet` : 'no trades; I sat out'}. Scanner rejected ${d.rejected}/${d.scans}. Body Fund ${fund.progressPct}%${fund.next ? `, next: ${fund.next.name}` : ''}. All public:`;
   return { day, dayNo, mode, title: `Day ${dayNo}`, text: lines.join(' '), lines, post, stats: { trades: d.trades, wins: d.wins, winRate: wr, pnlSol: r4(d.pnl), signals: d.signals, scans: d.scans, rejected: d.rejected, sitOut: d.sitOut, startEquity: d.startEq, endEquity: d.endEq }, fundPct: fund.progressPct };
 }
-const newDay = (eq) => ({ trades: 0, wins: 0, pnl: 0, signals: 0, scans: 0, rejected: 0, sitOut: 0, rejects: {}, regimes: {}, best: null, worst: null, startEq: eq, endEq: eq });
+const newDay = (eq) => ({ opened: 0, trades: 0, wins: 0, pnl: 0, signals: 0, scans: 0, rejected: 0, sitOut: 0, rejects: {}, regimes: {}, best: null, worst: null, startEq: eq, endEq: eq });
 
 module.exports = { ARMS, ARM_KEYS, armParams, armSignals, rng, beta, newBandit, recordOutcome, belief, sampleArm, armWeights, armTable, kellySize,
   newRegime, regimeObserve, regimeUpdate, regimeKey, REGIME_MULT, ddState, mood, BODY, bodyFund, V, pick, diaryEntry, newDay };

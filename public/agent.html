@@ -143,7 +143,7 @@ const cls=(x)=>x>0?'pos':x<0?'neg':'';
 const short=(a)=>a?a.slice(0,4)+'…'+a.slice(-4):'';
 const COL={dip:'#58a6ff',momentum:'#3fd68f',breakout:'#ff7a45',fresh:'#b388ff'};
 function line(svg,series,opts={}){ // series: [{pts:[[x,y]],color}]
-  const all=series.flatMap(s=>s.pts);if(all.length<2){svg.innerHTML=`<text x="300" y="${opts.h/2||90}" fill="#9696b4" font-size="14" text-anchor="middle">${opts.empty||'collecting data…'}</text>`;return;}
+  const all=series.flatMap(s=>s.pts);if(Math.max(0,...series.map(s=>s.pts.length))<2){svg.innerHTML=`<text x="300" y="${(opts.h||180)/2}" fill="#9696b4" font-size="22" text-anchor="middle">${opts.empty||'collecting data…'}</text>`;return;}
   const W=600,H=opts.h||180,P=6;const xs=all.map(p=>p[0]),ys=all.map(p=>p[1]);let x0=Math.min(...xs),x1=Math.max(...xs),y0=opts.y0??Math.min(...ys),y1=opts.y1??Math.max(...ys);if(y1===y0){y1+=1e-6;y0-=1e-6}if(x1===x0)x1++;
   const X=x=>P+(x-x0)/(x1-x0)*(W-2*P),Y=y=>H-P-(y-y0)/(y1-y0)*(H-2*P);let out='';
   if(opts.base!=null){out+=`<line x1="0" x2="${W}" y1="${Y(opts.base)}" y2="${Y(opts.base)}" stroke="#33335a" stroke-dasharray="4 4"/>`}
@@ -205,7 +205,7 @@ async function bt(){try{const r=await fetch('/agent-backtest.json',{cache:'no-st
   const row=(x)=>x.n?`${x.n} · ${x.winRate}% · <span class="${cls(x.netSol)}">${sg(x.netSol)}</span>`:'<span class="mu">0</span>';
   const sy=b.system.withInSampleParams,sd=b.system.withDefaults;
   $('bt').innerHTML=`<p style="margin-top:0">Replay of <b>${b.data.trades.toLocaleString()}</b> real pump.fun trades on <b>${b.data.coins}</b> coins (${b.data.minutes} min, ${tm(b.data.from)}–${tm(b.data.to)} Madrid). Fixed ${b.assumptions.sizeSol} SOL per trade, ${b.assumptions.feesPerSidePct}% fees per side + tx fees, entry ${b.assumptions.entryLatencyMs/1000}s after the signal. Exit rules chosen on the first half (<b>in-sample</b>); the second half (<b>out-of-sample</b>) is the honest test.</p>
-  <div class="scroll"><table><tr><th>Arm</th><th>Exits picked<br>TP% / SL% / min</th><th>In-sample<br>trades · wins · SOL</th><th>Out-of-sample<br>trades · wins · SOL</th></tr>${b.perArm.map(a=>`<tr><td>${esc(a.label)}${a.chosen.enabled?'':'<div class="mu">disabled</div>'}</td><td>${a.chosen.params.replace(/\//g,' / ')}</td><td>${row(a.chosen.inSample)}</td><td>${row(a.chosen.outOfSample)}</td></tr>`).join('')}</table></div>
+  <div class="scroll"><table><tr><th>Arm</th><th>Exits picked<br>TP% / SL% / min</th><th>In-sample<br>trades · wins · SOL</th><th>Out-of-sample<br>trades · wins · SOL</th></tr>${b.perArm.map(a=>`<tr><td>${esc(a.label)}${a.chosen.picked&&a.chosen.picked.startsWith('defaults')?'<div class="mu">too few trades: defaults kept</div>':''}</td><td>${a.chosen.params.replace(/\//g,' / ')}</td><td>${row(a.chosen.inSample)}</td><td>${row(a.chosen.outOfSample)}</td></tr>`).join('')}</table></div>
   <p>Full agent (bandit + Kelly + limits), out-of-sample only, ${sy.seeds} random seeds: median <b class="${cls(sy.medianNetSol)}">${sg(sy.medianNetSol)} SOL</b> on 0.1 SOL (range ${sg(sy.minNetSol)} to ${sg(sy.maxNetSol)}), ${sy.avgTrades} trades on average, ${sy.profitableSeedsPct}% of seeds profitable. With default exits: median ${sg(sd.medianNetSol)} SOL.</p>
   <ul style="padding-left:18px;margin:0">${b.caveats.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`;}catch{$('bt').textContent='Backtest not published yet.'}}
 load();bt();setInterval(load,10000);

@@ -22,7 +22,7 @@ function loadParams() { try { return JSON.parse(fs.readFileSync(process.env.AGEN
 const ACFG = () => ({
   mode: (process.env.AGENT_MODE || 'paper').toLowerCase() === 'live' ? 'live' : 'paper',
   enabled: process.env.AGENT_ENABLED !== '0',
-  exclude: new Set([...csv('AGENT_EXCLUDE_CA'), ...csv('RIPS_CA')]),
+  exclude: new Set([...csv('AGENT_EXCLUDE_CA'), ...csv('RIPS_CA'), ...csv('AGENT_COIN_CA')]),
   protectedWallets: new Set([DEV_WALLET, ...csv('RIPS_DEV_WALLET'), ...csv('AGENT_PROTECTED_WALLETS')]),
   maxTradeSol: num('AGENT_MAX_TRADE_SOL', 0.02),
   sizePct: num('AGENT_SIZE_PCT', 20),            // hard cap: % of free balance per trade
@@ -240,7 +240,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       pos = { ...base, id: res.sig.slice(0, 8), solIn: size, tok: res.tokDelta, cost: r6(-res.solDelta), entryPrice: (-res.solDelta) / Math.max(res.tokDelta, 1e-9), vs, vt, tx: res.sig, ata: res.ata, tokenProgram: res.tokenProgram };
       refreshBalance();
     }
-    st.positions.push(pos);
+    st.positions.push(pos); st.dayStats.opened = (st.dayStats.opened || 0) + 1;
     pushTrade({ side: 'BUY', mint, symbol, arm: kind, sol: pos.cost, tok: r1(pos.tok), reason, tx: pos.tx, posId: pos.id });
     decide({ action: 'BUY', mint, symbol, signal: kind, reason });
     await save(true);

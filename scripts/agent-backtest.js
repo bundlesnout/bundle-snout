@@ -64,12 +64,12 @@ const stats = (pnls) => { let eq = 0, pk = 0, dd = 0; for (const p of pnls) { eq
     const defKey = `${GRID.tp.includes(arms[k].tp) ? arms[k].tp : 20}/${GRID.sl.includes(arms[k].sl) ? arms[k].sl : 15}/${GRID.hold.includes(arms[k].hold) ? arms[k].hold : 15}`;
     let best = null; for (const key of Object.keys(evs[0]?.sim.res || {})) { const s = score(IS, key); if (s.n >= 15 && (!best || s.netSol > best.s.netSol)) best = { key, s }; }
     const pick = best ? best.key : defKey; const [tp, sl, hold] = pick.split('/').map(Number);
-    const enabled = !!best && best.s.netSol > 0; // the in-sample data must at least say "positive" for the arm to trade
-    chosen[k] = { tp, sl, hold, enabled };
+    const enabled = true; const inSamplePositive = !!best && best.s.netSol > 0; // one short sample is too little to switch an arm off: the live bandit decides
+    chosen[k] = { tp, sl, hold, enabled, inSamplePositive };
     // how lucky is the in-sample winner? share of the 80 combos that are positive in-sample
     const posShare = IS.length ? Object.keys(evs[0].sim.res).filter((key) => score(IS, key).netSol > 0).length / 80 : 0;
     perArm.push({ arm: k, label: arms[k].label, signals: events.filter((e) => e.arm === k).length, evaluated: evs.length, defaults: { params: defKey, inSample: score(IS, defKey), outOfSample: score(OOS, defKey) },
-      chosen: { params: pick, enabled, inSample: score(IS, pick), outOfSample: score(OOS, pick) }, inSampleCombosPositivePct: r1(posShare * 100) });
+      chosen: { params: pick, enabled, inSamplePositive, picked: best ? 'best in-sample (≥15 trades)' : 'defaults (too few in-sample trades)', inSample: score(IS, pick), outOfSample: score(OOS, pick) }, inSampleCombosPositivePct: r1(posShare * 100) });
   }
   // ---- 2) system replay with the real agent code
   process.env.AGENT_MODE = 'paper'; process.env.AGENT_ENABLED = '1'; delete process.env.AGENT_SECRET_KEY;
