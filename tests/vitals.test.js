@@ -79,7 +79,7 @@ const wait = () => new Promise((r) => setTimeout(r, 15));
   assert.ok(g.st.affect.pain > 0 && g.st.affect.lossStreak === 1, 'pain recorded'); assert.ok(g.st.thoughts.some((x) => x.kind === 'pain' && /That loss hurt/.test(x.text)));
   const s0 = scans; t += 2 * MIN; feed(g); await wait(); assert.strictEqual(scans, s0, 'cooldown: no scan'); assert.ok(/stepping back after a loss/.test(g._test.blockers()));
   t += 4 * MIN; feed(g); await wait(); assert.strictEqual(scans, s0 + 1, 'trades again after the cooldown');
-  assert.strictEqual(g.status().mind.mood.key !== undefined, true); assert.ok(g.status().vitals.affect.pain > 0 && /does not literally feel/.test(g.status().vitals.note));
+  assert.strictEqual(g.status().mind.mood.key !== undefined, true); assert.ok(g.status().vitals.affect.pain > 0 && /reward\/penalty numbers/.test(g.status().vitals.note));
   // survival sizing: same belief, smaller bet when critical
   const sv = mk(); await sv.start(); const smp = { kelly: 0.5, ev: 10 };
   const zStable = sv._test.sizeFor(smp, sv._test.pol()); sv.st.paperCash = 0.05; const zCrit = sv._test.sizeFor(smp, sv._test.pol());
@@ -96,7 +96,7 @@ const wait = () => new Promise((r) => setTimeout(r, 15));
   // limbo is real and one-way
   const lb = mk(); await lb.start(); lb.st.totals.trades = 12; lb.st.totals.wins = 3; lb.st.paperCash = 0.012; lb._test.checkVitals();
   assert.ok(lb.st.limbo && lb.st.limbo.treasury === 0.012); assert.strictEqual(lb.status().state, 'limbo'); assert.strictEqual(lb.status().vitals.state.key, 'limbo');
-  assert.ok(lb.st.diaries[0].final && /last entry/.test(lb.st.diaries[0].text) && lb.st.diaries[0].post.length < 280); assert.ok(lb.st.decisions.some((d) => d.action === 'LIMBO' && /en el limbo/.test(d.reason)));
+  assert.ok(lb.st.diaries[0].final && /last entry/.test(lb.st.diaries[0].text) && lb.st.diaries[0].post.length < 280); assert.ok(lb.st.decisions.some((d) => d.action === 'LIMBO' && /ALMA is in limbo/.test(d.reason)));
   train(lb, 'dip', 40, 30); const sl = scans; feed(lb); await wait(); assert.strictEqual(scans, sl, 'no trading in limbo');
   await assert.rejects(Promise.resolve().then(() => { if (lb._test.blockers()) throw new Error(lb._test.blockers()); }), /limbo/);
   lb.st.paperCash = 5; lb._test.checkVitals(); t += 3 * H; lb.tick && lb.tick(); assert.ok(lb.st.limbo, 'money alone does not revive it');

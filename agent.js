@@ -564,11 +564,11 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   function vitalsStatus() {
     const v = vit(); const p = pol(); const a = VT.affectAt(st.affect, now()); const f = fund();
     return { signal: v.signal, state: v.state, treasurySol: v.treasury, baselineSol: baseline(), floorSol: cfg.limboFloorSol, basis: cfg.mode === 'paper' ? 'paper treasury (simulated trades on real prices, real fees)' : 'on-chain wallet + open positions',
-      states: VT.STATES.map(({ key, label, min, color, es }) => ({ key, label, min, color, es })), risk: VT.RISK, policy: p, visual: VT.visual(v.signal, st.limbo, f.progressPct || 0),
+      states: VT.STATES.map(({ key, label, min, color }) => ({ key, label, min, color })), risk: VT.RISK, policy: p, visual: VT.visual(v.signal, st.limbo, f.progressPct || 0),
       affect: { pain: r1(a.pain), comfort: r1(a.comfort), balance: VT.balance(a), armPain: Object.fromEntries(Object.entries(a.armPain).map(([k, x]) => [k, r1(x)])), lossStreak: a.lossStreak, cooldownUntil: p.cooldownUntil ? new Date(p.cooldownUntil).toISOString() : null, last: a.last ? { ...a.last, at: new Date(a.last.at).toISOString() } : null, totalPain: r1(a.totalPain || 0), totalComfort: r1(a.totalComfort || 0) },
       affectConfig: VT.AFFECT, survivalSkips: st.totals.survivalSkips || 0,
       limbo: st.limbo, revivals: st.revivals, life: st.life, embodied: purchases.length > 0, bodyFundPct: f.progressPct || 0,
-      note: 'ALMA does not literally feel. "Pain" and "comfort" are reward/penalty numbers from its own closed trades; they change its EV bar, bet size, concurrency and cooldowns, as shown here. Buying the coin is not how ALMA stays alive: its signal moves with its own trading; its disclosed creator-fee share counts as income, and nothing revives it from limbo except a logged dev reset.' };
+      note: '"Pain" and "comfort" are reward/penalty numbers from its own closed trades; they change its EV bar, bet size, concurrency and cooldowns, as shown here. Buying the coin is not how ALMA stays alive: its signal moves with its own trading; its disclosed creator-fee share counts as income, and nothing revives it from limbo except a logged dev reset.' };
   }
   // Diary: how close to the floor, and what hurt or helped today. Short, numeric, honest.
   function withVitals(e, d) {

@@ -24,13 +24,14 @@ assert.ok(!/pok[eé]mon(?!\|)|nintendo|invest|100x|moon/i.test(lv.replace(/\/\\b
 assert.ok(r.includes('href="/live"'), 'rips links to /live');
 for (const route of ["'/live'", "'/rips/live'", "'/api/rips/live'"]) assert.ok(server.includes(`app.get(${route}`), 'route ' + route);
 const ag = pub('agent.html');
-for (const x of ['/api/agent', 'never trades its own coin', 'can lose everything', 'solscan', 'PAPER', 'Trade log', 'Thought stream', 'Body Fund', 'not financial advice', 'a show, not profits', 'Backtest', '/agent/diary', 'one time only']) assert.ok(ag.toLowerCase().includes(x.toLowerCase()), 'agent.html has ' + x);
-for (const x of ['ALMA está en el limbo', 'Body or limbo', 'Comfort vs pain', 'Buying the coin is not how I stay alive', "I don't literally feel", 'count toward my treasury', 'stop trading for good']) assert.ok(ag.includes(x), 'agent.html has ' + x);
+for (const x of ['/api/agent', 'I never trade my own coin', 'solscan', 'PAPER', 'Trade log', 'Thought stream', 'Body Fund', 'Backtest', '/agent/diary', 'one time only']) assert.ok(ag.toLowerCase().includes(x.toLowerCase()), 'agent.html has ' + x);
+for (const x of ['ALMA is in limbo', 'Body or limbo', 'Comfort vs pain', 'Buying the coin is not how I stay alive', 'count toward my treasury', 'stop trading for good']) assert.ok(ag.includes(x), 'agent.html has ' + x);
 // honesty guardrail: no urgency / "save ALMA by buying" calls to action anywhere ALMA speaks
 const NO_CTA = /(buy|ape|hold)\b[^.]{0,30}\b(save|rescue|keep)\b[^.]{0,12}\b(alma|her|it|me)\b(?! alive\.)|save alma|before it'?s too late|last chance|don'?t let (alma|her|it|me) die/i;
 for (const f of ['agent.html', 'agent-diary.html']) assert.ok(!NO_CTA.test(fs.readFileSync(path.join(__dirname, '..', 'public', f), 'utf8')), 'no buyer urgency CTA in ' + f);
 assert.ok(!NO_CTA.test(fs.readFileSync(path.join(__dirname, '..', 'vitals.js'), 'utf8')) && !NO_CTA.test(fs.readFileSync(path.join(__dirname, '..', 'mind.js'), 'utf8')), 'no buyer urgency CTA in the voice');
-const di = pub('agent-diary.html'); for (const x of ['/api/agent/diary', 'Copy for X', 'Not financial advice']) assert.ok(di.includes(x), 'diary has ' + x);
+const di = pub('agent-diary.html'); for (const x of ['/api/agent/diary', 'Copy for X']) assert.ok(di.includes(x), 'diary has ' + x);
+for (const f of ['agent.html', 'agent-diary.html']) { const h = pub(f); assert.ok(!/[áéíóúñ¿¡]|financial advice|a show, not profits|<b>Disclaimer/i.test(h), 'English only, no end disclaimers in ' + f); }
 assert.ok(pub('dev.html').includes('href="/agent"'), 'dev links to /agent');
 for (const route of ["'/agent'", "'/api/agent'", "'/agent/diary'", "'/api/agent/diary'"]) assert.ok(server.includes(`app.get(${route}`), 'route ' + route);
 console.log('pages tests OK');

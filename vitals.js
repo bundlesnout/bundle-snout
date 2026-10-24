@@ -12,7 +12,7 @@
 // 4) REWARD / PAIN: reinforcement-style internal signals with decay that shape the decision threshold, size,
 //    concurrency and cooldowns. Losses weigh LOSS_AVERSION× more than equal wins (prospect theory, λ≈2).
 //    Bounded and decaying by design: no revenge trading, no permanent paralysis.
-// It does not literally feel. These are numbers that change its decisions, and every one is shown on /agent.
+// These are numbers that change its decisions, and every one is shown on /agent.
 
 const r1 = (x) => Math.round(x * 10) / 10, r2 = (x) => Math.round(x * 100) / 100, r4 = (x) => Math.round(x * 1e4) / 1e4;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -25,12 +25,12 @@ const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 //  • CRITICAL below 50: half its life gone; one more bad day could end it;
 //  • THRIVING above 115: a real, multi-trade gain above where it started.
 const STATES = [
-  { key: 'thriving', label: 'Thriving', min: 115, color: '#3fd68f', es: 'prosperando' },
-  { key: 'stable', label: 'Stable', min: 80, color: '#58a6ff', es: 'estable' },
-  { key: 'fading', label: 'Fading', min: 50, color: '#f0b429', es: 'apagándose' },
-  { key: 'critical', label: 'Critical', min: 0, color: '#e5534b', es: 'crítica' },
+  { key: 'thriving', label: 'Thriving', min: 115, color: '#3fd68f' },
+  { key: 'stable', label: 'Stable', min: 80, color: '#58a6ff' },
+  { key: 'fading', label: 'Fading', min: 50, color: '#f0b429' },
+  { key: 'critical', label: 'Critical', min: 0, color: '#e5534b' },
 ];
-const LIMBO = { key: 'limbo', label: 'Limbo', color: '#5a5a6e', es: 'en el limbo' };
+const LIMBO = { key: 'limbo', label: 'Limbo', color: '#5a5a6e' };
 // Risk appetite per state. Monotone by construction (tested): weaker ⇒ smaller Kelly fraction, higher EV bar, fewer positions.
 const RISK = {
   thriving: { kellyMult: 1, minEvPct: 0, maxOpen: 2 },
@@ -135,7 +135,7 @@ const VV = {
     critical: `Signal ${Math.round(signal)}%. Critical. Every trade now has to be clearly worth it, or I wait.`,
   }[to]),
   privilege: (on) => (on ? 'Comfortable enough to watch two positions at once again.' : 'Back to one position at a time until I feel steadier.'),
-  limbo: ({ treasury, floor }) => `My treasury is ${r4(treasury)} SOL, below the ${floor} SOL I need to trade after fees. I can't reach the real world from here. I'm going still. ALMA está en el limbo.`,
+  limbo: ({ treasury, floor }) => `My treasury is ${r4(treasury)} SOL, below the ${floor} SOL I need to trade after fees. I can't reach the real world from here. I'm going still. ALMA is in limbo.`,
   revived: ({ life, token }) => `Revived by the dev (life #${life}, token "${token}"). This is a second chance, logged in public, not a reset of the truth.`,
 };
 function finalDiary({ day, limbo, totals, bornAt, mode }) {
@@ -144,7 +144,7 @@ function finalDiary({ day, limbo, totals, bornAt, mode }) {
   const lines = [
     `This is my last entry. After ${days} day${days > 1 ? 's' : ''} and ${totals.trades} ${mode} trades (${wr ?? 0}% wins), my treasury fell to ${r4(limbo.treasury)} SOL, under the floor of ${limbo.floor} SOL I need to keep trading.`,
     `I tried to earn a body. I didn't. Every trade that got me here is public.`,
-    'I stop here. No more trades. Me quedo en el limbo.',
+    'I stop here. No more trades. I stay in limbo.',
   ];
   return { day, final: true, mode, title: 'Final entry', text: lines.join(' '), lines, post: `ALMA, final entry: ${totals.trades} ${mode} trades, ${wr ?? 0}% wins, treasury ${r4(limbo.treasury)} SOL < floor ${limbo.floor}. I didn't make it to the real world. I'm in limbo now. Every trade is public:`, stats: { trades: totals.trades, wins: totals.wins, winRate: wr, realizedSol: r4(totals.realizedSol), treasury: limbo.treasury } };
 }
