@@ -83,7 +83,7 @@ app.get('/scalp', (_, res) => res.sendFile(path.join(__dirname, 'public', 'scalp
 app.get('/api/scalp/status', (_, res) => { res.set('cache-control', 'no-store'); res.json(scalper ? scalper.status() : { disabled: true }); });
 app.get('/api/scalp/trades', (_, res) => { res.set('cache-control', 'no-store'); res.json(scalper ? scalper.trades() : { disabled: true }); });
 app.get('/api/scalp/variant/:key', (req, res) => { const v = scalper?.variant(req.params.key); v ? res.json(v) : res.sendStatus(404); });
-// ---- SpaniardDev AI Trader Agent (/agent): autonomous, public, rule-based; AGENT_MODE=paper (default) | live. Rides the scalper's stream.
+// ---- ALMA, SpaniardDev's AI Trader Agent (/agent, /agent/diary): autonomous, public, learning (mind.js); AGENT_MODE=paper (default) | live. Rides the scalper's stream.
 var agent = null;
 if (process.env.AGENT_BOOT !== '0' && scalper) {
   const { createAgent } = require('./agent'); const { renderEnvStore: envStore } = require('./scalp');
@@ -92,6 +92,9 @@ if (process.env.AGENT_BOOT !== '0' && scalper) {
 }
 app.get('/agent', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent.html')));
 app.get('/api/agent', (_, res) => { res.set('cache-control', 'no-store'); res.json(agent ? agent.status() : { disabled: true }); });
+app.get('/agent/diary', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent-diary.html')));
+app.get('/api/agent/diary', (_, res) => { res.set('cache-control', 'no-store'); res.json(agent ? agent.diary() : { disabled: true }); });
+app.get('/api/agent/backtest', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent-backtest.json')));
 // ---- Fee Rips tracker (/rips): creator fees -> Collector Crypt packs, read on-chain from the public RPC (0 Helius credits)
 let rips = null;
 if (process.env.RIPS_ENABLED !== '0') { rips = require('./rips').createRips(); rips.start(); }

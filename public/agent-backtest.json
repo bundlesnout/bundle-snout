@@ -1,0 +1,284 @@
+{
+ "generatedAt": "2026-10-24T16:38:51.162Z",
+ "data": {
+  "files": [
+   "partial.jsonl"
+  ],
+  "trades": 18174,
+  "coins": 851,
+  "from": "2026-10-24T16:29:08.169Z",
+  "to": "2026-10-24T16:38:43.369Z",
+  "minutes": 9.6
+ },
+ "split": {
+  "inSample": [
+   "2026-10-24T16:29:08.169Z",
+   "2026-10-24T16:33:55.769Z"
+  ],
+  "outOfSample": [
+   "2026-10-24T16:33:55.769Z",
+   "2026-10-24T16:38:43.369Z"
+  ]
+ },
+ "assumptions": {
+  "sizeSol": 0.02,
+  "feesPerSidePct": 1.75,
+  "txFeeSol": 0.0001,
+  "entryLatencyMs": 5000,
+  "grid": {
+   "tp": [
+    10,
+    15,
+    20,
+    30,
+    50
+   ],
+   "sl": [
+    8,
+    12,
+    15,
+    25
+   ],
+   "hold": [
+    3,
+    5,
+    10,
+    15
+   ]
+  },
+  "oneEntryPerCoinPerArm": true
+ },
+ "perArm": [
+  {
+   "arm": "dip",
+   "label": "Dip catcher",
+   "signals": 0,
+   "defaults": {
+    "params": "20/15/15",
+    "inSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    },
+    "outOfSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    }
+   },
+   "chosen": {
+    "params": "20/15/15",
+    "enabled": false,
+    "inSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    },
+    "outOfSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    }
+   },
+   "inSampleCombosPositivePct": 0
+  },
+  {
+   "arm": "momentum",
+   "label": "Crowd rider",
+   "signals": 0,
+   "defaults": {
+    "params": "20/15/15",
+    "inSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    },
+    "outOfSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    }
+   },
+   "chosen": {
+    "params": "20/15/15",
+    "enabled": false,
+    "inSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    },
+    "outOfSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    }
+   },
+   "inSampleCombosPositivePct": 0
+  },
+  {
+   "arm": "breakout",
+   "label": "Breakout",
+   "signals": 0,
+   "defaults": {
+    "params": "20/12/10",
+    "inSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    },
+    "outOfSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    }
+   },
+   "chosen": {
+    "params": "20/12/10",
+    "enabled": false,
+    "inSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    },
+    "outOfSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    }
+   },
+   "inSampleCombosPositivePct": 0
+  },
+  {
+   "arm": "fresh",
+   "label": "Early crowd",
+   "signals": 0,
+   "defaults": {
+    "params": "30/15/15",
+    "inSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    },
+    "outOfSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    }
+   },
+   "chosen": {
+    "params": "30/15/15",
+    "enabled": false,
+    "inSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    },
+    "outOfSample": {
+     "n": 0,
+     "wins": 0,
+     "winRate": null,
+     "netSol": 0,
+     "avgPct": null,
+     "maxDDSol": 0
+    }
+   },
+   "inSampleCombosPositivePct": 0
+  }
+ ],
+ "system": {
+  "note": "real agent code, entries only out-of-sample, 0.1 SOL paper start, scanner gate NOT replayed (all coins pass)",
+  "withInSampleParams": {
+   "seeds": 1,
+   "medianNetSol": 0,
+   "meanNetSol": 0,
+   "minNetSol": 0,
+   "maxNetSol": 0,
+   "profitableSeedsPct": 0,
+   "avgTrades": 0,
+   "avgWinRate": 0,
+   "avgMaxDDSol": 0
+  },
+  "withDefaults": {
+   "seeds": 1,
+   "medianNetSol": -0.0042,
+   "meanNetSol": -0.0042,
+   "minNetSol": -0.0042,
+   "maxNetSol": -0.0042,
+   "profitableSeedsPct": 0,
+   "avgTrades": 5,
+   "avgWinRate": 0,
+   "avgMaxDDSol": 0.0042
+  },
+  "runs": [
+   {
+    "seed": 1,
+    "n": 0,
+    "wins": 0,
+    "winRate": null,
+    "netSol": 0,
+    "avgPct": null,
+    "maxDDSol": 0,
+    "sitOut": 0,
+    "scans": 0,
+    "weights": {},
+    "byArm": {
+     "dip": 0,
+     "momentum": 0,
+     "breakout": 0,
+     "fresh": 0
+    }
+   }
+  ]
+ },
+ "caveats": [
+  "Short sample (one recording session): results are noisy and say little about the future.",
+  "The live scanner rejects most coins; it cannot be replayed offline, so the system replay trades coins the live agent would refuse.",
+  "Fills use the observed curve after a 5 s delay; real fills can be worse (slippage, priority-fee races, failed txs).",
+  "Exit params were picked on the in-sample half only; the out-of-sample numbers are the honest ones."
+ ]
+}

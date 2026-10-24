@@ -24,7 +24,8 @@ assert.ok(!/pok[eé]mon(?!\|)|nintendo|invest|100x|moon/i.test(lv.replace(/\/\\b
 assert.ok(r.includes('href="/live"'), 'rips links to /live');
 for (const route of ["'/live'", "'/rips/live'", "'/api/rips/live'"]) assert.ok(server.includes(`app.get(${route}`), 'route ' + route);
 const ag = pub('agent.html');
-for (const x of ['/api/agent', 'never trades its own coin', 'can and probably will lose money', 'solscan', 'PAPER', 'Trade log', 'Decisions']) assert.ok(ag.toLowerCase().includes(x.toLowerCase()), 'agent.html has ' + x);
+for (const x of ['/api/agent', 'never trades its own coin', 'can lose everything', 'solscan', 'PAPER', 'Trade log', 'Thought stream', 'Body Fund', 'not financial advice', 'a show, not profits', 'Backtest', '/agent/diary', 'one time only']) assert.ok(ag.toLowerCase().includes(x.toLowerCase()), 'agent.html has ' + x);
+const di = pub('agent-diary.html'); for (const x of ['/api/agent/diary', 'Copy for X', 'Not financial advice']) assert.ok(di.includes(x), 'diary has ' + x);
 assert.ok(pub('dev.html').includes('href="/agent"'), 'dev links to /agent');
-for (const route of ["'/agent'", "'/api/agent'"]) assert.ok(server.includes(`app.get(${route}`), 'route ' + route);
+for (const route of ["'/agent'", "'/api/agent'", "'/agent/diary'", "'/api/agent/diary'"]) assert.ok(server.includes(`app.get(${route}`), 'route ' + route);
 console.log('pages tests OK');
