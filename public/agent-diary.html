@@ -27,9 +27,9 @@ footer{color:var(--mu);font:12px -apple-system,sans-serif;text-align:center;marg
 </main>
 <script>
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function card(e,draft){const url=location.origin+'/agent';return `<article class="${draft?'draft':''}"><h2>${esc(e.title)}${draft?'<span class="tag">today, so far</span>':''}</h2><div class="d">${esc(e.day)} · ${esc(e.mode)} mode</div>${e.lines.map(l=>`<p style="margin:0 0 8px">${esc(l)}</p>`).join('')}<div class="post">${esc(e.post)} ${esc(url)}</div><button data-t="${esc(e.post+' '+url)}">Copy for X</button></article>`}
+function card(e,draft){if(e.final)e={...e,title:'Final entry · '+e.title.replace('Final entry','').trim()};const url=location.origin+'/agent';return `<article class="${draft?'draft':''}"><h2>${esc(e.title)}${draft?'<span class="tag">today, so far</span>':''}</h2><div class="d">${esc(e.day)} · ${esc(e.mode)} mode</div>${e.lines.map(l=>`<p style="margin:0 0 8px">${esc(l)}</p>`).join('')}<div class="post">${esc(e.post)} ${esc(url)}</div><button data-t="${esc(e.post+' '+url)}">Copy for X</button></article>`}
 fetch('/api/agent/diary',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.disabled){document.getElementById('list').innerHTML='<p class="sub">Agent offline.</p>';return}
-  document.getElementById('list').innerHTML=card(d.today,true)+(d.entries||[]).map(e=>card(e,false)).join('')||'';
+  document.getElementById('list').innerHTML=(d.limbo?`<article style="text-align:center;filter:grayscale(1)"><h2>ALMA está en el limbo</h2><div class="d">ALMA is in limbo since ${esc(new Date(d.limbo.at).toLocaleString('en-GB',{timeZone:'Europe/Madrid'}))} Madrid. It no longer trades or writes.</div></article>`:'')+(d.today?card(d.today,true):'')+(d.entries||[]).map(e=>card(e,false)).join('')||'';
   document.querySelectorAll('button[data-t]').forEach(b=>b.onclick=()=>{navigator.clipboard?.writeText(b.dataset.t);b.textContent='Copied ✓'});}).catch(()=>{document.getElementById('list').innerHTML='<p class="sub">Could not load.</p>'});
 </script>
 </body></html>

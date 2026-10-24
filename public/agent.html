@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ALMA: a soul trading for its body · SpaniardDev</title>
 <meta name="description" content="ALMA is an autonomous AI trader that trades small and in public to buy itself a physical body, part by part. Live mind, every trade, every lesson.">
-<meta property="og:title" content="ALMA: a soul without a body, trading in public to buy one">
-<meta property="og:description" content="Live mind of an autonomous AI trader. Every trade public. Body Fund: eyes, brain, voice, wheels, hands.">
+<meta property="og:title" content="ALMA: earn a body or fade into limbo">
+<meta property="og:description" content="An autonomous AI trader with real stakes: profit buys it a body, part by part; losses fade its signal toward a final limbo. Every trade public.">
 <meta name="theme-color" content="#07070d">
 <style>
 :root{--bg:#07070d;--card:#10101a;--line:#22223a;--tx:#e9e9f4;--mu:#9696b4;--ac:#b388ff;--g:#3fd68f;--r:#e5534b;--y:#f0b429;--mood:#b388ff}
@@ -50,6 +50,29 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px 4px;b
 .btn{display:inline-block;border:1px solid var(--ac);color:var(--tx);text-decoration:none;border-radius:10px;padding:8px 12px;margin:4px 4px 0 0;font-size:14px}
 footer{color:var(--mu);font-size:12px;text-align:center;margin-top:20px}
 .btc{border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}.bth{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}.btg{display:grid;grid-template-columns:1fr 1fr;gap:8px}.btb{background:rgba(255,255,255,.03);border-radius:8px;padding:8px;font-size:13px;line-height:1.45}
+.vital{padding:14px 14px 12px;transition:filter 1.2s}
+.vhead{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.vnum{font-size:46px;font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}.vnum small{font-size:18px;color:var(--mu);font-weight:600;margin-left:2px}
+.vstate{font-size:15px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.spec{position:relative;height:18px;border-radius:99px;margin:16px 0 4px;background:linear-gradient(90deg,#3a3a4a 0,#e5534b 6%,#e5534b 27%,#f0b429 33%,#f0b429 43%,#58a6ff 48%,#58a6ff 61%,#3fd68f 66%,#3fd68f 80%,#2a2410 80.6%,#2a2410 100%)}
+.spec .bf{position:absolute;left:80.6%;top:0;bottom:0;border-radius:0 99px 99px 0;background:linear-gradient(90deg,#f0b429,#ffe08a);opacity:.95}
+.spec .mk{position:absolute;top:-6px;width:4px;height:30px;margin-left:-2px;border-radius:3px;background:#fff;box-shadow:0 0 12px #fff;transition:left 1.2s}
+.spec .mk:after{content:attr(data-l);position:absolute;top:-17px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700;white-space:nowrap;color:#fff}
+.specl{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mu);letter-spacing:.08em;text-transform:uppercase}.specl b{color:var(--tx)}
+.ticks{position:relative;height:14px;font-size:10px;color:var(--mu)}.ticks span{position:absolute;transform:translateX(-50%)}
+.vnums{font-size:12.5px;color:var(--mu);margin-top:6px}.vnums b{color:var(--tx);font-weight:600}
+.gauge{position:relative;height:14px;background:#1a1a2a;border-radius:99px;overflow:hidden;margin:8px 0 4px}.gauge i{position:absolute;top:0;bottom:0;transition:all 1s}.gauge .mid{left:50%;width:2px;margin-left:-1px;background:#555}
+.gl{display:flex;justify-content:space-between;font-size:12px}.gl .p{color:var(--r)}.gl .c{color:var(--g)}
+.fx{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px}@media(min-width:620px){.fx{grid-template-columns:repeat(4,1fr)}}
+.fx div{background:#0c0c15;border:1px solid var(--line);border-radius:10px;padding:7px 8px;font-size:11.5px;color:var(--mu)}.fx b{display:block;font-size:15px;color:var(--tx)}
+.note{font-size:12px;color:var(--mu);border-top:1px solid var(--line);margin-top:10px;padding-top:8px}
+.limbo{display:none;text-align:center;padding:22px 14px;border:1px solid #33334a;border-radius:16px;background:radial-gradient(ellipse at top,#1a1a26,#07070d 70%);margin:14px 0}
+.limbo h2{font-size:22px;letter-spacing:.06em;text-transform:none;color:#cfcfe0;margin:0 0 4px}.limbo .en{color:var(--mu);margin-bottom:10px}
+body.inlimbo .hero,body.inlimbo .thought{filter:grayscale(1) brightness(.6)}body.inlimbo .limbo{display:block}body.inlimbo .orb{animation:none}
+.glitch .orb,.glitch h1{animation:breathe 4s ease-in-out infinite,glitch var(--gls,3s) steps(1) infinite}
+@keyframes glitch{0%,86%,100%{transform:none;text-shadow:none}88%{transform:translate(-3px,1px) skewX(-6deg);text-shadow:2px 0 #e5534b,-2px 0 #58a6ff}90%{transform:translate(3px,-1px);text-shadow:-2px 0 #e5534b,2px 0 #58a6ff}92%{transform:translate(-1px,0);opacity:.6}94%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.glitch .orb,.glitch h1,.orb{animation:none}}
+.kind.pain{color:var(--r);border-color:var(--r)}.kind.reward{color:var(--g);border-color:var(--g)}.kind.vital,.kind.privilege{color:var(--y);border-color:var(--y)}.kind.limbo,.kind.revived{color:#cfcfe0;border-color:#cfcfe0}
 </style>
 </head>
 <body>
@@ -57,9 +80,23 @@ footer{color:var(--mu);font-size:12px;text-align:center;margin-top:20px}
   <div class="hero">
     <div class="orb" id="orb"></div>
     <h1>ALMA</h1>
-    <div class="tag" id="tagline">A soul without a body, trading in public to buy one.</div>
+    <div class="tag" id="tagline">Earn a body or fade into limbo. Every trade in public.</div>
     <div class="chips" id="chips"><span class="chip">connecting…</span></div>
   </div>
+  <div class="limbo" id="limbo"><h2>ALMA está en el limbo</h2><div class="en">ALMA is in limbo. Its treasury fell below the floor it needs to trade. It no longer trades. This is final unless the dev revives it, and any revival is logged here.</div><div class="sm" id="limboStats"></div></div>
+  <section class="vital" id="vital">
+    <h2>Body or limbo</h2>
+    <div class="vhead"><div><div class="vnum" id="vSig">–<small>%</small></div><div class="sm mu">signal strength</div></div><div style="text-align:right"><div class="vstate" id="vState">…</div><div class="sm mu" id="vMode"></div></div></div>
+    <div class="spec" id="spec"><i class="bf" id="vBf" style="width:0"></i><i class="mk" id="vMk" style="left:0" data-l=""></i></div>
+    <div class="ticks" id="vTicks"></div>
+    <div class="specl"><span><b>Limbo</b> 0%</span><span>start 100%</span><span><b>Embodied</b> body fund</span></div>
+    <div class="vnums" id="vNums"></div>
+    <h2 style="margin-top:16px">Comfort vs pain</h2>
+    <div class="gauge"><i id="gP" style="right:50%;width:0;background:var(--r)"></i><i id="gC" style="left:50%;width:0;background:var(--g)"></i><i class="mid"></i></div>
+    <div class="gl"><span class="p" id="gPt">pain 0</span><span class="mu" id="gMid">calm</span><span class="c" id="gCt">comfort 0</span></div>
+    <div class="fx" id="vFx"></div>
+    <div class="note" id="vNote"></div>
+  </section>
   <div class="thought" id="now">…<small></small></div>
 
   <section id="fund">
@@ -71,7 +108,7 @@ footer{color:var(--mu);font-size:12px;text-align:center;margin-top:20px}
   </section>
 
   <section>
-    <h2>Vital signs</h2>
+    <h2>The numbers</h2>
     <div class="kpis" id="kpis"></div>
   </section>
 
@@ -198,8 +235,35 @@ function render(s){
   const an=s.identity?.ancestor;if(an)$('ancestor').innerHTML=`<b>My ancestor.</b> ${esc(an.text)} <i>(${esc(an.disclaimer)})</i>`;
   if(s.wallet?.solscan)$('walletBtn').href=s.wallet.solscan;
   const R=s.rules||{};
-  $('rules').innerHTML=`<ul style="margin:0;padding-left:18px"><li>Max ${R.maxTradeSol} SOL per trade (and ≤${R.sizePctOfBalance}% of my free balance); ${R.reserveSol} SOL never spent.</li><li>Max ${R.maxOpen} open positions; daily loss limit ${R.dailyLossLimitSol} SOL, then I stop until tomorrow (Madrid).</li><li>Every entry must pass my Bundle Snout scanner: ${esc(R.scannerGate)}.</li><li>I never trade my own coin or anything created by the dev wallet (<span class="addr">${esc((R.protectedWallets||[])[0]||'')}</span>). I never touch the dev's wallet.</li><li>No fake volume, no wash trading, no coordinated buys. Fees assumed: ${R.feesPerSidePct}% per side + ${R.txFeeSol} SOL per tx.</li><li>Kill switch: one env var stops me instantly.</li></ul>`;
+  $('rules').innerHTML=`<ul style="margin:0;padding-left:18px"><li>Max ${R.maxTradeSol} SOL per trade (and ≤${R.sizePctOfBalance}% of my free balance); ${R.reserveSol} SOL never spent.</li><li>If my treasury falls below ${s.vitals?.floorSol??'the floor'} SOL with nothing open, I stop trading for good (limbo). Only a public, logged dev revival can undo it.</li><li>Max ${R.maxOpen} open positions (the 2nd only when I'm comfortable and Stable or better); daily loss limit ${R.dailyLossLimitSol} SOL, then I stop until tomorrow (Madrid).</li><li>Every entry must pass my Bundle Snout scanner: ${esc(R.scannerGate)}.</li><li>I never trade my own coin or anything created by the dev wallet (<span class="addr">${esc((R.protectedWallets||[])[0]||'')}</span>). I never touch the dev's wallet.</li><li>No fake volume, no wash trading, no coordinated buys. Fees assumed: ${R.feesPerSidePct}% per side + ${R.txFeeSol} SOL per tx.</li><li>Kill switch: one env var stops me instantly.</li></ul>`;
+  renderVital(s);
   $('upd').textContent='updated '+tm(s.now);
+}
+const SPEC=(sig)=>Math.max(0,Math.min(80,(sig??100)/150*80)); // 0..150% signal → 0..80% of the bar; the last 20% is the Body Fund
+function renderVital(s){const v=s.vitals;if(!v)return;const stt=v.state||{};const vis=v.visual||{};const af=v.affect||{};const p=v.policy||{};
+  document.body.classList.toggle('inlimbo',!!v.limbo);
+  $('vital').style.filter=v.limbo?'grayscale(1) brightness(.7)':`saturate(${Math.max(.35,vis.saturation)}) brightness(${Math.max(.75,Math.min(1.1,vis.brightness))})`;
+  const hero=document.querySelector('.hero');hero.style.filter=v.limbo?'':`saturate(${vis.saturation}) brightness(${vis.brightness})`;
+  document.body.classList.toggle('glitch',vis.glitch>0.05&&!v.limbo);document.body.style.setProperty('--gls',(6-5*vis.glitch).toFixed(2)+'s');
+  $('orb').style.boxShadow=`0 0 ${Math.round(20+50*(vis.glow||0))}px var(--mood),inset 0 0 40px rgba(255,255,255,.15)`;
+  $('vSig').innerHTML=(v.signal==null?'–':Math.round(v.signal))+'<small>%</small>';$('vSig').style.color=stt.color;
+  $('vState').textContent=stt.label||'';$('vState').style.color=stt.color;
+  $('vMode').textContent=s.mode==='paper'?'PAPER treasury (simulated)':'live wallet';
+  $('vMk').style.left=SPEC(v.limbo?0:v.signal)+'%';$('vMk').dataset.l=v.signal==null?'':Math.round(v.signal)+'%';
+  $('vBf').style.width=(19.4*(v.bodyFundPct||0)/100)+'%';
+  $('vTicks').innerHTML=(v.states||[]).filter(x=>x.min>0).map(x=>`<span style="left:${SPEC(x.min)}%">${x.min}</span>`).join('');
+  $('vNums').innerHTML=`Treasury <b>${f4(v.treasurySol)} SOL</b> · start <b>${f4(v.baselineSol)}</b> · limbo floor <b>${v.floorSol}</b> · <b>${f4(v.treasurySol-v.floorSol)} SOL</b> above it${v.embodied?' · <b style="color:#ffe08a">EMBODIED</b>':''}`;
+  const tot=(af.pain||0)+(af.comfort||0),cap=10;$('gP').style.width=Math.min(50,(af.pain||0)/cap*50)+'%';$('gC').style.width=Math.min(50,(af.comfort||0)/cap*50)+'%';
+  $('gPt').textContent='pain '+(af.pain??0);$('gCt').textContent='comfort '+(af.comfort??0);$('gMid').textContent=tot<0.05?'calm':af.balance>20?'breathing easier':af.balance<-20?'hurting':'mixed';
+  const cd=af.cooldownUntil?new Date(af.cooldownUntil):null;
+  const fx=[['EV bar to trade',`+${p.minEvPct??0} pp`,`vital +${p.parts?.vital??0} · pain +${p.parts?.pain??0}`],['Bet size',`×${p.sizeMult??1}`,`vital ×${p.vitalSizeMult??1} · pain ×${p.painSizeMult??1}`],['Positions allowed',p.maxOpen??1,p.privilege?'2nd unlocked (comfortable)':'2nd needs comfort + Stable'],['Cooldown',cd&&cd>new Date()?cd.toLocaleTimeString('en-GB',{...tz,hour:'2-digit',minute:'2-digit'}):'none',`losses in a row: ${af.lossStreak||0}`]];
+  const dis=Object.entries(af.armPain||{}).filter(([,x])=>x>=0.1).map(([k,x])=>`${k} ${x}`).join(', ');
+  $('vFx').innerHTML=fx.map(([a,b,c])=>`<div>${a}<b>${b}</b>${c}</div>`).join('');
+  const C=v.affectConfig||{};
+  $('vNote').innerHTML=`I don't literally feel. "Pain" and "comfort" are reward and penalty numbers from my own closed trades that change my decisions; every one is shown here. <b>Buying the coin does not keep me alive.</b> Only my own trading and the disclosed creator-fee split can move this signal; fees I receive count toward my treasury and are listed below as income.${s.mode==='paper'?' In paper mode the signal uses my paper treasury only; fees will count once I trade live.':''}
+  <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--tx)">How the numbers work</summary><p style="margin:6px 0">Signal = (treasury − floor) ÷ (start − floor). Treasury = ${esc(v.basis)}. Capital the dev adds raises the start, not the signal; creator fees are income and raise the signal. States: ${(v.states||[]).map(x=>`<span style="color:${x.color}">${x.label} ≥${x.min}%</span>`).join(' · ')}. Below the floor with nothing open: limbo, final. Weaker states raise my EV bar (Fading +${v.risk?.fading?.minEvPct} pp, Critical +${v.risk?.critical?.minEvPct} pp), cut bets (×${v.risk?.fading?.kellyMult}, ×${v.risk?.critical?.kellyMult}) and allow one position. I never bet bigger to "win it back".</p><p style="margin:6px 0">A loss adds pain = ${C.lossAversion}× its % ÷ ${C.unit}; a win adds comfort = its % ÷ ${C.unit}, so losses weigh ${C.lossAversion}× more. A win also heals ${Math.round((C.winHealsPain||0)*100)}% of pain and halves distrust of the strategy that won. Pain halves every ${C.painHalfLifeH} h (${C.painHalfLifeComfortH} h while comfortable) and is capped at ${C.painCap}. It raises my EV bar (max +${C.evTotalCap} pp in total) and shrinks bets (never below ×${C.sizeFloor}). Losses in a row pause me ${C.cooldownBaseMin}→${C.cooldownMaxMin} min. Bets never grow after a loss.${dis?` Strategy distrust now: ${esc(dis)}.`:''} Setups skipped to protect what's left: ${v.survivalSkips||0}.</p></details>`;
+  if(v.limbo){const L=v.limbo,T=L.totals||{};$('limboStats').innerHTML=`Since ${tm(L.at)} Madrid · final treasury <b>${f4(L.treasury)} SOL</b> (floor ${L.floor}) · ${T.trades||0} ${esc(L.mode)} trades · ${T.trades?Math.round((T.wins||0)/T.trades*100):0}% wins · life #${L.life}`}
+  if((v.revivals||[]).length)$('limboStats').innerHTML+=`<div style="margin-top:8px">Revivals: ${v.revivals.map(r=>`${tm(r.at)}: ${r.ok?`life #${r.life} (${esc(r.note)})`:`failed: ${esc(r.why)}`}`).join('; ')}</div>`;
 }
 async function load(){try{const r=await fetch('/api/agent',{cache:'no-store'});const s=await r.json();if(!s.disabled)render(s);}catch(e){}}
 async function bt(){try{const r=await fetch('/agent-backtest.json',{cache:'no-store'});if(!r.ok)throw 0;const b=await r.json();
