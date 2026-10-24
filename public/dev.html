@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SpaniardDev: builder, not a bundler</title>
+<meta name="description" content="Working tools, launched on pump.fun: Bundle Snout scanner, Bond Radar and Fees Rip Packs. Read-only, on-chain, free.">
+<link rel="canonical" href="https://bundle-snout.onrender.com/dev">
+<meta property="og:type" content="website"><meta property="og:site_name" content="SpaniardDev"><meta property="og:url" content="https://bundle-snout.onrender.com/dev">
+<meta property="og:title" content="SpaniardDev: builder, not a bundler"><meta property="og:description" content="Working tools, launched on pump.fun.">
+<meta property="og:image" content="https://bundle-snout.onrender.com/spaniarddev-header.jpg"><meta property="og:image:width" content="1500"><meta property="og:image:height" content="500">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="SpaniardDev: builder, not a bundler"><meta name="twitter:description" content="Working tools, launched on pump.fun."><meta name="twitter:image" content="https://bundle-snout.onrender.com/spaniarddev-header.jpg">
+<link rel="icon" type="image/png" href="/spaniarddev-favicon.png"><meta name="theme-color" content="#070a16">
+<style>
+:root{color-scheme:dark;--bg:#070a16;--card:#101629;--line:#1f2a48;--red:#dc2832;--gold:#f0be3c;--cyan:#5fe3ff;--mut:#9aa5c4}
+[hidden]{display:none!important}*{box-sizing:border-box}body{margin:0;font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#eef1fb}
+main{max-width:920px;margin:0 auto;padding:14px 14px 40px}a{color:var(--cyan)}.mut{color:var(--mut)}
+.hdr{display:block;width:100%;height:auto;aspect-ratio:3/1;border-radius:16px;border:1px solid var(--line)}
+.id{display:flex;gap:14px;align-items:center;margin:-36px 0 0 16px;position:relative}.id img{width:88px;height:88px;border-radius:50%;border:4px solid var(--bg)}
+.id h1{margin:30px 0 0;font-size:26px}.bar{height:5px;width:160px;background:linear-gradient(90deg,var(--red) 50%,var(--gold) 50%);border-radius:3px;margin:16px 0}
+.cards{display:grid;gap:12px}@media(min-width:700px){.cards{grid-template-columns:repeat(3,1fr)}}
+.c{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;text-decoration:none;color:#eef1fb}.c:hover{border-color:var(--cyan)}
+.c b{font-size:18px}.c .tag{font-size:12px;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:.5px}.c p{color:var(--mut);margin:6px 0 10px;flex:1}.c span{color:var(--cyan);font-weight:700}
+ul{padding-left:18px;color:#d5dbef}footer{margin-top:30px;font-size:13px;color:var(--mut)}
+</style></head><body><main>
+<img class="hdr" src="/spaniarddev-header.jpg" alt="SpaniardDev: builder, not a bundler. Working tools, launched on pump.fun." width="1500" height="500">
+<div class="id"><img src="/spaniarddev-avatar.jpg" alt="" width="88" height="88"><h1>SpaniardDev</h1></div>
+<p style="font-size:17px;margin:14px 0 0">Builder, not a bundler. Working tools, launched on pump.fun.</p>
+<p class="mut">Anonymous dev. Every project here is live, free to use, read-only and built on public on-chain data. <a id="x" href="https://x.com/ZEtxeandia30374" target="_blank" rel="noopener">Follow on X</a></p>
+<div class="bar"></div>
+<div class="cards">
+  <a class="c" href="/"><span class="tag">Scanner</span><b>Bundle Snout</b><p>Paste a pump.fun mint and see bundles, dev sells, holder concentration and curve progress in seconds. Never touches funds.</p><span>Open scanner →</span></a>
+  <a class="c" href="/radar"><span class="tag">Radar</span><b>Bond Radar</b><p>Coins closing in on the bonding curve, with a public history of every pick and why others were skipped.</p><span>Open radar →</span></a>
+  <a class="c" href="/rips"><span class="tag">New coin</span><b>Fees Rip Packs</b><p>Creator fees open trading card packs live, every rip with its on-chain tx. The dev keeps the cards.</p><span>Open tracker →</span></a>
+</div>
+<h2 style="font-size:18px;margin-top:28px">House rules</h2>
+<ul><li>No bundles, no fake volume, no paid shills.</li><li>No promises to holders. Nothing here is financial advice.</li><li>Everything that can be checked on-chain links to the transaction.</li></ul>
+<footer>Not affiliated with pump.fun. Memecoins are extremely risky and can go to zero.</footer>
+</main><script>fetch('/api/rips/status').then(r=>r.json()).then(s=>{if(s.coin?.x)document.getElementById('x').href=s.coin.x}).catch(()=>{});</script></body></html>

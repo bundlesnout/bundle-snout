@@ -87,6 +87,11 @@ app.get('/api/scalp/variant/:key', (req, res) => { const v = scalper?.variant(re
 let rips = null;
 if (process.env.RIPS_ENABLED !== '0') { rips = require('./rips').createRips(); rips.start(); }
 app.get('/rips', (_, res) => res.sendFile(path.join(__dirname, 'public', 'rips.html')));
+// Coin logo chosen by env RIPS_LOGO=a (mascot, default) | b (pack burst); same URL so pages, favicon and previews follow the choice.
+const ripsLogo = () => ((process.env.RIPS_LOGO || 'a').trim().toLowerCase() === 'b' ? 'b' : 'a');
+app.get('/rips-logo.jpg', (_, res) => { res.set('cache-control', 'public, max-age=300'); res.sendFile(path.join(__dirname, 'public', `rips-logo-${ripsLogo()}.jpg`)); });
+app.get('/rips-favicon.png', (_, res) => { res.set('cache-control', 'public, max-age=300'); res.sendFile(path.join(__dirname, 'public', `rips-favicon-${ripsLogo()}.png`)); });
+app.get('/dev', (_, res) => res.sendFile(path.join(__dirname, 'public', 'dev.html')));
 app.get('/api/rips/status', (_, res) => { res.set('cache-control', 'no-store'); res.json(rips ? rips.status() : { disabled: true }); });
 for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} process.exit(0); });
 app.get('/api/radar/status', (_, res) => {

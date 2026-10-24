@@ -1,57 +1,105 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fees Rip Packs: live tracker</title>
-<meta name="description" content="Creator fees open trading card packs live, every rip with its on-chain tx. The dev keeps the cards. Not financial advice.">
-<meta property="og:title" content="Fees Rip Packs: live tracker"><meta property="og:description" content="Creator fees open card packs live. The dev keeps the cards.">
-<meta property="og:image" content="/rips-banner.jpg"><meta name="twitter:card" content="summary_large_image"><link rel="icon" href="/rips-logo.png">
+<title>Fees Rip Packs ($DEVRIPS): creator fees open card packs live</title>
+<meta name="description" content="Every trade's creator fee goes into trading card packs, opened in public with the on-chain tx. The dev keeps the cards. No giveaways, no promises. Not financial advice.">
+<link rel="canonical" href="https://bundle-snout.onrender.com/rips">
+<meta property="og:type" content="website"><meta property="og:site_name" content="SpaniardDev">
+<meta property="og:url" content="https://bundle-snout.onrender.com/rips">
+<meta property="og:title" content="Fees Rip Packs ($DEVRIPS)">
+<meta property="og:description" content="Creator fees open card packs live, every rip with its on-chain tx. The dev keeps the cards.">
+<meta property="og:image" content="https://bundle-snout.onrender.com/rips-banner-v2.jpg"><meta property="og:image:width" content="1500"><meta property="og:image:height" content="500">
+<meta property="og:image:alt" content="FEES RIP PACKS: a glowing card pack torn open">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Fees Rip Packs ($DEVRIPS)">
+<meta name="twitter:description" content="Creator fees open card packs live. Every rip on-chain. The dev keeps the cards.">
+<meta name="twitter:image" content="https://bundle-snout.onrender.com/rips-banner-v2.jpg">
+<link rel="icon" type="image/png" href="/rips-favicon.png"><link rel="apple-touch-icon" href="/rips-logo.jpg"><meta name="theme-color" content="#140c34">
 <style>
-:root{color-scheme:dark;--bg:#0d0a24;--card:#1a1440;--line:#2f2766;--gold:#ffd64a;--cyan:#82e6ff;--pink:#ff6fd8;--mut:#a8a3c9}
-*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(1200px 600px at 80% -10%,#3a1f7a 0,transparent 60%),var(--bg);color:#eeeaff}
-main{max-width:920px;margin:0 auto;padding:18px 14px 40px}a{color:var(--cyan)}.mut{color:var(--mut)}code{font-size:12px;word-break:break-all}
-header{display:flex;gap:14px;align-items:center}header img{width:64px;height:64px;border-radius:16px}h1{margin:0;font-size:26px;letter-spacing:.5px}h1 span{color:var(--gold)}
-h2{font-size:18px;margin:26px 0 8px}.statement{margin:14px 0;padding:12px 14px;border-radius:12px;background:linear-gradient(90deg,#3a2a00,#2a1650);border:1px solid #6b5212;font-weight:600}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}@media(min-width:640px){.grid{grid-template-columns:repeat(4,1fr)}}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}.stat b{display:block;font-size:22px;color:var(--gold)}.stat small{color:var(--mut)}
-.soon{text-align:center;padding:28px 14px;background:var(--card);border:1px dashed var(--pink);border-radius:14px;font-size:18px}
-.pulls{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}@media(min-width:640px){.pulls{grid-template-columns:repeat(3,1fr)}}
-.pull{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
-.pull img{width:100%;aspect-ratio:3/4;object-fit:contain;background:#0a0820}.pull .b{padding:8px 10px;font-size:13px}.pull .n{font-weight:600;font-size:14px}
+:root{color-scheme:dark;--bg:#0d0a24;--card:#1a1440;--line:#2f2766;--gold:#ffd64a;--cyan:#82e6ff;--pink:#ff6fd8;--mut:#a8a3c9;--ok:#7dffa8;--bad:#ff8f9f}
+[hidden]{display:none!important}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:radial-gradient(1200px 600px at 80% -10%,#3a1f7a 0,transparent 60%),var(--bg);color:#eeeaff}
+main{max-width:960px;margin:0 auto;padding:0 14px 40px}a{color:var(--cyan)}.mut{color:var(--mut)}code{font-size:12px;word-break:break-all}
+nav{display:flex;align-items:center;gap:10px;padding:10px 0;font-size:14px}nav img{width:32px;height:32px;border-radius:50%}nav b{flex:1}nav a{text-decoration:none}
+.hero{border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#120b30}.hero img.bn{display:block;width:100%;height:auto;aspect-ratio:3/1}
+.hero .in{display:flex;gap:16px;align-items:center;padding:16px}.hero .lg{width:84px;height:84px;border-radius:50%;border:3px solid var(--gold);flex:none}
+h1{margin:0;font-size:28px;line-height:1.1;letter-spacing:.3px}h1 span{color:var(--gold)}.pill{display:inline-block;background:var(--pink);color:#25051f;border-radius:999px;padding:2px 10px;font-size:13px;font-weight:800;vertical-align:middle}
+.cta{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 16px}.btn{display:inline-block;background:var(--gold);color:#1a1000;border-radius:10px;padding:9px 14px;font-weight:800;text-decoration:none;border:0;cursor:pointer;font-size:14px}.btn.o{background:transparent;color:var(--gold);border:1px solid var(--gold)}.btn[aria-disabled=true]{opacity:.45;pointer-events:none}
+h2{font-size:20px;margin:30px 0 10px}.statement{margin:14px 0;padding:12px 14px;border-radius:12px;background:linear-gradient(90deg,#3a2a00,#2a1650);border:1px solid #6b5212;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}@media(min-width:680px){.grid{grid-template-columns:repeat(4,1fr)}}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}.stat b{display:block;font-size:21px;color:var(--gold)}.stat small{color:var(--mut)}
+.soon{text-align:center;padding:22px 14px;background:var(--card);border:1px dashed var(--pink);border-radius:14px;font-size:17px}
+.steps{display:grid;gap:10px}@media(min-width:680px){.steps{grid-template-columns:repeat(3,1fr)}}.step{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}.step .n{display:inline-flex;width:30px;height:30px;border-radius:50%;background:var(--gold);color:#1a1000;font-weight:900;align-items:center;justify-content:center;margin-bottom:6px}.step b{display:block;font-size:16px;margin-bottom:4px}
+.bar{height:22px;border-radius:999px;background:#0a0820;border:1px solid var(--line);overflow:hidden}.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--pink),var(--gold));transition:width .6s}
+.pulls{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}@media(min-width:680px){.pulls{grid-template-columns:repeat(3,1fr)}}
+.pull{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}.pull img{width:100%;aspect-ratio:3/4;object-fit:contain;background:#0a0820}.pull .b{padding:8px 10px;font-size:13px}.pull .n{font-weight:700;font-size:14px}
+.empty{grid-column:1/-1;text-align:center;padding:26px 14px;border:1px dashed var(--line);border-radius:14px;color:var(--mut)}.empty img{width:72px;height:72px;border-radius:50%;opacity:.8;display:block;margin:0 auto 8px}
 .r-Epic{color:#ff6fd8}.r-Rare{color:#ffd64a}.r-Uncommon{color:#82e6ff}.r-Common{color:#c9c5e8}
 table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:6px;border-bottom:1px solid var(--line)}th{color:var(--mut);font-weight:600}.wrap{overflow-x:auto}
-.ca{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:10px}
-button{background:var(--gold);color:#1a1000;border:0;border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer}
-footer{margin-top:30px;font-size:12px;color:var(--mut)}
+.ca{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:12px}
+details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:8px}summary{cursor:pointer;font-weight:700}details p{margin:8px 0 2px;color:#d9d5f2}
+footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}footer .tools{display:grid;gap:8px;margin:10px 0}@media(min-width:680px){footer .tools{grid-template-columns:repeat(3,1fr)}}footer .tools a{display:block;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;text-decoration:none;color:#eeeaff}footer .tools small{display:block;color:var(--mut)}
 </style></head><body><main>
-<header><img src="/rips-logo.png" alt=""><div><h1><span>FEES</span> RIP PACKS <small id="tk" style="font-size:14px;color:var(--pink)"></small></h1><div class="mut">Creator fees open trading card packs, live and on-chain.</div></div></header>
-<div class="statement">Creator fees open packs live. The dev keeps the cards. Not financial advice.</div>
-<div id="soon" class="soon" hidden>Launching soon. The coin address and dev wallet appear here the moment the coin is live.</div>
-<div id="live" hidden>
-  <div class="ca"><b>CA</b> <code id="ca"></code> <button id="cp">Copy</button> <a id="pump" target="_blank" rel="noopener">pump.fun</a> <a id="dex" target="_blank" rel="noopener" hidden>chart</a> <a id="xl" target="_blank" rel="noopener" hidden>X</a></div>
-  <h2>This coin's creator fees</h2>
+<nav><img src="/spaniarddev-avatar.jpg" alt="" width="32" height="32"><b>SpaniardDev</b><a href="#how">How</a><a href="#live">Live</a><a href="#faq">FAQ</a></nav>
+<section class="hero">
+  <img class="bn" src="/rips-banner-v2.jpg" alt="FEES RIP PACKS: creator fees open card packs live. The dev keeps the cards." width="1500" height="500" fetchpriority="high">
+  <div class="in"><img class="lg" src="/rips-logo.jpg" alt="Fees Rip Packs logo" width="84" height="84">
+    <div><h1><span>FEES</span> RIP PACKS <span class="pill" id="tk">$DEVRIPS</span></h1><div class="mut">Every trade's creator fee goes into trading card packs, opened in public with the on-chain tx.</div></div></div>
+  <div class="cta"><a class="btn" id="pumpBtn" aria-disabled="true" target="_blank" rel="noopener">Coming soon on pump.fun</a><a class="btn o" id="xBtn" href="https://x.com/ZEtxeandia30374" target="_blank" rel="noopener">Follow on X</a><a class="btn o" href="#live">Live tracker</a></div>
+</section>
+<div class="statement">Creator fees open packs live. The dev keeps the cards. No giveaways, no prizes for holders. Not financial advice.</div>
+<div id="soon" class="soon" hidden>Launching soon. The coin address and dev wallet appear here the moment the coin is live, and nowhere else first.</div>
+<div id="caBox" class="ca" hidden><b>CA</b> <code id="ca"></code> <button class="btn" id="cp" style="padding:5px 10px">Copy</button> <a id="pump" target="_blank" rel="noopener">pump.fun</a> <a id="dex" target="_blank" rel="noopener" hidden>chart</a></div>
+
+<h2>Next pack</h2>
+<div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="barW"><i id="bar"></i></div>
+<p class="mut" id="barTxt">Starts at launch: the cheapest pack needs about $25 of this coin's creator fees.</p>
+
+<h2 id="how">How it works</h2>
+<div class="steps">
+  <div class="step"><span class="n">1</span><b>Every trade pays a fee</b>pump.fun sends 0.30% of each trade to the coin's creator. That is pump.fun's rule, not a tax we added.</div>
+  <div class="step"><span class="n">2</span><b>Fees buy card packs</b>The dev claims the fees and opens Collector Crypt card packs inside pump.fun, from the same wallet that launched the coin.</div>
+  <div class="step"><span class="n">3</span><b>Every rip goes public</b>Each pull is posted on X and shown here with the pack tx and the card tx, read straight from the chain. Good pulls and bad pulls.</div>
+</div>
+
+<section id="live">
+<h2>Live numbers</h2>
+<div id="liveOff" class="mut">Numbers start counting the moment the coin launches.</div>
+<div id="liveOn" hidden>
   <div class="grid" id="fees"></div>
   <p class="mut" id="feeMethod"></p>
-  <h2>Packs vs fees</h2>
+  <h2 style="font-size:17px">Packs vs fees</h2>
   <div class="grid" id="pk"></div>
   <p id="check" class="mut"></p>
-  <p class="mut" id="feeNote"></p>
-  <h2>Pulls</h2>
-  <div class="pulls" id="pulls"></div>
+</div>
+<h2>Pulls</h2>
+<div class="pulls" id="pulls"><div class="empty"><img src="/rips-logo.jpg" alt="" width="72" height="72" loading="lazy">No packs ripped yet. The first one opens when this coin's fees cover the cheapest pack.</div></div>
+<div id="walBox" hidden>
   <h2>Dev wallet: all coins</h2>
-  <p class="mut">pump.fun keeps one creator vault per wallet, shared by every coin this wallet created. These numbers include the dev's other coins and are shown only for transparency. The vault also keeps a small rent reserve (about 0.00065 SOL) that cannot be claimed, so it can read slightly below the fees earned.</p>
+  <p class="mut">pump.fun keeps one creator vault per wallet, shared by every coin this wallet created. These numbers include the dev's other coins and are shown only for transparency. The vault also keeps a small rent reserve (about 0.00065 SOL) that cannot be claimed.</p>
   <div class="grid" id="wal"></div>
   <h3 style="font-size:15px;margin:14px 0 6px">Fee claims since this coin launched (all coins from this dev wallet)</h3><div class="wrap"><table id="claims"></table></div>
 </div>
-<h2>How it works</h2>
-<ol class="mut">
-<li>Every trade of the coin on pump.fun pays a 0.30% creator fee to the dev's creator vault (pump.fun rules, not ours). The vault is shared with the dev's other coins, so this page adds up this coin's fee from every single trade on-chain instead.</li>
-<li>The dev claims the fees and uses them to open Collector Crypt card packs inside pump.fun. "Packs paid from fees" should never be more than this coin's fees. Packs the dev pays for out of pocket are labelled "paid by dev".</li>
-<li>Each rip is posted on X with its transaction, and this page reads it straight from the chain: pack, card and proof.</li>
-<li>The dev keeps the cards. Holders get no cards, prizes, draws or share of anything. It is a public pack-rip log, nothing more.</li>
-</ol>
+</section>
+
 <h2>Pack shelf: volume needed per pack</h2>
 <p class="mut">At a 0.30% creator fee, one pack needs this much trading volume. Prices, odds and expected values are Collector Crypt's own, read live.</p>
-<div class="wrap"><table id="shelf"></table></div>
-<footer>Data: public Solana RPC, <a href="https://gacha.collectorcrypt.com" target="_blank" rel="noopener">Collector Crypt gacha API</a>, DexScreener, CoinGecko. Not affiliated with pump.fun or Collector Crypt. Memecoins are extremely risky and can go to zero. <span id="upd"></span> · <a href="/api/rips/status">JSON</a> · <a href="/radar">Bond Radar</a></footer>
+<div class="wrap"><table id="shelf"><tr><td class="mut">Loading…</td></tr></table></div>
+
+<h2 id="faq">FAQ</h2>
+<details><summary>Is this a giveaway?</summary><p>No. The dev keeps every card. Holders get no cards, prizes, draws, airdrops or share of anything. It is a public pack-rip log paid for by creator fees.</p></details>
+<details><summary>Where do the fees go?</summary><p>pump.fun pays 0.30% of every trade (bonding curve) to the creator's vault; after graduation PumpSwap pays the creator fee on its own tier table. The dev claims it and spends it on Collector Crypt packs. "Packs paid from fees" should never be more than this coin's fees; packs the dev pays out of pocket are labelled "paid by dev, not fees".</p></details>
+<details><summary>Why should I trust the numbers?</summary><p>You don't have to. This page reads everything from the chain: this coin's fee comes from the creator fee recorded in every single trade, packs come from the dev wallet's own purchase transactions, cards from their on-chain records. Every row links to Solscan so you can check it yourself. The raw data is at <a href="/api/rips/status">/api/rips/status</a>.</p></details>
+<details><summary>Is there a bundle or a team allocation?</summary><p>No. One small dev buy from the creator wallet, no other wallets, no presale, no paid promoters, Mayhem mode off.</p></details>
+<details><summary>Does the dev sell the cards?</summary><p>The plan is to keep them. Collector Crypt allows selling a card back within 72 hours; if that ever happens, the card is marked "sold back" here.</p></details>
+<details><summary>Is this investment advice?</summary><p>No. Memecoins are extremely risky and can go to zero. Buying the coin gives you nothing except the coin.</p></details>
+
+<footer>
+  <b style="color:#eeeaff">More from SpaniardDev</b> · builder, not a bundler. <a href="/dev">All projects</a>
+  <div class="tools">
+    <a href="/">Bundle Snout scanner<small>Paste a pump.fun mint: bundles, dev sells, holder concentration and curve progress. Read-only.</small></a>
+    <a href="/radar">Bond Radar<small>Coins closing in on the bonding curve, with a public pick history.</small></a>
+    <a href="/rips">Fees Rip Packs<small>This page: creator fees open card packs live.</small></a>
+  </div>
+  Data: public Solana RPC, <a href="https://gacha.collectorcrypt.com" target="_blank" rel="noopener">Collector Crypt gacha API</a>, DexScreener, CoinGecko. Not affiliated with pump.fun or Collector Crypt. <span id="upd"></span> · <a href="/api/rips/status">JSON</a>
+</footer>
 </main><script>
 const $=(i)=>document.getElementById(i),esc=(s)=>String(s??'').replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sx=(s)=>`https://solscan.io/tx/${encodeURIComponent(s)}`,sa=(a)=>`https://solscan.io/account/${encodeURIComponent(a)}`;
@@ -60,26 +108,27 @@ const sol=(x)=>Number(x||0).toFixed(4)+' SOL',usd=(x)=>x==null?'—':'$'+Number(
 const t=(iso)=>iso?new Date(iso).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'}):'—';
 async function load(){
   const s=await fetch('/api/rips/status',{cache:'no-store'}).then(r=>r.json());
-  if(s.coin?.ticker){$('tk').textContent='$'+s.coin.ticker;document.title='$'+s.coin.ticker+' · Fees Rip Packs'}
+  if(s.coin?.ticker){$('tk').textContent='$'+s.coin.ticker}
+  if(s.coin?.x)$('xBtn').href=s.coin.x;
   $('upd').textContent='Updated '+t(s.meta?.lastRefreshAt)+'.';
   $('shelf').innerHTML='<tr><th>Pack</th><th>Price</th><th>Volume needed</th><th>Instant buyback</th><th>Stated EV</th></tr>'+(s.shelf||[]).map(m=>`<tr><td>${esc(m.name)}</td><td>${usd(m.priceUsd)}</td><td>${usd(m.volumeNeededUsd)}</td><td>${m.instantBuybackPct}%</td><td>${usd(m.evUsd)}</td></tr>`).join('');
-  if(s.state!=='live'){$('soon').hidden=false;$('live').hidden=true;return}
-  $('soon').hidden=true;$('live').hidden=false;
-  $('ca').textContent=s.coin.ca;$('pump').href=s.coin.pumpUrl;
+  const np=s.nextPack;
+  if(np){$('bar').style.width=(s.state==='live'?np.pct:0)+'%';$('barW').setAttribute('aria-valuenow',s.state==='live'?np.pct:0);
+    $('barTxt').textContent=s.state==='live'?`${usd(np.haveUsd)} of ${usd(np.priceUsd)} for the next ${np.name} (${np.pct}%). About ${usd(np.volumeLeftUsd)} more trading volume to go.${np.priced?'':' (waiting for the SOL price)'}`:`Starts at launch: the cheapest pack (${np.name}, ${usd(np.priceUsd)}) needs about ${usd(Math.round(np.priceUsd/0.003))} of trading volume.`}
+  if(s.state!=='live'){$('soon').hidden=false;return}
+  $('soon').hidden=true;$('caBox').hidden=false;$('liveOff').hidden=true;$('liveOn').hidden=false;$('walBox').hidden=false;
+  $('ca').textContent=s.coin.ca;$('pump').href=s.coin.pumpUrl;const pb=$('pumpBtn');pb.href=s.coin.pumpUrl;pb.textContent='Open on pump.fun';pb.removeAttribute('aria-disabled');
   if(s.coin.market?.url){$('dex').href=s.coin.market.url;$('dex').hidden=false}
-  if(s.coin.x){$('xl').href=s.coin.x;$('xl').hidden=false}
-  const f=s.fees,c=f.thisCoin,w=f.wallet,p=s.packs,cheapest=(s.shelf||[])[0];
+  const f=s.fees,c=f.thisCoin,w=f.wallet,p=s.packs;
   const prog=c.complete?'all trades read':`reading trades: ${c.txPending} tx left`;
   $('fees').innerHTML=st(sol(c.earnedSol),'earned by this coin',usd(c.earnedUsd)+' at today\'s SOL price')+st(c.tradesCounted,'trades counted',prog)+st(sol(c.curveSol),'bonding curve',sol(c.pumpswapSol)+' on PumpSwap')+st(s.coin.market?.vol24hUsd!=null?usd(s.coin.market.vol24hUsd):'—','24h volume',s.coin.market?.mcapUsd?'mcap '+usd(s.coin.market.mcapUsd):'');
-  $('feeMethod').textContent='How: the creator fee recorded in every trade of this coin (pump.fun and PumpSwap trade events), read one transaction at a time from the public Solana RPC. Exact, not an estimate.'+(s.coin.createdAt?' Coin created '+t(s.coin.createdAt)+'.':'');
-  const left=c.earnedUsd!=null?c.earnedUsd-p.paidFromFeesUsd:null,toNext=cheapest&&left!=null?Math.max(0,cheapest.priceUsd-left):null;
+  $('feeMethod').innerHTML='How: the creator fee recorded in every trade of this coin (pump.fun and PumpSwap trade events), read one transaction at a time from the public Solana RPC. Exact, not an estimate.'+(s.coin.createdAt?` Coin created ${esc(t(s.coin.createdAt))} (<a href="${sx(s.coin.createdSig)}" target="_blank" rel="noopener">tx</a>).`:'');
   $('pk').innerHTML=st(usd(p.paidFromFeesUsd),'packs paid from fees')+st(usd(c.earnedUsd),'this coin\'s fees')+st(usd(p.paidByDevUsd),'packs paid by dev','not fees')+st(usd(p.insuredValueUsd),'insured value pulled',p.opened+' packs · '+p.list.filter(x=>x.soldBack&&x.verified).length+' sold back');
-  $('check').innerHTML=p.check.ok==null?'':p.check.ok?'<b style="color:#7dffa8">Check passes:</b> packs paid from fees ≤ this coin\'s fees.':'<b style="color:#ff8f9f">Check fails:</b> packs paid from fees are higher than this coin\'s fees so far'+(c.complete?'.':' (still reading trades).');
-  $('feeNote').textContent=toNext!=null?`Next ${cheapest.name} ($${cheapest.priceUsd}) needs about ${usd(toNext)} more in fees, roughly ${usd(toNext/(f.creatorFeePct/100))} of trading volume.`:'';
-  $('wal').innerHTML=st(sol(w.unclaimedSol),'waiting in vault',`<a href="${sa(s.coin.creatorVaults.curve)}" target="_blank" rel="noopener">curve vault</a> · <a href="${sa(s.coin.creatorVaults.amm)}" target="_blank" rel="noopener">PumpSwap vault</a>`)+st(sol(w.claimedSinceLaunchSol),'claimed since launch',w.claims.length+' claim tx');
-  $('pulls').innerHTML=p.list.length?p.list.map(x=>`<div class="pull">${x.card?.image?`<img loading="lazy" src="${esc(x.card.image)}" alt="${esc(x.card?.name)}">`:''}<div class="b"><div class="n">${esc(x.card?.name||'Card pending')}</div>
-    <div><span class="r-${esc(x.rarity)}">${esc(x.rarity||'—')}</span> · insured ${usd(x.insuredValueUsd)} · pack ${usd(x.priceUsd)}</div><div class="mut">${t(x.boughtAt)}${x.soldBack?' · sold back':''}${x.verified?(x.paidBy==='dev'?' · <b style="color:#82e6ff">paid by dev, not fees</b>':' · paid from fees'):' · <b style="color:#ff8f9f">not from the dev wallet, not counted</b>'}</div>
-    <div>${x.purchaseSig?`<a href="${sx(x.purchaseSig)}" target="_blank" rel="noopener">pack tx</a>`:''}${x.sendSig&&x.sendSig!=='turbomode'?` · <a href="${sx(x.sendSig)}" target="_blank" rel="noopener">card tx</a>`:''}${x.card?.link?` · <a href="${esc(x.card.link)}" target="_blank" rel="noopener">card</a>`:''}</div></div></div>`).join(''):'<p class="mut">No packs ripped yet. The first one opens when the fees cover the cheapest pack.</p>';
+  $('check').innerHTML=p.check.ok==null?'':p.check.ok?'<b style="color:var(--ok)">Check passes:</b> packs paid from fees ≤ this coin\'s fees.':'<b style="color:var(--bad)">Check fails:</b> packs paid from fees are higher than this coin\'s fees so far'+(c.complete?'.':' (still reading trades).');
+  $('wal').innerHTML=st(sol(w.unclaimedSol),'waiting in vault',`<a href="${sa(s.coin.creatorVaults.curve)}" target="_blank" rel="noopener">curve vault</a> · <a href="${sa(s.coin.creatorVaults.amm)}" target="_blank" rel="noopener">PumpSwap vault</a>`)+st(sol(w.claimedSinceLaunchSol),'claimed since launch',w.claims.length+' claim tx')+st(`<a href="${sa(s.coin.devWallet)}" target="_blank" rel="noopener" style="font-size:15px">${esc(s.coin.devWallet.slice(0,4)+'…'+s.coin.devWallet.slice(-4))}</a>`,'dev wallet');
+  if(p.list.length)$('pulls').innerHTML=p.list.map(x=>`<div class="pull">${x.card?.image?`<img loading="lazy" src="${esc(x.card.image)}" alt="${esc(x.card?.name)}">`:''}<div class="b"><div class="n">${esc(x.card?.name||'Card pending')}</div>
+    <div><span class="r-${esc(x.rarity)}">${esc(x.rarity||'—')}</span> · insured ${usd(x.insuredValueUsd)} · pack ${usd(x.priceUsd)}</div><div class="mut">${t(x.boughtAt)}${x.soldBack?' · sold back':''}${x.verified?(x.paidBy==='dev'?' · <b style="color:var(--cyan)">paid by dev, not fees</b>':' · paid from fees'):' · <b style="color:var(--bad)">not from the dev wallet, not counted</b>'}</div>
+    <div>${x.purchaseSig?`<a href="${sx(x.purchaseSig)}" target="_blank" rel="noopener">pack tx</a>`:''}${x.sendSig&&x.sendSig!=='turbomode'?` · <a href="${sx(x.sendSig)}" target="_blank" rel="noopener">card tx</a>`:''}${x.card?.link?` · <a href="${esc(x.card.link)}" target="_blank" rel="noopener">card</a>`:''}</div></div></div>`).join('');
   $('claims').innerHTML=w.claims.length?'<tr><th>When</th><th>Amount</th><th>From</th><th>Tx</th></tr>'+w.claims.map(c=>`<tr><td>${t(c.at)}</td><td>${sol(c.sol)}</td><td>${esc(c.from)}</td><td><a href="${sx(c.sig)}" target="_blank" rel="noopener">${esc(c.sig.slice(0,10))}…</a></td></tr>`).join(''):'<tr><td class="mut">No claims yet.</td></tr>';
 }
 $('cp').onclick=()=>navigator.clipboard.writeText($('ca').textContent);

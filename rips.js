@@ -298,7 +298,7 @@ function createRips(opts = {}) {
     return {
       state: configured ? 'live' : 'launching_soon',
       statement: 'Creator fees open packs live. The dev keeps the cards. Not financial advice.',
-      coin: { ca: configured ? CA : null, devWallet: configured ? DEV : null, ticker: env.RIPS_TICKER || null, name: env.RIPS_NAME || null, x: env.RIPS_X_URL || null,
+      coin: { ca: configured ? CA : null, devWallet: configured ? DEV : null, ticker: env.RIPS_TICKER || 'DEVRIPS', name: env.RIPS_NAME || 'Fees Rip Packs', x: env.RIPS_X_URL || 'https://x.com/ZEtxeandia30374',
         pumpUrl: configured ? `https://pump.fun/coin/${CA}` : null, creatorVaults: configured ? V : null, accounts: configured ? C : null,
         createdAt: c.createdAt, createdSig: c.createdSig, market: st.market },
       fees: {
@@ -315,6 +315,8 @@ function createRips(opts = {}) {
       packs: { opened: ok.length, spentUsd: spent(ok), paidFromFeesUsd: fromFees, paidByDevUsd: byDev, insuredValueUsd: ok.reduce((s, p) => s + (p.insuredValueUsd || 0), 0),
         check: { packsFromFeesUsd: fromFees, thisCoinFeesUsd: feesUsd, ok: feesUsd == null ? null : fromFees <= feesUsd + 0.01, rule: 'Packs paid from fees should never exceed this coin\'s creator fees. Packs paid by the dev are listed but not charged to fees.' },
         list: packs.map(({ final, ...p }) => ({ ...p, priceUsd: priceOf(p.packType) })) },
+      nextPack: (() => { const ch = (st.shelf || [])[0]; if (!ch) return null; const have = feesUsd == null ? 0 : Math.max(0, feesUsd - fromFees);
+        return { name: ch.name, priceUsd: ch.priceUsd, haveUsd: +have.toFixed(2), pct: Math.min(100, +(100 * have / ch.priceUsd).toFixed(1)), volumeLeftUsd: Math.round(Math.max(0, ch.priceUsd - have) / (CREATOR_FEE_PCT / 100)), priced: feesUsd != null }; })(),
       shelf: st.shelf, solUsd: st.solUsd,
       meta: { startedAt: st.startedAt, lastRefreshAt: st.lastRefreshAt, lastError: st.lastError, lastTxError: st.lastTxError, refreshes: st.refreshes, rpcCalls: st.rpcCalls, rateLimited: c.rateLimited, sources: ['public Solana RPC', 'gacha.collectorcrypt.com', 'DexScreener', 'CoinGecko'], now: new Date(now()).toISOString() },
     };
