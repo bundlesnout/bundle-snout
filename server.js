@@ -27,12 +27,45 @@ app.get('/api/analyze/:mint', async (req, res) => {
 });
 app.get('/healthz', (_, res) => res.send('ok'));
 
+// ---- Bond Radar (watcher) + persistence
+const { createRadar } = require('./radar');
+const { createStore } = require('./state');
+const store = createStore();
+let bot = null; let radar = null;
+if (process.env.RADAR_ENABLED !== '0') {
+  radar = createRadar({
+    isAlerted: (m) => store.data.alerted.includes(m),
+    markAlerted: (m) => { store.data.alerted.push(m); if (store.data.alerted.length > 200) store.data.alerted.splice(0, store.data.alerted.length - 200); store.save(); },
+    onAlert: async (rep) => {
+      const n = bot ? await bot.broadcast(rep) : 0;
+      console.log(`[radar] ALERT ${rep.symbol} ${rep.mint} -> ${n} subscriber(s)`);
+    },
+  });
+  store.load().then(() => { console.log('[state]', JSON.stringify(store.status())); radar.start(); });
+}
+
+// ---- keep-alive: ping our own public URL so Render's edge sees inbound traffic (free web services sleep after 15 min idle).
+const keepalive = { enabled: false, target: null, intervalMin: Number(process.env.KEEPALIVE_MIN || 10), pings: 0, fails: 0, lastAt: null, lastStatus: null };
+if (process.env.KEEPALIVE !== '0' && PUBLIC_URL && /^https:/.test(PUBLIC_URL)) {
+  Object.assign(keepalive, { enabled: true, target: `${PUBLIC_URL}/healthz?src=self` });
+  setInterval(async () => {
+    keepalive.lastAt = new Date().toISOString();
+    try { const r = await fetch(keepalive.target, { signal: AbortSignal.timeout(20000) }); keepalive.lastStatus = r.status; keepalive.pings++; }
+    catch (e) { keepalive.fails++; keepalive.lastStatus = e.message; }
+  }, keepalive.intervalMin * 60e3).unref();
+}
+
+app.get('/api/radar/status', (_, res) => {
+  res.set('cache-control', 'no-store');
+  res.json({ radar: radar ? radar.status() : { running: false, disabled: true }, state: store.status(), keepalive, uptimeSec: Math.round(process.uptime()), now: new Date().toISOString() });
+});
+
 if (BOT_MODE === 'webhook') {
   const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   const { createBot, webhookSecret } = require('./telegram');
   const SECRET = webhookSecret(process.env.TELEGRAM_WEBHOOK_SECRET);
   if (!TOKEN || !SECRET) { console.error('Webhook mode needs TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET.'); process.exit(1); }
-  const bot = createBot(TOKEN);
+  bot = createBot(TOKEN, { radar, store });
   const expected = Buffer.from(SECRET);
   app.post('/telegram/webhook', express.json({ limit: '1mb' }), (req, res) => {
     const got = Buffer.from(String(req.get('X-Telegram-Bot-Api-Secret-Token') || ''));

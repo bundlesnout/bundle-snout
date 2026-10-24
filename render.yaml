@@ -20,3 +20,11 @@ services:
         generateValue: true
       - key: RPC_URL
         sync: false        # p.ej. https://mainnet.helius-rpc.com/?api-key=XXXX
+      - key: FOOTER_TEXT
+        value: "🐽 Bond Radar · powered by Bundle Snout"
+      - key: STATE_RENDER_API_KEY
+        sync: false        # Render API key: lets Bond Radar persist subscribers in the RADAR_STATE env var
+      # Bond Radar tuning (defaults shown; all optional):
+      # RADAR_ENABLED=1 RADAR_THRESHOLD_PCT=70 RADAR_MAX_PCT=97 RADAR_POLL_MS=15000 RADAR_PAGES=2 RADAR_PAGE_LIMIT=50
+      # RADAR_MAX_SCANS_PER_DAY=300 RADAR_MAX_TOP10_PCT=30 RADAR_MAX_SAMESLOT_PCT=10 RADAR_MAX_EARLY_HOLD_PCT=10
+      # RADAR_MAX_DEV_HOLD_PCT=10 RADAR_ALLOW_DEV_SELL=0 KEEPALIVE=1 KEEPALIVE_MIN=10
