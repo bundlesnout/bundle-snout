@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bundle Sniffer — pump.fun token checker</title>
+<style>
+:root{--bg:#0b0f14;--card:#121821;--line:#1f2a37;--txt:#e6edf3;--mut:#8b98a5;--ok:#2ecc71;--med:#f5a623;--high:#ff4d4f;--acc:#7c5cff}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt)}
+.wrap{max-width:980px;margin:0 auto;padding:28px 18px 60px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:22px}.logo span{font-size:28px}
+.lang button{background:none;border:1px solid var(--line);color:var(--mut);padding:6px 10px;border-radius:8px;cursor:pointer}.lang button.on{color:var(--txt);border-color:var(--acc)}
+.sub{color:var(--mut);margin:0 0 18px}
+form{display:flex;gap:10px}input{flex:1;background:var(--card);border:1px solid var(--line);color:var(--txt);padding:14px;border-radius:12px;font-family:ui-monospace,monospace;font-size:14px}
+button.go{background:var(--acc);color:#fff;border:0;border-radius:12px;padding:0 22px;font-weight:700;cursor:pointer}button.go:disabled{opacity:.5}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px}
+.hero{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.tname{font-size:22px;font-weight:800}.mono{font-family:ui-monospace,monospace;font-size:12px;color:var(--mut);word-break:break-all}
+.badge{padding:10px 16px;border-radius:12px;font-weight:800;font-size:18px;text-align:center}
+.b-ALTO{background:rgba(255,77,79,.15);color:var(--high);border:1px solid var(--high)}.b-MEDIO{background:rgba(245,166,35,.15);color:var(--med);border:1px solid var(--med)}.b-BAJO{background:rgba(46,204,113,.12);color:var(--ok);border:1px solid var(--ok)}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}.stat{background:#0e141c;border:1px solid var(--line);border-radius:12px;padding:12px}
+.stat .k{color:var(--mut);font-size:12px}.stat .v{font-size:20px;font-weight:800;margin-top:4px}
+.bar{height:10px;background:#0e141c;border-radius:6px;overflow:hidden;margin-top:8px;border:1px solid var(--line)}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),#00d4ff)}
+ul.flags{list-style:none;padding:0;margin:0}ul.flags li{padding:9px 0;border-bottom:1px solid var(--line);display:flex;gap:10px}ul.flags li:last-child{border:0}
+.dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex:none}.d-high{background:var(--high)}.d-medium{background:var(--med)}.d-ok{background:var(--ok)}.d-unknown{background:var(--mut)}
+h3{margin:0 0 10px;font-size:15px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--mut);font-weight:600}
+.tag{font-size:11px;padding:2px 6px;border-radius:6px;background:#1f2a37;color:var(--mut);margin-left:6px}.tag.dev{background:rgba(124,92,255,.2);color:#b9a8ff}.tag.bun{background:rgba(255,77,79,.18);color:var(--high)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}.muted{color:var(--mut);font-size:12px}
+a{color:#8ab4ff}.err{color:var(--high)}.spin{color:var(--mut);margin-top:14px}
+@media(max-width:760px){.grid{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<header><div class="logo"><span>🐽</span> Bundle Sniffer</div>
+<div class="lang"><button id="les" class="on">ES</button> <button id="len">EN</button></div></header>
+<p class="sub" data-es="Pega el mint de un token de pump.fun y en segundos ves bundles, ventas del dev, concentración y progreso de la curva. Solo lectura: nunca toca fondos." data-en="Paste a pump.fun token mint and see bundles, dev sells, concentration and curve progress in seconds. Read-only: never touches funds."></p>
+<form id="f"><input id="mint" placeholder="Mint (…pump)" autocomplete="off" spellcheck="false"><button class="go" id="go" data-es="Olfatear" data-en="Sniff"></button></form>
+<div id="out"></div>
+<p class="muted" style="margin-top:28px" data-es="Señales automáticas on-chain vía RPC público de Solana y DexScreener. No es consejo financiero. Comprar en el mismo bloque puede ser un bundle o simplemente bots snipers." data-en="Automated on-chain signals via public Solana RPC and DexScreener. Not financial advice. Same-block buys may be a bundle or just sniper bots."></p>
+</div>
+<script>
+let lang = localStorage.lang || 'es', last = null;
+const $ = (s) => document.querySelector(s);
+const T = (es, en) => lang === 'es' ? es : en;
+const n = (x, d = 2) => x == null ? '—' : Number(x).toLocaleString(lang === 'es' ? 'es-ES' : 'en-US', { maximumFractionDigits: d });
+const short = (a) => a ? a.slice(0, 4) + '…' + a.slice(-4) : '—';
+const sol = (a) => `<a href="https://solscan.io/account/${a}" target="_blank">${short(a)}</a>`;
+function applyLang() {
+  document.documentElement.lang = lang; localStorage.lang = lang;
+  $('#les').classList.toggle('on', lang === 'es'); $('#len').classList.toggle('on', lang === 'en');
+  document.querySelectorAll('[data-es]').forEach((e) => e.textContent = e.dataset[lang]);
+  if (last) render(last);
+}
+$('#les').onclick = () => { lang = 'es'; applyLang(); }; $('#len').onclick = () => { lang = 'en'; applyLang(); };
+function render(r) {
+  const rk = r.risk, c = r.curve, b = r.bundle, d = r.dev, h = r.holders;
+  const lvl = lang === 'es' ? rk.level : rk.levelEn;
+  const status = r.graduated ? T('Graduado ✅', 'Graduated ✅') : c ? T('En la curva', 'On curve') : '—';
+  $('#out').innerHTML = `
+  <div class="card"><div class="hero"><div><div class="tname">${r.name || '?'} <span class="muted">$${r.symbol || '?'}</span></div>
+    <div class="mono">${r.mint}</div>
+    <div class="muted" style="margin-top:6px">${r.creation?.time ? T('Creado', 'Created') + ': ' + new Date(r.creation.time).toLocaleString() : ''} ${r.dex ? '· <a target="_blank" href="' + r.dex.url + '">DexScreener</a>' : ''}</div></div>
+    <div class="badge b-${rk.level}">${T('Riesgo', 'Risk')}: ${lvl}</div></div>
+  <div class="grid">
+    <div class="stat"><div class="k">${T('Estado', 'Status')}</div><div class="v">${status}</div></div>
+    <div class="stat"><div class="k">${T('Curva', 'Curve')}</div><div class="v">${c ? n(c.progressPct, 1) + '%' : '—'}</div><div class="bar"><i style="width:${c ? c.progressPct : 0}%"></i></div></div>
+    <div class="stat"><div class="k">${T('Faltan para graduar', 'Left to graduate')}</div><div class="v">${c ? (c.complete ? '0' : n(c.quoteRemainingToGraduate, 2)) + ' ' + c.quote : '—'}</div></div>
+    <div class="stat"><div class="k">Market cap</div><div class="v">${r.dex?.marketCapUsd != null ? '$' + n(r.dex.marketCapUsd, 0) : c?.curveMarketCapQuote ? n(c.curveMarketCapQuote, 1) + ' SOL' : '—'}</div></div>
+  </div></div>
+  <div class="card"><h3>${T('Resumen de riesgo', 'Risk summary')}</h3><ul class="flags">
+    ${rk.flags.map((f) => `<li><span class="dot d-${f.level}"></span><span>${f[lang]}</span></li>`).join('')}</ul>
+    <p class="muted">${rk.disclaimer[lang]}</p></div>
+  <div class="two">
+   <div class="card"><h3>${T('Bundle / bloque de creación', 'Bundle / creation block')}</h3>
+    ${b ? `<div class="muted">Slot ${b.creationSlot} · ${T('carteras mismo bloque', 'same-block wallets')}: <b>${b.sameSlotWallets}</b> (${n(b.sameSlotPctSupply)}%) · ${T('siguientes 2 bloques', 'next 2 blocks')}: ${b.next2SlotBuyers} (${n(b.next2SlotPctSupply)}%)${b.sameSlotStillHoldPct != null ? ' · ' + T('aún tienen', 'still hold') + ' ' + n(b.sameSlotStillHoldPct) + '%' : ''}</div>
+    <table><tr><th>${T('Cartera', 'Wallet')}</th><th>% supply</th><th>${T('Aún tiene', 'Holds')}</th></tr>
+    ${b.sameSlotBuyers.slice(0, 8).map((x) => `<tr><td>${sol(x.wallet)}${x.paidByDev ? '<span class="tag dev">dev paid</span>' : ''}</td><td>${n(x.pctSupply)}%</td><td>${x.stillHolds == null ? '—' : x.stillHolds > 0 ? n(x.stillHolds / r.supply * 100) + '%' : T('vendió', 'sold')}</td></tr>`).join('') || `<tr><td colspan=3 class="muted">${T('Nadie más compró en el bloque de creación', 'No one else bought in the creation block')}</td></tr>`}</table>` : `<div class="muted">${T('No disponible', 'Not available')}</div>`}
+   </div>
+   <div class="card"><h3>Dev</h3>
+    ${d ? `<div>${sol(d.wallet)}</div><table>
+      <tr><td>${T('Compra al crear', 'Buy at creation')}</td><td>${r.creation ? n(r.creation.devInitialBuyPct) + '%' : '—'}</td></tr>
+      <tr><td>${T('Comprado total', 'Total bought')}</td><td>${n(d.bought / r.supply * 100)}% (${d.buys} tx)</td></tr>
+      <tr><td>${T('Vendido', 'Sold')}</td><td>${n(d.sold / r.supply * 100)}% (${d.sells} tx)${d.soldPctOfBought != null ? ' · ' + n(d.soldPctOfBought, 1) + '% ' + T('de lo comprado', 'of bought') : ''}</td></tr>
+      <tr><td>${T('Tiene ahora', 'Holds now')}</td><td>${n(d.holdingPctSupply)}%</td></tr></table>
+      ${d.partial ? `<div class="muted">${T('Historial parcial', 'Partial history')}</div>` : ''}` : `<div class="muted">${T('No disponible', 'Not available')}</div>`}
+   </div>
+  </div>
+  <div class="card"><h3>Top 10 holders · ${n(h.top10Pct)}% ${h.holderCount != null ? '· ' + n(h.holderCount, 0) + ' holders' : ''}</h3>
+   <table><tr><th>#</th><th>${T('Cartera', 'Wallet')}</th><th>% supply</th></tr>
+   ${h.top10.map((x, i) => `<tr><td>${i + 1}</td><td>${sol(x.wallet)}${x.isDev ? '<span class="tag dev">dev</span>' : ''}${x.isSameSlotBuyer ? '<span class="tag bun">' + T('mismo bloque', 'same block') + '</span>' : ''}</td><td>${n(x.pct)}%</td></tr>`).join('')}</table>
+   <div class="muted" style="margin-top:8px">${T('Excluidos', 'Excluded')}: ${h.excluded.map((e) => e.label + ' (' + n(e.pct) + '%)').join(', ') || '—'}</div></div>
+  ${r.notes?.length ? `<div class="card muted">${r.notes.join('<br>')}</div>` : ''}
+  <p class="muted">${T('Analizado', 'Analyzed')} ${new Date(r.meta.analyzedAt).toLocaleString()} · ${r.meta.rpcCalls} RPC calls · ${(r.meta.ms / 1000).toFixed(1)}s</p>`;
+}
+async function run(mint) {
+  mint = mint.trim(); if (!mint) return;
+  history.replaceState(null, '', '?mint=' + mint);
+  $('#go').disabled = true; $('#out').innerHTML = `<div class="spin">${T('Olfateando la cadena… (5–30 s)', 'Sniffing the chain… (5–30 s)')}</div>`;
+  try {
+    const r = await fetch('/api/analyze/' + encodeURIComponent(mint)); const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status); last = j; render(j);
+  } catch (e) { $('#out').innerHTML = `<div class="card err">${e.message}</div>`; }
+  finally { $('#go').disabled = false; }
+}
+$('#f').onsubmit = (e) => { e.preventDefault(); run($('#mint').value); };
+applyLang();
+const q = new URLSearchParams(location.search).get('mint'); if (q) { $('#mint').value = q; run(q); }
+</script></body></html>

@@ -1,0 +1,282 @@
+{
+  "mint": "Bo8T2nESUEwfZU4rygeb8n4d2Hm5DtsKLaYtP7tEpump",
+  "name": "101",
+  "symbol": "101",
+  "tokenProgram": "Token-2022",
+  "decimals": 6,
+  "supply": 999998688.528893,
+  "isPumpFun": true,
+  "bondingCurve": "CNbpVcv4Vg4EqTiYVRNfjBF6NHwTemES3W5oXGsqUVpy",
+  "dex": {
+    "dexId": "pumpfun",
+    "pairAddress": "CNbpVcv4Vg4EqTiYVRNfjBF6NHwTemES3W5oXGsqUVpy",
+    "url": "https://dexscreener.com/solana/cnbpvcv4vg4eqtiyvrnfjbf6nhwtemes3w5oxgsquvpy",
+    "priceUsd": 0.000009631,
+    "marketCapUsd": 9631.39,
+    "liquidityUsd": null,
+    "pairCreatedAt": "2026-10-24T08:44:00.000Z",
+    "name": "101",
+    "symbol": "101",
+    "pairs": 1
+  },
+  "curve": {
+    "complete": false,
+    "progressPct": 48.11,
+    "quote": "PUMP",
+    "quoteMint": "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
+    "realQuoteInCurve": 431246.98078,
+    "quoteRemainingToGraduate": 1783293.694892,
+    "curveMarketCapQuote": 1753960.0077824735,
+    "creatorOnCurve": "5XKjfdJbwB9JCuYUiEzmCfmBihMKQKN37GPNQJJuu3Ko",
+    "mayhemMode": false
+  },
+  "graduated": false,
+  "bundle": {
+    "creationSlot": 460786895,
+    "blocksRead": [
+      {
+        "slot": 460786895,
+        "txs": 203
+      },
+      {
+        "slot": 460786896,
+        "txs": 193
+      },
+      {
+        "slot": 460786897,
+        "txs": 204
+      }
+    ],
+    "sameSlotBuyers": [
+      {
+        "wallet": "6ntVFzzkUcTD99Y6DcmHJpZjTJyDwqbRPZovRTzyJYK2",
+        "tokens": 200466909.509615,
+        "pctSupply": 20.05,
+        "slotOffset": 0,
+        "signature": "4tp5TYy77HovptgCP67TVfkGnWy3F5eUD28PEtS7n1fQuYRkxMbEp62cVCsyZvgudVgpbnupA3VZYYUzconegLDM",
+        "paidByDev": false,
+        "multiWalletTx": false,
+        "rightAfterCreate": false,
+        "stillHolds": 0
+      },
+      {
+        "wallet": "KYCF3FKjDeCtvckXwAhCoFx1qZrJd7sQyPRhCSbiQbC",
+        "tokens": 39155060.113996,
+        "pctSupply": 3.92,
+        "slotOffset": 0,
+        "signature": "2ZXdQcQvGCSsrmFU4rbNkz797vfudD71hSZqRBozgG7cZY5RpFV1hdEAqhiVaCCPKsVWEPAvNbiJqWT6Jdz7vxsj",
+        "paidByDev": false,
+        "multiWalletTx": true,
+        "rightAfterCreate": true,
+        "stillHolds": 0
+      },
+      {
+        "wallet": "ANCWEuHZs6MMdv1ua9uGwZz6rVSfKHvGcXDcv6b1Gj9F",
+        "tokens": 37220578.518092,
+        "pctSupply": 3.72,
+        "slotOffset": 0,
+        "signature": "2ZXdQcQvGCSsrmFU4rbNkz797vfudD71hSZqRBozgG7cZY5RpFV1hdEAqhiVaCCPKsVWEPAvNbiJqWT6Jdz7vxsj",
+        "paidByDev": false,
+        "multiWalletTx": true,
+        "rightAfterCreate": true,
+        "stillHolds": 0
+      },
+      {
+        "wallet": "8LtSTTdtK6LbqqBABdy2xhzx47TiLhWCQ1FHf3R2nybe",
+        "tokens": 27681800.212131,
+        "pctSupply": 2.77,
+        "slotOffset": 0,
+        "signature": "4hWVsXdQSGC4RXAezbX1WxE2He3v8j33GsSyU743H9wVcmyzHknbpFdMXPrpGCDTwn9vSywisjxt5HANcnES9AJv",
+        "paidByDev": false,
+        "multiWalletTx": true,
+        "rightAfterCreate": true,
+        "stillHolds": 0
+      },
+      {
+        "wallet": "D453mGgBoR19uqtj2DTFJi6unu928E71vNpFAhg3aeZh",
+        "tokens": 18525458.871739,
+        "pctSupply": 1.85,
+        "slotOffset": 0,
+        "signature": "4hWVsXdQSGC4RXAezbX1WxE2He3v8j33GsSyU743H9wVcmyzHknbpFdMXPrpGCDTwn9vSywisjxt5HANcnES9AJv",
+        "paidByDev": false,
+        "multiWalletTx": true,
+        "rightAfterCreate": true,
+        "stillHolds": 0
+      }
+    ],
+    "sameSlotWallets": 5,
+    "sameSlotPctSupply": 32.31,
+    "sameSlotPaidByDev": 0,
+    "createTxIndex": 39,
+    "rightAfterCreateWallets": 4,
+    "rightAfterCreatePct": 12.26,
+    "multiWalletTxs": 2,
+    "multiWalletTxList": [
+      {
+        "signature": "2ZXdQcQvGCSsrmFU4rbNkz797vfudD71hSZqRBozgG7cZY5RpFV1hdEAqhiVaCCPKsVWEPAvNbiJqWT6Jdz7vxsj",
+        "wallets": 2,
+        "slotOffset": 0
+      },
+      {
+        "signature": "4hWVsXdQSGC4RXAezbX1WxE2He3v8j33GsSyU743H9wVcmyzHknbpFdMXPrpGCDTwn9vSywisjxt5HANcnES9AJv",
+        "wallets": 2,
+        "slotOffset": 0
+      }
+    ],
+    "next2SlotBuyers": 0,
+    "next2SlotPctSupply": 0,
+    "sameSlotStillHoldPct": 0,
+    "earlyStillHoldPct": 0,
+    "next2SlotList": []
+  },
+  "creation": {
+    "signature": "2dYbaTAdumJiUwLCYXxV3RVnquwXHqawoWdPG4JfmYz6XahcxhHmexEFQy4cGhpYyHVSTG62X5RPeMGmL7cqsTMi",
+    "slot": 460786895,
+    "time": "2026-10-24T08:44:00.000Z",
+    "dev": "5XKjfdJbwB9JCuYUiEzmCfmBihMKQKN37GPNQJJuu3Ko",
+    "devInitialBuy": 149312259.461047,
+    "devInitialBuyPct": 14.93
+  },
+  "dev": {
+    "wallet": "5XKjfdJbwB9JCuYUiEzmCfmBihMKQKN37GPNQJJuu3Ko",
+    "creatorOnCurve": "5XKjfdJbwB9JCuYUiEzmCfmBihMKQKN37GPNQJJuu3Ko",
+    "bought": 149312259.461047,
+    "sold": 149312259.461047,
+    "buys": 1,
+    "sells": 5,
+    "soldPctOfBought": 100,
+    "holding": 0,
+    "holdingPctSupply": 0,
+    "hasSold": true,
+    "txChecked": 6,
+    "partial": false
+  },
+  "holders": {
+    "holderCount": 149,
+    "top10": [
+      {
+        "wallet": "E5KPzhc3NdWztE6qg1juWfZKTUHLdhD3efFCzBZUXWka",
+        "tokenAccount": "2FfbFs6a7VqSoVk9fWKp116rJLsKSfuJje4R5eMavB12",
+        "pct": 2.98,
+        "isDev": false,
+        "isSameSlotBuyer": false
+      },
+      {
+        "wallet": "BaizcdHirSoBkZFgEy8p7ef2rtsGFiBxxBmZsvJvCXsg",
+        "tokenAccount": "E6kys8drQXnPbx32v61kNxuuk8PGzpyhza7YPw3VSn5X",
+        "pct": 2.84,
+        "isDev": false,
+        "isSameSlotBuyer": false
+      },
+      {
+        "wallet": "BeULA2AXgcH6fKRUF5h1SZdfCVcCtenkYmJPVyFyyo7f",
+        "tokenAccount": "5PMM8wB4V6ofNXMeVCzjtNVDDZtxoxgmfXV7YH6exMpU",
+        "pct": 2.73,
+        "isDev": false,
+        "isSameSlotBuyer": false
+      },
+      {
+        "wallet": "8AtQ4ka3dgtrH1z4Uq3Tm4YdMN3cK5RRj1eKuGNnvenm",
+        "tokenAccount": "B1zeoLx1DBkdnWDx25J2fGEgcHAkGtZLccQ6FZpnhjX1",
+        "pct": 2.46,
+        "isDev": false,
+        "isSameSlotBuyer": false
+      },
+      {
+        "wallet": "DReJBj6ia2QJSdakDoMxRzNQmwjXLef6WdQNqM87nF5F",
+        "tokenAccount": "86P1fU1NaWQdaVPfA8nW28ugARMmy3Kz3JEcnfHj6TKT",
+        "pct": 2.24,
+        "isDev": false,
+        "isSameSlotBuyer": false
+      },
+      {
+        "wallet": "GxTtS5jsQLv8jPS7Y9nqRiNMDv6PeQnZ7C7TVzSpCT7S",
+        "tokenAccount": "DbZ74VP7PqzQKHk8QW3BDwyfjo55qtuD6A7tTHP25Jp4",
+        "pct": 1.61,
+        "isDev": false,
+        "isSameSlotBuyer": false
+      },
+      {
+        "wallet": "Gf1NcbyJNZBL15Gqm7GKeKxda6dRUXS8FYkk2jLUhemZ",
+        "tokenAccount": "8WuWeHPBMn2xmL32KF2HoFvjw7gVgnZWN8gR8k4WLPYN",
+        "pct": 1.42,
+        "isDev": false,
+        "isSameSlotBuyer": false
+      },
+      {
+        "wallet": "3J864F1AK2ZbWKE95bU5YVP3UhLz1UR6H93JcFcordnK",
+        "tokenAccount": "GKvbTjZAG4B5j4tvyeKbhQ4Fh5MyMr9BHYio8tMJqCLz",
+        "pct": 1.18,
+        "isDev": false,
+        "isSameSlotBuyer": false
+      },
+      {
+        "wallet": "HpiMPFdnWuf7EG4uAAfkjcAuYtbWs5zL3x3hK15hjNnm",
+        "tokenAccount": "2xccSWPg19YCRvUbCcyW5sc9F5TJHgm3S5cBWesCaRdb",
+        "pct": 1.11,
+        "isDev": false,
+        "isSameSlotBuyer": false
+      },
+      {
+        "wallet": "7No9vD8nPfRMWjiACjk6GQ5YMmnqUKdnbsNuUhWcXsNn",
+        "tokenAccount": "24o9hbYGtHj9XbiAbJFNw9E6vUQ9A44dKksfndhwLPsC",
+        "pct": 1,
+        "isDev": false,
+        "isSameSlotBuyer": false
+      }
+    ],
+    "top10Pct": 19.57,
+    "excluded": [
+      {
+        "owner": "CNbpVcv4Vg4EqTiYVRNfjBF6NHwTemES3W5oXGsqUVpy",
+        "label": "pump.fun bonding curve",
+        "pct": 61.85
+      }
+    ]
+  },
+  "risk": {
+    "level": "ALTO",
+    "levelEn": "HIGH",
+    "score": 5,
+    "flags": [
+      {
+        "level": "high",
+        "es": "Bundle probable: 2 tx compraron para varias carteras a la vez; 4 carteras compraron justo detrás de la tx de creación (12.26%). Bloque de creación: 5 carteras, 32.31% del supply.",
+        "en": "Likely bundle: 2 tx(s) bought for several wallets at once; 4 wallets bought right after the create tx (12.26%). Creation block: 5 wallets, 32.31% of supply."
+      },
+      {
+        "level": "ok",
+        "es": "Las carteras tempranas (mismo bloque + 2 siguientes) aún tienen el 0% del supply.",
+        "en": "Early wallets (same block + next 2) still hold 0% of supply."
+      },
+      {
+        "level": "medium",
+        "es": "El dev compró el 14.93% del supply al crear.",
+        "en": "Dev bought 14.93% of supply at creation."
+      },
+      {
+        "level": "medium",
+        "es": "El dev ha vendido el 100% de lo que compró.",
+        "en": "Dev sold 100% of what they bought."
+      },
+      {
+        "level": "ok",
+        "es": "Top 10 holders: 19.57%, distribución razonable.",
+        "en": "Top 10 holders: 19.57%, reasonable spread."
+      }
+    ],
+    "disclaimer": {
+      "es": "Señales automáticas on-chain, no son consejo financiero. Un riesgo BAJO no garantiza nada.",
+      "en": "Automated on-chain signals, not financial advice. LOW risk guarantees nothing."
+    }
+  },
+  "notes": [
+    "Esta curva no cotiza en SOL sino en PUMP (pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn); el umbral de ~85 SOL no aplica. / This curve is quoted in PUMP, not SOL."
+  ],
+  "meta": {
+    "rpc": "https://api.mainnet-beta.solana.com",
+    "rpcCalls": 27,
+    "ms": 4138,
+    "analyzedAt": "2026-10-24T09:08:49.217Z"
+  }
+}

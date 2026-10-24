@@ -1,0 +1,25 @@
+{
+  "name": "bundle-sniffer",
+  "version": "1.0.0",
+  "description": "Read-only pump.fun bundle/sniper checker: web UI + Telegram bot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "bot": "node bot.js",
+    "webhook:set": "node set_webhook.js set",
+    "webhook:info": "node set_webhook.js info",
+    "webhook:delete": "node set_webhook.js delete"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "@solana/web3.js": "^1.99.0",
+    "express": "^5.3.0",
+    "ws": "^8.22.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
