@@ -80,7 +80,7 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
     alerts: { sent: 0, lastAt: null, lastMint: null },
     recent: [],
   };
-  let ws = null, wsBackoff = 1000, pollTimer = null, chainTimer = null, stopped = false, working = false, apiPausedUntil = 0, apiFailStreak = 0;
+  let ws = null, wsBackoff = 1000, pollTimer = null, chainTimer = null, stopped = false, working = false, apiPausedUntil = 0, apiFailStreak = 0, apiPauses = 0;
   const useApi = cfg.source !== 'chain', useChain = cfg.source !== 'api';
 
   // ---- On-chain tracker: coins created while we're running (from PumpPortal), curve read in batches of 100
@@ -163,10 +163,10 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
         if (list.length < cfg.pageLimit) break;
         await sleep(400);
       }
-      st.poll.ok++; st.poll.lastOkAt = new Date().toISOString(); st.poll.lastCoins = n; st.poll.lastError = null; apiFailStreak = 0;
+      st.poll.ok++; st.poll.lastOkAt = new Date().toISOString(); st.poll.lastCoins = n; st.poll.lastError = null; apiFailStreak = 0; apiPauses = 0;
     } catch (e) {
       st.poll.fail++; st.poll.lastError = e.message; apiFailStreak++;
-      if (apiFailStreak >= 3) { apiPausedUntil = Date.now() + 30 * 60e3; st.poll.pausedUntil = new Date(apiPausedUntil).toISOString(); log(`[radar] pump.fun API failing (${e.message}); pausing it 30 min, on-chain tracker continues`); apiFailStreak = 0; }
+      if (apiFailStreak >= 3) { const min = apiPauseMin(apiPauses++); apiPausedUntil = Date.now() + min * 60e3; st.poll.pausedUntil = new Date(apiPausedUntil).toISOString(); st.poll.pauses = apiPauses; log(`[radar] pump.fun API failing (${e.message}); pausing it ${min} min, on-chain tracker continues`); apiFailStreak = 2; } // still failing after a pause -> next failure re-pauses at once, for longer
       else log('[radar] poll error:', e.message);
     }
     // prune: coins not seen for 3h; cap memory
@@ -270,4 +270,6 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
   };
 }
 
-module.exports = { createRadar, cleanCheck, progressFromApi, CFG };
+// exponential backoff while pump.fun's API keeps refusing us (30, 60, 120, 240 min cap); resets on the first good poll
+const apiPauseMin = (n) => Math.min(30 * 2 ** n, 240);
+module.exports = { createRadar, apiPauseMin, cleanCheck, progressFromApi, CFG };

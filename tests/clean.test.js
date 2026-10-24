@@ -20,4 +20,5 @@ for (const [mut, why] of [
 assert.strictEqual(progressFromApi({ real_token_reserves: 793_100_000e6 }), 0);
 assert.strictEqual(progressFromApi({ real_token_reserves: 793_100_000e6 * 0.3 }), 70);
 assert.strictEqual(progressFromApi({ complete: true }), 100);
+{ const { apiPauseMin } = require('../radar'); assert.deepStrictEqual([0, 1, 2, 3, 4, 9].map(apiPauseMin), [30, 60, 120, 240, 240, 240], 'pump.fun API backoff'); }
 console.log('all clean-check tests passed');
