@@ -98,7 +98,7 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
   };
   let ws = null, wsBackoff = 1000, pollTimer = null, chainTimer = null, stopped = false, working = false, apiPausedUntil = 0, apiFailStreak = 0, apiPauses = 0;
   const useApi = cfg.pumpApi && cfg.source !== 'chain', useChain = cfg.source !== 'api';
-  let geckoTimer = null, pruneTimer = null, geckoLastAt = 0, lastScanEnd = 0;
+  let geckoTimer = null, pruneTimer = null, geckoLastAt = 0, lastScanEnd = 0, geckoBackoffMs = 0, geckoBackoffUntil = 0;
   st.stream = { trades: 0, mints: 0, upserts: 0, lastAt: null };
   st.gecko = { enabled: cfg.gecko && useChain, polls: 0, ok: 0, fail: 0, added: 0, lastAt: null, lastError: null };
   if (!useApi) st.poll.disabled = 'pump.fun frontend API is behind a Cloudflare bot challenge (403 for servers); set RADAR_PUMP_API=1 to try it';
@@ -145,10 +145,13 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
     const now = Date.now(); const streamAge = st.stream.lastAt ? now - Date.parse(st.stream.lastAt) : Infinity;
     const every = streamAge > cfg.geckoStaleMs ? cfg.geckoStaleMs : cfg.geckoMs;
     if (!force && now - geckoLastAt < every) return;
+    if (!force && now < geckoBackoffUntil) { st.gecko.skippedBackoff = (st.gecko.skippedBackoff || 0) + 1; return; }
     geckoLastAt = now; st.gecko.polls++; st.gecko.lastAt = new Date().toISOString();
-    try {
-      for (const sort of ['h24_tx_count_desc', 'h24_volume_usd_desc']) {
+    let okSorts = 0; let rateLimited = false; let lastErr = null;
+    for (const sort of ['h24_tx_count_desc', 'h24_volume_usd_desc']) {
+      try {
         const r = await fetch(`${GECKO}/networks/solana/dexes/pump-fun/pools?page=1&sort=${sort}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+        if (r.status === 429) { rateLimited = true; throw new Error('GeckoTerminal HTTP 429'); }
         if (!r.ok) throw new Error('GeckoTerminal HTTP ' + r.status);
         const j = await r.json();
         for (const p of j?.data || []) {
@@ -156,10 +159,21 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
           const symbol = (p?.attributes?.name || '').split(' / ')[0] || null;
           if (chainAddCurve({ mint, curve, symbol })) st.gecko.added++;
         }
-        await sleep(1500);
-      }
-      st.gecko.ok++; st.gecko.lastError = null;
-    } catch (e) { st.gecko.fail++; st.gecko.lastError = e.message; log('[radar] gecko error:', e.message); }
+        okSorts++;
+      } catch (e) { lastErr = e.message; }
+      if (rateLimited) break; // don't hammer a rate-limited API with the second request
+      await sleep(1500);
+    }
+    if (okSorts > 0 && !lastErr) { st.gecko.ok++; st.gecko.lastError = null; geckoBackoffMs = 0; geckoBackoffUntil = 0; return; }
+    if (okSorts > 0) st.gecko.ok++; else st.gecko.fail++;
+    st.gecko.lastError = lastErr;
+    if (rateLimited) {
+      // exponential backoff on 429 (shared cloud IPs get throttled): 10 min, 20, 40, capped at 60 min; log only when it changes
+      const prev = geckoBackoffMs;
+      geckoBackoffMs = Math.min(60 * 60e3, prev ? prev * 2 : 10 * 60e3);
+      geckoBackoffUntil = Date.now() + geckoBackoffMs; st.gecko.backoffUntil = new Date(geckoBackoffUntil).toISOString(); st.gecko.rateLimited = (st.gecko.rateLimited || 0) + 1;
+      if (geckoBackoffMs !== prev) log('[radar] gecko rate-limited (429), backing off', Math.round(geckoBackoffMs / 60e3), 'min');
+    } else log('[radar] gecko error:', lastErr);
   }
 
   function prune() {

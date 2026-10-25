@@ -41,6 +41,16 @@ const { createRadar } = require('../radar');
   assert.ok(s.hottest.some((h) => h.mint === 'MINTG' && h.progress === 75), 'gecko coin read on chain');
   await new Promise((res) => setTimeout(res, 20));
   assert.ok(queued.includes('MINTG'));
+  // 429 -> one request only (no second sort), exponential backoff recorded, logged once
+  const before = calls.length;
+  global.fetch = async (u) => { calls.push(String(u)); return { ok: false, status: 429, json: async () => ({}) }; };
+  await r.geckoPoll(true);
+  s = r.status();
+  assert.strictEqual(calls.length - before, 1, 'stops after the first 429');
+  assert.strictEqual(s.gecko.rateLimited, 1); assert.ok(s.gecko.backoffUntil && Date.parse(s.gecko.backoffUntil) > Date.now() + 9 * 60e3);
+  await r.geckoPoll(true);
+  assert.ok(Date.parse(r.status().gecko.backoffUntil) > Date.now() + 19 * 60e3, 'backoff doubles');
+  assert.strictEqual(logs.filter((l) => l.includes('rate-limited')).length, 2);
   r.stop(); global.fetch = realFetch;
   console.log('all radar source tests passed');
   process.exit(0);
