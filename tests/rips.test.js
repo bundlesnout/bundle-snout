@@ -155,3 +155,15 @@ assert.strictEqual(R.tradeFees(ammTx('So1111111111111111111111111111111111111111
   if (!threw || k !== 1) { console.error('FAIL rips 400 not retried', k); process.exit(1); }
   console.log('ok rips 413 retry / 400 no retry');
 })();
+
+// When the RPC throttles during refresh, the remaining RPC steps are skipped for that round (no hammering), market still runs.
+(async () => {
+  const R5 = require('../rips');
+  let rpcCalls = 0, other = 0;
+  const r = R5.createRips({ env: { RIPS_CA: '3eoNHop3a7MYVEw94yJrqvRWnfYWQcg6yruCymg2pump', RIPS_DEV_WALLET: '4iUUembrP2xMBeP4RbkYciZa1yFpp1YM87Uk5Y9dD1qy', RIPS_RETRY_MS: '0' }, log: () => {},
+    fetch: async (u) => { if (String(u).includes('solana.com')) { rpcCalls++; return { ok: false, status: 429, json: async () => ({}) }; } other++; return { ok: true, json: async () => ({}) }; } });
+  await r.refresh();
+  const s = r.status();
+  if (rpcCalls !== 3 || !s.meta.throttleSkips || !/skipped/.test(s.meta.lastError || '')) { console.error('FAIL rips throttle skip', rpcCalls, s.meta); process.exit(1); }
+  console.log('ok rips throttle skip (rpc calls', rpcCalls + ', skipped steps', s.meta.throttleSkips + ')');
+})();

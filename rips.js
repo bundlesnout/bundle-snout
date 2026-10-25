@@ -354,7 +354,14 @@ function createRips(opts = {}) {
     try {
       await Promise.all([shelf(), solPrice()]);
       const errs = [];
-      if (configured) for (const step of [listCoinSigs, readVaults, scanDev, manualExtras, resolvePacks, market]) { try { await step(); } catch (e) { errs.push(`${step.name}: ${e.message}`); } }
+      // Once the public RPC throttles us (after its own retries), skip the remaining RPC steps this round instead of hammering it
+      // (each would retry 3x and fail too); resolvePacks (gacha API) and market (DexScreener) still run. The next round retries everything.
+      let throttled = false;
+      if (configured) for (const step of [listCoinSigs, readVaults, scanDev, manualExtras, resolvePacks, market]) {
+        if (throttled && step !== market && step !== resolvePacks) { st.throttleSkips = (st.throttleSkips || 0) + 1; continue; }
+        try { await step(); } catch (e) { errs.push(`${step.name}: ${e.message}`); if (/HTTP (429|413|5\d\d)/.test(e.message)) throttled = true; }
+      }
+      if (throttled) errs.push('later RPC steps skipped this round (RPC throttled)');
       st.lastRefreshAt = new Date(now()).toISOString(); st.lastError = errs.length ? errs.join(' | ') : null; st.refreshes++;
       if (errs.length) log('refresh errors', st.lastError);
     } catch (e) { st.lastError = e.message; log('refresh error', e.message); }
@@ -395,7 +402,7 @@ function createRips(opts = {}) {
       nextPack: (() => { const ch = (st.shelf || [])[0]; if (!ch) return null; const have = feesUsd == null ? 0 : Math.max(0, feesUsd - fromFees);
         return { name: ch.name, priceUsd: ch.priceUsd, haveUsd: +have.toFixed(2), pct: Math.min(100, +(100 * have / ch.priceUsd).toFixed(1)), volumeLeftUsd: Math.round(Math.max(0, ch.priceUsd - have) / (CREATOR_FEE_PCT / 100)), priced: feesUsd != null }; })(),
       shelf: st.shelf, solUsd: st.solUsd,
-      meta: { startedAt: st.startedAt, lastRefreshAt: st.lastRefreshAt, lastError: st.lastError, lastTxError: st.lastTxError, refreshes: st.refreshes, rpcCalls: st.rpcCalls, rateLimited: c.rateLimited, sources: ['public Solana RPC', 'gacha.collectorcrypt.com', 'DexScreener', 'CoinGecko'], now: new Date(now()).toISOString() },
+      meta: { startedAt: st.startedAt, lastRefreshAt: st.lastRefreshAt, lastError: st.lastError, lastTxError: st.lastTxError, refreshes: st.refreshes, rpcCalls: st.rpcCalls, rpcRetries: st.rpcRetries || 0, throttleSkips: st.throttleSkips || 0, rateLimited: c.rateLimited, sources: ['public Solana RPC', 'gacha.collectorcrypt.com', 'DexScreener', 'CoinGecko'], now: new Date(now()).toISOString() },
     };
   }
 
