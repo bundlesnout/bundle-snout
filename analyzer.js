@@ -232,7 +232,9 @@ async function analyze(mintStr, opts = {}) {
   // ---- Creation tx (cheap paths first: metadata PDA history, dev ATA history, then mint history)
   const isCreateTx = (tx) => !!tx && (tx.meta?.logMessages || []).some((l) => /Instruction: Create(V2)?$/.test(l)) &&
     tx.transaction.message.accountKeys.some((k) => k.pubkey === mint);
-  const oldestOf = async (addr, pages = 1) => { const h = await getOldestSignatures(addr, pages); return h.complete && h.sigs.length ? h.sigs[h.sigs.length - 1] : null; };
+  // Oldest few SUCCESSFUL sigs, oldest first: failed sniper txs in the creation slot can sort before the create tx (seen on Token-2022 coins)
+  const oldestOk = (h) => (h.complete ? h.sigs.filter((x) => !x.err).slice(-6).reverse() : []);
+  const oldestOf = async (addr, pages = 1) => oldestOk(await getOldestSignatures(addr, pages));
   let createSig = null, createTx = null;
   const candidates = [];
   if (report.tokenProgram === 'SPL Token') candidates.push(async () => oldestOf(PublicKey.findProgramAddressSync([Buffer.from('metadata'), METAPLEX.toBuffer(), mintPk.toBuffer()], METAPLEX)[0].toBase58(), 2));
@@ -240,13 +242,14 @@ async function analyze(mintStr, opts = {}) {
     const [ata] = PublicKey.findProgramAddressSync([new PublicKey(report.curve.creatorOnCurve).toBuffer(), new PublicKey(tokenProgram).toBuffer(), mintPk.toBuffer()], ATA_PROGRAM);
     return oldestOf(ata.toBase58(), 2);
   });
-  candidates.push(async () => { const h = await getOldestSignatures(mint, maxPages); report.history = { txScanned: h.total, reachedCreation: h.complete }; return h.complete && h.sigs.length ? h.sigs[h.sigs.length - 1] : null; });
+  candidates.push(async () => { const h = await getOldestSignatures(mint, maxPages); report.history = { txScanned: h.total, reachedCreation: h.complete }; return oldestOk(h); });
   for (const c of candidates) {
     try {
-      const sig = await c();
-      if (!sig) continue;
-      const tx = await getTx(sig.signature);
-      if (isCreateTx(tx)) { createSig = sig; createTx = tx; break; }
+      for (const sig of await c()) {
+        const tx = await getTx(sig.signature);
+        if (isCreateTx(tx)) { createSig = sig; createTx = tx; break; }
+      }
+      if (createTx) break;
     } catch (e) { notes.push('creation lookup: ' + e.message); }
   }
   let creation = null;
