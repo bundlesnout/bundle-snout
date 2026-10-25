@@ -719,12 +719,16 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   async function scanFunding() {
     if (!address || !rpc) return;
     const sigs = await rpc('getSignaturesForAddress', [address, { limit: 25 }]);
-    const seen = new Set(st.fundSeen); const mine = new Set(st.trades.map((x) => x.tx).filter(Boolean));
+    const seen = new Set(st.fundSeen); const wdSeen = new Set(st.wdSeen || (st.wdSeen = [])); const mine = new Set(st.trades.map((x) => x.tx).filter(Boolean));
     for (const s of sigs.reverse()) {
-      if (seen.has(s.signature)) continue; st.fundSeen.push(s.signature); if (s.err || mine.has(s.signature)) continue;
-      const tx = await rpc('getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }]).catch(() => null); if (!tx) continue;
+      const newIn = !seen.has(s.signature), newOut = !wdSeen.has(s.signature); if (!newIn && !newOut) continue;
+      const tx = await rpc('getTransaction', [s.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }]).catch(() => null);
+      if (!tx && !s.err) continue; // RPC hiccup: retry next round
+      if (newIn) st.fundSeen.push(s.signature); if (newOut) st.wdSeen.push(s.signature); dirty = true; if (s.err || mine.has(s.signature)) continue;
       const keys = tx.transaction.message.accountKeys.map((k) => k.pubkey || k); const i = keys.indexOf(address); if (i < 0) continue;
-      const delta = (tx.meta.postBalances[i] - tx.meta.preBalances[i]) / LAMPORTS; if (keys[0] === address || delta <= 0) continue;
+      const delta = (tx.meta.postBalances[i] - tx.meta.preBalances[i]) / LAMPORTS;
+      if (newOut) { const w = withdrawalOf(tx, keys, i, delta, s.signature); if (w) { st.withdrawals = [w, ...(st.withdrawals || [])].slice(0, cfg.keep.fundings); think(M.V.withdrawal({ sol: w.sol }), 'funding', { tx: w.tx }); } }
+      if (!newIn || keys[0] === address || delta <= 0) continue;
       const src = keys.some((k) => PUMP_PROGRAMS.includes(k)) ? 'pump.fun creator fees (my 50% share)' : keys[0] === PAYOUT_PIN ? 'transfer from my funder (the wallet my principal goes back to)' : cfg.protectedWallets.has(keys[0]) || keys.includes(DEV_WALLET) ? 'transfer from the dev wallet' : 'transfer';
       const f = { at: new Date((tx.blockTime || now() / 1000) * 1000).toISOString(), sol: r6(delta), from: keys[0], source: src, tx: s.signature };
       const isStart = s.signature === cfg.startFundTx || (st.liveStartedAt && f.at < st.liveStartedAt);
@@ -732,7 +736,15 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       f.counts = isStart ? 'starting treasury: this is my baseline' : /creator fees/.test(src) ? 'income: raises my signal' : 'capital: raises my baseline, not my signal';
       st.fundings.unshift(f); st.fundings.length = Math.min(st.fundings.length, cfg.keep.fundings); think(M.V.funding({ sol: f.sol, src }), 'funding', { tx: f.tx });
     }
-    if (st.fundSeen.length > 300) st.fundSeen.splice(0, st.fundSeen.length - 300); dirty = true;
+    if (st.fundSeen.length > 300) st.fundSeen.splice(0, st.fundSeen.length - 300); if (st.wdSeen.length > 300) st.wdSeen.splice(0, st.wdSeen.length - 300); dirty = true;
+  }
+  // ---- withdrawal: a plain SOL transfer I signed that is not one of my trades or my principal payout (the owner moving funds out)
+  const PLAIN = new Set(['11111111111111111111111111111111', 'ComputeBudget111111111111111111111111111111']);
+  function withdrawalOf(tx, keys, i, delta, sig) {
+    if (keys[0] !== address || delta >= 0 || sig === st.payout?.tx || sig === st.payout?.payout?.tx) return null;
+    const ins = tx.transaction.message.instructions || []; if (!ins.length || !ins.every((x) => PLAIN.has(x.programId?.toString?.() || x.programId))) return null;
+    let to = null, best = 0; keys.forEach((k, j) => { const d = tx.meta.postBalances[j] - tx.meta.preBalances[j]; if (j !== i && d > best) { best = d; to = k; } }); if (!to) return null;
+    return { at: new Date((tx.blockTime || now() / 1000) * 1000).toISOString(), sol: r6(best / LAMPORTS), feeSol: r6((tx.meta.fee || 0) / LAMPORTS), to, tx: sig, note: 'sent out of my wallet by my owner (not a trade); it leaves my treasury, it is not a trading loss' };
   }
   async function refreshEur() {
     try { const r = await fetchFn('https://api.kraken.com/0/public/Ticker?pair=SOLEUR', { signal: AbortSignal.timeout(10000) }); const j = await r.json(); const v = Number(Object.values(j.result || {})[0]?.c?.[0]); if (v > 0) { st.eurPerSol = r4(v); st.eurAt = new Date(now()).toISOString(); } } catch {}
@@ -762,7 +774,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   }
   function snapshot() {
     const j = { v: 2, mode: cfg.mode, bornAt: st.bornAt, paperCash: st.paperCash, paperStart: st.paperStart, positions: st.positions.map(({ closing, ...p }) => p), trades: st.trades, decisions: st.decisions.slice(0, 30), thoughts: st.thoughts.slice(0, 50), seen: st.seen, day: st.day, dayPnl: st.dayPnl, scansDay: st.scansDay, scansToday: st.scansToday, totals: st.totals,
-      bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn, payout: st.payout, paperArchive: st.paperArchive, liveStartedAt: st.liveStartedAt, volAccPaid: st.volAccPaid, shadow: st.shadow,
+      bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), withdrawals: st.withdrawals || [], wdSeen: (st.wdSeen || []).slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn, payout: st.payout, paperArchive: st.paperArchive, liveStartedAt: st.liveStartedAt, volAccPaid: st.volAccPaid, shadow: st.shadow,
       activity: { log: ACT.log.slice(0, 30), downtimes: ACT.downtimes.slice(0, 20), dayKey: ACT.dayKey, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday }, savedAt: new Date(now()).toISOString() };
     return 'gz:' + zlib.gzipSync(JSON.stringify(j)).toString('base64');
   }
@@ -785,7 +797,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     }
     Object.assign(st, { paperCash: j.paperCash ?? st.paperCash, paperStart: j.paperStart ?? st.paperStart, positions: j.positions || [], trades: j.trades || [], decisions: j.decisions || [], seen: j.seen || {}, day: j.day || st.day, dayPnl: j.dayPnl || 0, scansDay: j.scansDay || st.scansDay, scansToday: j.scansToday || 0, totals: { ...st.totals, ...(j.totals || {}) } });
     if (j.v === 2) {
-      for (const k of ['bornAt', 'thoughts', 'peak', 'streak', 'hibernateDay', 'equityHist', 'weightsHist', 'weights', 'dayStats', 'diaries', 'fundings', 'fundSeen', 'eurPerSol', 'affect', 'limbo', 'revivals', 'life', 'vitalKey', 'privilege', 'liveBaseline', 'capitalIn', 'payout', 'paperArchive', 'liveStartedAt', 'volAccPaid', 'shadow']) if (j[k] != null) st[k] = j[k];
+      for (const k of ['bornAt', 'thoughts', 'peak', 'streak', 'hibernateDay', 'equityHist', 'weightsHist', 'weights', 'dayStats', 'diaries', 'fundings', 'fundSeen', 'withdrawals', 'wdSeen', 'eurPerSol', 'affect', 'limbo', 'revivals', 'life', 'vitalKey', 'privilege', 'liveBaseline', 'capitalIn', 'payout', 'paperArchive', 'liveStartedAt', 'volAccPaid', 'shadow']) if (j[k] != null) st[k] = j[k];
       if (j.bandit) for (const k of M.ARM_KEYS) if (j.bandit[k]) st.bandit[k] = { ...st.bandit[k], ...j.bandit[k] };
       if (j.regime) st.regime = { ...st.regime, ...j.regime };
       if (!st.shadow.byVar) st.shadow = { since: new Date(now()).toISOString(), signals: 0, open: [], closed: [], byVar: {}, seen: {} }; // older shadow format: start the forward test fresh
@@ -862,7 +874,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
         sizing: { method: 'fractional Kelly on a Thompson sample', kellyFraction: cfg.kellyFraction, regimeMultipliers: M.REGIME_MULT, drawdownSoftPct: cfg.ddSoftPct, drawdownHibernatePct: cfg.ddHibernatePct }, params: P ? { source: P.source, generatedAt: P.generatedAt } : null },
       vitals: vitalsStatus(),
       bodyFund: { ...fund(), basis: cfg.mode === 'live' ? 'on-chain wallet balance + open positions' : 'real on-chain wallet balance only (paper P&L never counts)', workingCapitalSol: cfg.workingCapitalSol, purchases, paperEquitySol: cfg.mode === 'paper' ? eq : null },
-      fundings: st.fundings, fundingTotalSol: r6(st.fundings.reduce((a, f) => a + f.sol, 0)), feeSplit: FEE_SPLIT(), diaryDays: st.diaries.length,
+      fundings: st.fundings, fundingTotalSol: r6(st.fundings.reduce((a, f) => a + f.sol, 0)), withdrawals: st.withdrawals || [], withdrawnTotalSol: r6((st.withdrawals || []).reduce((a, w) => a + w.sol, 0)), feeSplit: FEE_SPLIT(), diaryDays: st.diaries.length,
       rules: { maxTradeSol: cfg.maxTradeSol, sizePctOfBalance: cfg.sizePct, minTradeSol: cfg.minTradeSol, reserveSol: cfg.reserveSol, maxOpen: cfg.maxOpen, takeProfitPct: cfg.tpPct, stopLossPct: cfg.slPct, maxHoldMin: cfg.maxHoldMin, dailyLossLimitSol: cfg.dailyLossSol, coinCooldownMin: cfg.cooldownMin, curveProgressPct: [cfg.minProg, cfg.maxProg], feesPerSidePct: cfg.feePct, txFeeSol: cfg.txFeeSol, maxCostShareOfEdge: cfg.maxCostShare, maxImpactPct: cfg.maxImpactPct,
         signals: Object.fromEntries(M.ARM_KEYS.map((k) => [k, `${arms[k].idea} (exits +${arms[k].tp}% / -${arms[k].sl}% / ${arms[k].hold} min${arms[k].enabled ? '' : arms[k].shadow ? ', SHADOW: paper signals only' : ', disabled'})`])),
         scannerGate: 'no multi-wallet bundle txs, no dev-paid creation-block buys, creation block <10% supply, early wallets <10%, dev holds <10% and has not sold, top-10 <30%, risk not HIGH, not Mayhem Mode, SOL-quoted curve, not created by the dev wallet',

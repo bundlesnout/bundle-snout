@@ -112,11 +112,17 @@ function dipMint(t0) {
   process.env.AGENT_PUBLIC_KEY = 'Agent1111111111111111111111111111111111111';
   const txs = { s1: { keys: [DEV_WALLET, 'Agent1111111111111111111111111111111111111', '11111111111111111111111111111111'], pre: [5e9, 0], post: [4e9, 1e9] },
     s2: { keys: ['Cranker', 'Agent1111111111111111111111111111111111111', '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'], pre: [1e9, 1e9], post: [1e9, 1.05e9] },
-    s3: { keys: ['Agent1111111111111111111111111111111111111', 'x'], pre: [2e9, 0], post: [1.9e9, 0] } };
-  const rpc = async (m, p) => m === 'getSignaturesForAddress' ? Object.keys(txs).map((k) => ({ signature: k, err: null })) : m === 'getTransaction' ? { blockTime: 1792850000, transaction: { message: { accountKeys: txs[p[0]].keys.map((k) => ({ pubkey: k })) } }, meta: { preBalances: txs[p[0]].pre, postBalances: txs[p[0]].post } } : { value: 0 };
+    s3: { keys: ['Agent1111111111111111111111111111111111111', 'x'], pre: [2e9, 0], post: [1.9e9, 0] },
+    s4: { keys: ['Agent1111111111111111111111111111111111111', 'Owner', '11111111111111111111111111111111'], pre: [3e9, 0, 1], post: [2.49999e9, 5e8, 1], ins: ['11111111111111111111111111111111'], fee: 10000 },
+    s5: { keys: ['Agent1111111111111111111111111111111111111', 'Pool', '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'], pre: [3e9, 0, 1], post: [2.9e9, 1e8, 1], ins: ['6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'] } };
+  const rpc = async (m, p) => m === 'getSignaturesForAddress' ? Object.keys(txs).map((k) => ({ signature: k, err: null })) : m === 'getTransaction' ? { blockTime: 1792850000, transaction: { message: { accountKeys: txs[p[0]].keys.map((k) => ({ pubkey: k })), instructions: (txs[p[0]].ins || []).map((programId) => ({ programId })) } }, meta: { fee: txs[p[0]].fee || 5000, preBalances: txs[p[0]].pre, postBalances: txs[p[0]].post } } : { value: 0 };
   const fz = mk(analyze, { rpc }); await fz._test.scanFunding(); delete process.env.AGENT_PUBLIC_KEY;
   assert.strictEqual(fz.st.fundings.length, 2); assert.ok(fz.st.fundings.some((f) => /dev wallet/.test(f.source) && f.sol === 1)); assert.ok(fz.st.fundings.some((f) => /creator fees/.test(f.source) && f.sol === 0.05));
   await fz._test.scanFunding(); assert.strictEqual(fz.st.fundings.length, 2, 'no double counting');
+  assert.strictEqual(fz.st.withdrawals.length, 1, 'only the plain transfer I signed is a withdrawal (not s3 without a transfer, not the s5 trade)');
+  assert.strictEqual(fz.st.withdrawals[0].sol, 0.5); assert.strictEqual(fz.st.withdrawals[0].to, 'Owner'); assert.strictEqual(fz.st.withdrawals[0].tx, 's4');
+  assert.strictEqual(fz.status().withdrawnTotalSol, 0.5);
+  { process.env.AGENT_PUBLIC_KEY = 'Agent1111111111111111111111111111111111111'; const fz2 = mk(analyze, { rpc }); delete process.env.AGENT_PUBLIC_KEY; fz2._test.restore(fz._test.snapshot()); assert.strictEqual(fz2.st.withdrawals.length, 1, 'withdrawals survive a restart'); await fz2._test.scanFunding(); assert.strictEqual(fz2.st.withdrawals.length, 1, 'no double counting after restore'); }
   // 14) v1 state migrates: its closed trades seed the bandit
   const v1 = JSON.stringify({ v: 1, mode: 'paper', paperCash: 0.09, paperStart: 0.1, trades: [{ side: 'SELL', mint: 'Mx', pnlPct: -20 }, { side: 'BUY', mint: 'Mx', reason: 'organic-demand momentum' }] });
   const mg = mk(); mg._test.restore(v1); assert.strictEqual(mg.st.bandit.momentum.all.n, 1); assert.strictEqual(mg.st.migratedTrades, 1);

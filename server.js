@@ -186,6 +186,7 @@ function feedOf(s) {
     const kind = pay?.tx === w.tx || (w.signer && w.sol < 0 && w.from === AGENT_WALLET && Math.abs(Math.abs(w.sol) - (pay?.sol || -1)) < 0.001) ? 'PAYOUT' : w.sol > 0 && !w.signer ? 'FUND' : w.signer ? 'WALLET' : 'IN';
     out.push({ kind, at: w.at, sol: Math.round(w.sol * 1e6) / 1e6, tx: w.tx, mode: 'live', from: w.signer ? null : w.from });
   }
+  for (const w of s.withdrawals || []) { const o = out.find((x) => x.tx === w.tx); if (o) { o.kind = 'OUT'; o.sol = -w.sol; } else out.push({ kind: 'OUT', at: w.at, sol: -w.sol, tx: w.tx, mode: 'live', to: w.to }); }
   for (const f of s.fundings || []) if (f.tx && !out.some((x) => x.tx === f.tx)) out.push({ kind: 'FUND', at: f.at, sol: f.sol, tx: f.tx, mode: 'live', from: f.from, reason: f.source });
   return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 30);
 }
