@@ -39,6 +39,11 @@ function dipMint(t0) {
   assert.strictEqual(scans, 1); act = a.activity();
   const c = act.candidates.find((x) => x.mint === 'CoinCCC'); assert.ok(c && c.verdict === 'rejected' && c.scanner === 'fail' && /scanner said no/.test(c.why), JSON.stringify(c));
   assert.ok(act.log.some((e) => e.kind === 'scan') && act.log.some((e) => e.kind === 'skip'), 'scan + skip in the log');
+  // a coin that clears the bar while the scanner gap is in the way: counted once per coin per day as a missed check, not scanned
+  const mE = dipMint(t); mints.set('CoinEEE', mE); a.onTrade({ mint: 'CoinEEE', vs: mE.vs, vt: mE.vt }, mE); a.onTrade({ mint: 'CoinEEE', vs: mE.vs, vt: mE.vt }, mE);
+  await new Promise((r) => setTimeout(r, 20)); act = a.activity();
+  assert.strictEqual(scans, 1, 'gap: no second scan'); assert.deepStrictEqual([act.scanner.missedToday.gap, act.scanner.missedToday.budget], [1, 0], JSON.stringify(act.scanner.missedToday));
+  assert.strictEqual(act.candidates.find((x) => x.mint === 'CoinEEE')?.verdict, 'watch');
   assert.ok(act.log.length <= 30);
   // in a trade: state + detail
   await a._test.openPosition({ mint: 'CoinDDD', symbol: 'DDD', size: 0.01, vs: 40, vt: 800e6, reason: 'r' });

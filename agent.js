@@ -402,6 +402,9 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     if (st.scansToday >= allowance || t - st.lastScanAt < cfg.scanGapSec * 1000) {
       const wait = st.scansToday >= allowance ? 'scanner budget for now is used up' : `scanner free in ${Math.max(1, Math.ceil((st.lastScanAt + cfg.scanGapSec * 1000 - t) / 1000))}s`;
       cand(tr.mint, symNow, { ...cb, verdict: 'watch', why: `${armLabel(best.arm).toLowerCase()} setup, edge +${r1(best.smp.ev)}% clears my bar of ${r1(best.pol.minEvPct)}%; ${wait}` });
+      // measure how often the scanner budget/gap (not my rules) keeps a coin that cleared my bar from being checked: one count per coin per day
+      const ds = st.dayStats; ds.missed ||= { budget: 0, gap: 0, mints: [] };
+      if (!ds.missed.mints.includes(tr.mint)) { ds.missed.mints.push(tr.mint); if (ds.missed.mints.length > 400) ds.missed.mints.shift(); ds.missed[st.scansToday >= allowance ? 'budget' : 'gap']++; }
       return;
     }
     cand(tr.mint, symNow, { ...cb, verdict: 'scanning', why: `${armLabel(best.arm).toLowerCase()} setup, edge +${r1(best.smp.ev)}% vs bar ${r1(best.pol.minEvPct)}%: running my scanner` });
@@ -899,7 +902,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const watchTxt = watching.length ? `, watching: ${watching.map((c) => `${c.label} (${c.why})`).join('; ')}` : ', nothing worth a closer look yet';
     const headline = ['limbo', 'stopped', 'halted'].includes(key) ? `${label}. ${detail}` : key === 'evaluating' ? `${label}: ${detail}` : `${label} — ${scanTxt}${watchTxt}`;
     return { key, label, headline, detail, now: iso(t), scannedLastMin, activeCoinsLastMin: activeLastMin, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday,
-      lastScanAt: ACT.lastEvalAt ? iso(ACT.lastEvalAt) : null, scanner: { checksToday: st.scansToday, dailyBudget: cfg.maxScansPerDay, allowedSoFarToday: allowance, lastAt: st.lastScanAt ? iso(st.lastScanAt) : null, nextSlotInSec: nextScannerSec, minGapSec: cfg.scanGapSec, running: ACT.scanning ? { mint: ACT.scanning.mint, symbol: ACT.scanning.symbol } : null },
+      lastScanAt: ACT.lastEvalAt ? iso(ACT.lastEvalAt) : null, scanner: { checksToday: st.scansToday, dailyBudget: cfg.maxScansPerDay, allowedSoFarToday: allowance, lastAt: st.lastScanAt ? iso(st.lastScanAt) : null, nextSlotInSec: nextScannerSec, minGapSec: cfg.scanGapSec, missedToday: { budget: st.dayStats?.missed?.budget || 0, gap: st.dayStats?.missed?.gap || 0, note: 'coins that cleared my bar but were not scanned because the scanner budget or min gap was in the way (one count per coin per day)' }, running: ACT.scanning ? { mint: ACT.scanning.mint, symbol: ACT.scanning.symbol } : null },
       candidates: cands, log: ACT.log.slice(0, 30), openPositions: st.positions.length,
       stream: { connected: !!si?.connected, lastTradeAgoSec: streamAgoSec, coinsTracked: si?.mintsTracked ?? null },
       loop: { running: ACT.lastTickAt > 0 && t - ACT.lastTickAt < 20e3, ticks: ACT.ticks, lastTickAt: ACT.lastTickAt ? iso(ACT.lastTickAt) : null, uptimeSec: Math.round((t - t0) / 1000), errorsCaught: ACT.errors, lastError: ACT.lastError, lastErrorAt: ACT.lastErrorAt, downtimes: ACT.downtimes.slice(0, 10) } };
