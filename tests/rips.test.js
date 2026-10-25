@@ -145,4 +145,13 @@ assert.strictEqual(R.tradeFees(ammTx('So1111111111111111111111111111111111111111
   const v = await r._rpc('getSlot', []);
   if (v !== 42 || n !== 3) { console.error('FAIL rips 429 retry', v, n); process.exit(1); }
   console.log('ok rips 429 retry');
+  let m = 0;
+  const r3 = R2.createRips({ env: { RIPS_RETRY_MS: '0' }, log: () => {}, fetch: async () => { m++; return m < 2 ? { ok: false, status: 413, json: async () => ({}) } : { ok: true, json: async () => ({ result: 7 }) }; } });
+  const v3 = await r3._rpc('getSlot', []);
+  if (v3 !== 7 || m !== 2) { console.error('FAIL rips 413 retry', v3, m); process.exit(1); }
+  let k = 0;
+  const r4 = R2.createRips({ env: { RIPS_RETRY_MS: '0' }, log: () => {}, fetch: async () => { k++; return { ok: false, status: 400, json: async () => ({}) }; } });
+  let threw = false; try { await r4._rpc('getSlot', []); } catch { threw = true; }
+  if (!threw || k !== 1) { console.error('FAIL rips 400 not retried', k); process.exit(1); }
+  console.log('ok rips 413 retry / 400 no retry');
 })();
