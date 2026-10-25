@@ -15,7 +15,7 @@ ok.dev = { hasSold: false, holdingPctSupply: 1, soldPctOfBought: 0 }; ok.holders
 assert.deepStrictEqual(cleanCheck(ok, cfg), { clean: true, reasons: [] });
 for (const [mut, why] of [
   [(r) => (r.dev.hasSold = true), 'dev sold'], [(r) => (r.holders.top10Pct = 31), 'top-10'], [(r) => (r.bundle.multiWalletTxs = 1), 'multi-wallet'],
-  [(r) => (r.bundle.sameSlotPaidByDev = 1), 'fee-paid by dev'], [(r) => (r.bundle = null), 'bundle check unavailable'], [(r) => (r.curve.complete = true), 'graduated'],
+  [(r) => (r.bundle.sameSlotPaidByDev = 1), 'fee-paid by dev'], [(r) => (r.bundle = null), 'bundle check unavailable'], [(r) => { r.bundle = null; r.history = { txScanned: 12000, reachedCreation: false }; }, 'not reached in the last 12000 txs'], [(r) => (r.curve.complete = true), 'graduated'],
 ]) { const c = JSON.parse(JSON.stringify(ok)); mut(c); const res = cleanCheck(c, cfg); assert.strictEqual(res.clean, false, why); assert(res.reasons.some((x) => x.includes(why)), why + ' reason'); }
 assert.strictEqual(progressFromApi({ real_token_reserves: 793_100_000e6 }), 0);
 assert.strictEqual(progressFromApi({ real_token_reserves: 793_100_000e6 * 0.3 }), 70);

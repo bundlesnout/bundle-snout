@@ -57,7 +57,7 @@ function cleanCheck(r, cfg = CFG()) {
   if (!r.isPumpFun || !c) fail.push('not a pump.fun bonding curve');
   else if (c.complete) fail.push('already graduated');
   else if (c.progressPct < cfg.thresholdPct - 5) fail.push(`on-chain progress ${c.progressPct}% < threshold`);
-  if (!b) fail.push('bundle check unavailable (creation tx not found)');
+  if (!b) fail.push(r.history && r.history.reachedCreation === false ? `bundle check unavailable (creation tx not reached in the last ${r.history.txScanned} txs)` : 'bundle check unavailable (creation tx not found)');
   else {
     if (b.multiWalletTxs > 0) fail.push(`${b.multiWalletTxs} multi-wallet buy tx(s) in first 3 blocks`);
     if (b.sameSlotPaidByDev > 0) fail.push(`${b.sameSlotPaidByDev} creation-block buy(s) fee-paid by dev`);
