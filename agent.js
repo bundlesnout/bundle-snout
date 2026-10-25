@@ -868,7 +868,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       solUsd, eurPerSol: st.eurPerSol,
       pnl: { realizedSol: st.totals.realizedSol, oneTimeAccountSol: st.volAccPaid ? r6(E.NET().volAccRentLamports / LAMPORTS) : 0, netSol: r6(st.totals.realizedSol - (st.volAccPaid ? E.NET().volAccRentLamports / LAMPORTS : 0)), netNote: 'closed-trade P&L after fees, minus the one-time pump.fun account my wallet opened on its first buy (kept out of per-trade learning, but it is real money)', unrealizedSol: unreal, todaySol: st.dayPnl, dailyLossLimitSol: cfg.dailyLossSol, day: st.day },
       stats: { closedTrades: st.totals.trades, wins: st.totals.wins, winRate: st.totals.trades ? r1((st.totals.wins / st.totals.trades) * 100) : null, signals: st.totals.signals, sitOut: st.totals.sitOut, scans: st.totals.scans, rejectedByScanner: st.totals.rejected, scansToday: st.scansToday, maxScansPerDay: cfg.maxScansPerDay, scanErrors: st.totals.scanErrors, liveErrors: st.totals.liveErrors, execSkips: st.totals.execSkips || 0,
-        drawdownPct: d.ddPct, maxDrawdownPct: Math.max(r1(mdd * 100), d.ddPct || 0), peakSol: r6(st.peak), avgPnlPct: closed.length ? r1(closed.reduce((a, x) => a + (x.pnlPct || 0), 0) / closed.length) : null },
+        drawdownPct: d.ddPct, maxDrawdownPct: Math.max(r1(mdd * 100), d.ddPct || 0), peakSol: r6(st.peak), avgPnlPct: closed.length ? r1(closed.reduce((a, x) => a + (x.pnlPct || 0), 0) / closed.length) : null, exitSlippage: exitSlippage(closed) },
       mind: { mood: md, regime: { label: st.regime.label, heat: st.regime.heat, tradesPerMin: st.regime.tradesPerMin, solPerMin: st.regime.volPerMin, launchesPerMin: st.regime.launchesPerMin, since: st.regime.since ? new Date(st.regime.since).toISOString() : null },
         drawdown: d, streak: st.streak, weights: st.weights, weightsHist: st.weightsHist, equityHist: st.equityHist, arms: M.armTable(st.bandit, regimeNow(), arms, cfg.feePct), thoughts: st.thoughts.slice(0, 40),
         sizing: { method: 'fractional Kelly on a Thompson sample', kellyFraction: cfg.kellyFraction, regimeMultipliers: M.REGIME_MULT, drawdownSoftPct: cfg.ddSoftPct, drawdownHibernatePct: cfg.ddHibernatePct }, params: P ? { source: P.source, generatedAt: P.generatedAt } : null },
@@ -963,4 +963,18 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   };
 }
 
-module.exports = { createAgent, ACFG, parseSecret, signal, gate, volbotGate, DEV_WALLET, IDENTITY, FEE_SPLIT };
+// How far my closed exits landed past the rule that fired them (paper fills at the next observed price, so a fast dump overshoots the stop).
+// Parsed from the public sell reasons, so it also covers trades closed before this metric existed.
+function exitSlippage(trades) {
+  const sl = [], tp = [];
+  for (const x of trades || []) {
+    if (x.side !== 'SELL' || typeof x.reason !== 'string' || typeof x.pnlPct !== 'number') continue;
+    let m = x.reason.match(/^stop loss: .*≤ -([\d.]+)%/); if (m) { sl.push(-Number(m[1]) - x.pnlPct); continue; }
+    m = x.reason.match(/^take profit: .*≥ \+([\d.]+)%/); if (m) tp.push(x.pnlPct - Number(m[1]));
+  }
+  const avg = (a) => (a.length ? Math.round((a.reduce((s, v) => s + v, 0) / a.length) * 10) / 10 : null);
+  return { stopLosses: sl.length, avgPctPastStop: avg(sl), worstPctPastStop: sl.length ? Math.round(Math.max(...sl) * 10) / 10 : null, takeProfits: tp.length, avgPctPastTarget: avg(tp),
+    note: 'how many % points my stop-loss exits lost beyond the stop (and take-profits gained beyond the target), because a price can jump past a level between two trades' };
+}
+
+module.exports = { createAgent, ACFG, parseSecret, signal, gate, volbotGate, DEV_WALLET, IDENTITY, FEE_SPLIT, exitSlippage };

@@ -216,5 +216,9 @@ function dipMint(t0) {
     const vf = require('../agent-variants.json').variants; assert.ok(vf.length >= 10 && vf.every((x) => M2.ARMS[x.arm] && x.tp > 0 && x.sl > 0 && x.hold > 0 && x.size <= 0.02));
     const sb = mk(); assert.strictEqual(sb.status().shadow.variants.length, vf.length);
     t = tSave; mints.delete(vmint); }
+  { const { exitSlippage } = require('../agent');
+    const es = exitSlippage([{ side: 'SELL', pnlPct: -13.8, reason: 'stop loss: -13.8% ≤ -8%' }, { side: 'SELL', pnlPct: -9, reason: 'stop loss: -9% ≤ -8%' }, { side: 'SELL', pnlPct: 65.6, reason: 'take profit: +65.6% ≥ +50%' }, { side: 'SELL', pnlPct: 2, reason: 'time stop: 10 min held, +2%' }, { side: 'BUY', reason: 'x' }]);
+    assert.strictEqual(es.stopLosses, 2); assert.strictEqual(es.avgPctPastStop, 3.4); assert.strictEqual(es.worstPctPastStop, 5.8); assert.strictEqual(es.takeProfits, 1); assert.strictEqual(es.avgPctPastTarget, 15.6);
+    assert.strictEqual(exitSlippage([]).avgPctPastStop, null); }
   console.log('agent tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });
