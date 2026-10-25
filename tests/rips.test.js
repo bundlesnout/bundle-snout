@@ -135,3 +135,14 @@ assert.strictEqual(R.tradeFees(ammTx('So1111111111111111111111111111111111111111
   r.stop();
   console.log('rips tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// RPC 429 is retried (then succeeds) instead of failing the whole refresh step
+(async () => {
+  const R2 = require('../rips');
+  let n = 0;
+  const r = R2.createRips({ env: { RIPS_RETRY_MS: '0' }, log: () => {}, fetch: async () => { n++; return n < 3 ? { ok: false, status: 429, json: async () => ({}) } : { ok: true, json: async () => ({ result: 42 }) }; } });
+  if (!r._rpc) { console.log('rips 429 retry: (no _rpc hook, skipped)'); return; }
+  const v = await r._rpc('getSlot', []);
+  if (v !== 42 || n !== 3) { console.error('FAIL rips 429 retry', v, n); process.exit(1); }
+  console.log('ok rips 429 retry');
+})();

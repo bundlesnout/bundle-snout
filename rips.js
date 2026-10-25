@@ -136,10 +136,19 @@ function createRips(opts = {}) {
   let timer = null; let running = false;
 
   async function j(url, init) { const r = await f(url, { ...init, signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error(`HTTP ${r.status} ${url.split('?')[0]}`); return r.json(); }
+  // The public RPC rate-limits shared hosts (HTTP 429): retry a couple of times with a growing pause before failing the step.
+  const retryMs = Number(env.RIPS_RETRY_MS ?? 1500);
   async function rpc(method, params) {
-    st.rpcCalls++;
-    const r = await j(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
-    if (r.error) throw new Error(`${method}: ${r.error.message}`); return r.result;
+    for (let attempt = 0; ; attempt++) {
+      st.rpcCalls++;
+      try {
+        const r = await j(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+        if (r.error) throw new Error(`${method}: ${r.error.message}`); return r.result;
+      } catch (e) {
+        if (attempt >= 2 || !/HTTP 429/.test(e.message)) throw e;
+        st.rpcRetries = (st.rpcRetries || 0) + 1; if (retryMs) await sleep(retryMs * (attempt + 1));
+      }
+    }
   }
   const getRawTx = (sig) => rpc('getTransaction', [sig, { encoding: 'json', maxSupportedTransactionVersion: 1, commitment: 'confirmed' }]);
   const getTx = (sig) => rpc('getTransaction', [sig, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 1, commitment: 'confirmed' }]);
@@ -391,7 +400,7 @@ function createRips(opts = {}) {
   }
 
   return {
-    refresh, status, live, configured, drainFees, livePoll,
+    refresh, status, live, configured, drainFees, livePoll, _rpc: rpc,
     start() { refresh(); timer = setInterval(refresh, Number(env.RIPS_REFRESH_MS || 180000)); timer.unref?.(); if (configured) { feeLoop(); liveLoop(); } },
     stop() { stopped = true; clearInterval(timer); },
   };
