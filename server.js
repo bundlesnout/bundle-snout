@@ -45,6 +45,7 @@ if (process.env.SCALP_ENABLED !== '0') {
   scalper = createScalper({ store: renderEnvStore(), symbolOf: (m) => createdSyms.get(m), onTradeHook: (tr, m) => {
     mref.set(tr.mint, m);
     try { agent?.onTrade(tr, m); } catch (e) { console.error('[agent] trade hook', e.message); }
+    try { postmig?.onCurveTrade(tr, m); } catch (e) { console.error('[postmig] trade hook', e.message); } // paper-only shadow (never trades)
     try { radar?.onTrade(tr, { symbol: createdSyms.get(tr.mint) || null, solUsd: scalper?.solUsd?.() }); } catch (e) { console.error('[radar] trade hook', e.message); } // Bond Radar's primary source
   } });
   scalper.start().catch((e) => console.error('[scalp] start failed', e.message));
@@ -97,6 +98,16 @@ if (process.env.AGENT_BOOT !== '0' && scalper) {
   agent = createAgent({ scalper, store: envStore('AGENT_STATE') });
   agent.start().catch((e) => console.error('[agent] start failed', e.message));
 }
+// ALMA post-migration SHADOW arm (pre-registered forward test, alma-research/C/PREREG.md): paper-only by construction (no keys, no executor).
+var postmig = null;
+if (process.env.POSTMIG_SHADOW !== '0' && scalper) {
+  try {
+    const { createPostmig } = require('./postmig');
+    postmig = createPostmig({ getState: () => { const sh = agent?.st?.shadow; if (!sh) return null; if (!sh.postmig) sh.postmig = { since: new Date().toISOString(), prereg: 'alma-research/C/PREREG.md', grads: 0, excluded: 0, settled: 0, noData: 0, byVar: {}, closed: [] }; return sh.postmig; },
+      isExcluded: (mint, creator) => agent ? (agent.cfg.exclude.has(mint) || (creator != null && agent.cfg.protectedWallets.has(creator))) : creator === require('./agent').DEV_WALLET }).start();
+  } catch (e) { console.error('[postmig] start failed', e.message); }
+}
+app.get('/api/agent/postmig', (_, res) => { res.set('cache-control', 'no-store'); res.json(postmig ? postmig.status() : { disabled: true }); });
 app.get('/agent', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent.html')));
 app.get('/api/agent', (_, res) => { res.set('cache-control', 'no-store'); res.json(agent ? agent.status() : { disabled: true }); });
 app.get('/agent/diary', (_, res) => res.sendFile(path.join(__dirname, 'public', 'agent-diary.html')));

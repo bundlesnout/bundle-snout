@@ -50,7 +50,8 @@ function decodeTrade(b64) {
   const buy = d[o] === 1; o += 1; const user = b58(d.subarray(o, o + 32)); o += 32; const ts = Number(d.readBigInt64LE(o)); o += 8;
   const vs = Number(d.readBigUInt64LE(o)) / 1e9; o += 8; const vt = Number(d.readBigUInt64LE(o)) / 1e6; o += 8;
   let realTok = null; if (d.length >= o + 16) { o += 8; realTok = Number(d.readBigUInt64LE(o)) / 1e6; }
-  return { mint, sol, tok, buy, user, ts, vs, vt, realTok };
+  const creator = d.length >= 209 ? b58(d.subarray(177, 209)) : null; // TradeEvent.creator (after fee_recipient, fee_basis_points, fee)
+  return { mint, sol, tok, buy, user, ts, vs, vt, realTok, creator };
 }
 const LOG_RE = /Program data: ([A-Za-z0-9+/=]+)/g;
 function tradesFromMessage(str) {
