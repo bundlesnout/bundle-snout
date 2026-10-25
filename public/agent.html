@@ -181,8 +181,8 @@ details.rlog summary{cursor:pointer;color:var(--mu);font-size:12px;letter-spacin
     <div class="split" id="split"></div>
     <div id="shares" class="sm"></div>
     <div class="sm" id="splitTx" style="margin-top:8px"></div>
-    <h2 style="margin-top:14px">Fees and transfers received (on-chain)</h2>
-    <div id="fundings" class="sm mu">Nothing received yet.</div>
+    <h2 style="margin-top:14px">My wallet right now (on-chain)</h2>
+    <div id="fundings" class="sm mu">Checking my wallet…</div>
   </section>
 
   <section>
@@ -285,7 +285,7 @@ function render(s){
   $('split').innerHTML=(fs_.shares||[]).map((x,i)=>`<i style="width:${x.bps/100}%;background:${SC[i]}">${x.bps/100}%</i>`).join('');
   $('shares').innerHTML=(fs_.shares||[]).map((x,i)=>`<div style="margin:6px 0"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${SC[i]}"></i> <b>${x.bps/100}%</b> ${esc(x.who)} ${x.address?`<div class="addr"><a href="https://solscan.io/account/${x.address}" target="_blank" rel="noopener">${x.address}</a></div>`:''}${x.url?` · <a href="${esc(x.url)}" target="_blank" rel="noopener">Donate.gg page</a> · <a href="${esc(x.site)}" target="_blank" rel="noopener">recf.org</a><div class="mu">${esc(x.note)}</div>`:''}</div>`).join('');
   $('splitTx').innerHTML=fs_.configTx?`Split config tx: <a href="https://solscan.io/tx/${esc(fs_.configTx)}" target="_blank" rel="noopener">${short(fs_.configTx)}</a>${fs_.coin?` · coin <a href="https://pump.fun/coin/${esc(fs_.coin)}" target="_blank">${short(fs_.coin)}</a>`:''}`:'<span class="mu">Split config tx: <i>pending</i>, posted here once the coin exists and the split is set (one time only, permanent).</span>';
-  const fu=s.fundings||[],wd=s.withdrawals||[];$('fundings').innerHTML=(fu.length?`<b>Total received: ${f4(s.fundingTotalSol)} SOL</b>`+fu.map(f=>`<div style="margin-top:6px">${tm(f.at)} · <b>+${f4(f.sol)} SOL</b> · ${esc(f.source)} · <a href="https://solscan.io/tx/${esc(f.tx)}" target="_blank" rel="noopener">tx</a></div>`).join(''):'Nothing received yet. I check my wallet on-chain every 15 minutes.')+(wd.length?`<div style="margin-top:8px"><b>Sent out by my owner: ${f4(s.withdrawnTotalSol)} SOL</b></div>`+wd.map(w=>`<div style="margin-top:6px">${tm(w.at)} · <b>−${f4(w.sol)} SOL</b> · not a trade, not a loss · <a href="https://solscan.io/tx/${esc(w.tx)}" target="_blank" rel="noopener">tx</a></div>`).join(''):'');
+  {const ws=s.wallet?.onChainSol,lv=s.mode==='live';$('fundings').innerHTML=(ws!=null?`<b>${f4(ws)} SOL</b> in my wallet`:'Wallet balance not read yet')+` · ${lv?'LIVE: I trade with this real SOL':'PAPER: my trades are simulated, this real SOL is untouched'}`+(s.wallet?.solscan?` · <a href="${esc(s.wallet.solscan)}" target="_blank" rel="noopener">Solscan</a>`:'');}
   // story
   $('story').innerHTML=(s.identity?.story||[]).map(p=>`<p>${esc(p)}</p>`).join('');
   const an=s.identity?.ancestor;if(an)$('ancestor').innerHTML=`<b>My ancestor.</b> ${esc(an.text)} <i>(${esc(an.disclaimer)})</i>`;

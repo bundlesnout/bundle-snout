@@ -175,7 +175,8 @@ function chartsOf(s) {
   for (const c of s.activity?.candidates || []) if (want.length < 2 && !want.some((w) => w[0] === c.mint)) want.push([c.mint, c.symbol || String(c.label || '').replace(/^\$/, '') || createdSyms.get(c.mint), 'watching']);
   return want.map((w) => chartOf(...w)).filter(Boolean).slice(0, 2);
 }
-// every transaction: ALMA's buys/sells (paper or live) + every on-chain wallet movement (funding, payout, swaps) not already listed
+// every transaction: ALMA's buys/sells (paper or live) + its one-time principal payout. Owner deposits/withdrawals and other
+// wallet movements are private: never listed publicly (the page shows the current wallet balance instead)
 function feedOf(s) {
   const trades = s.trades || []; const tokOf = new Map(trades.filter((t) => t.side === 'BUY' && t.tok).map((t) => [t.posId, t.tok]));
   const out = trades.slice(0, 40).map((t) => { const tok = t.tok || tokOf.get(t.posId); const price = tok ? t.sol / tok : null;
@@ -183,11 +184,9 @@ function feedOf(s) {
   const known = new Set(out.map((x) => x.tx).filter(Boolean)); const pay = s.payout?.payout;
   for (const w of walletTx.list) {
     if (known.has(w.tx)) continue;
-    const kind = pay?.tx === w.tx || (w.signer && w.sol < 0 && w.from === AGENT_WALLET && Math.abs(Math.abs(w.sol) - (pay?.sol || -1)) < 0.001) ? 'PAYOUT' : w.sol > 0 && !w.signer ? 'FUND' : w.signer ? 'WALLET' : 'IN';
-    out.push({ kind, at: w.at, sol: Math.round(w.sol * 1e6) / 1e6, tx: w.tx, mode: 'live', from: w.signer ? null : w.from });
+    if (!pay?.tx || pay.tx !== w.tx) continue; // only the recorded payout tx; never an amount guess
+    out.push({ kind: 'PAYOUT', at: w.at, sol: Math.round(w.sol * 1e6) / 1e6, tx: w.tx, mode: 'live', from: w.signer ? null : w.from });
   }
-  for (const w of s.withdrawals || []) { const o = out.find((x) => x.tx === w.tx); if (o) { o.kind = 'OUT'; o.sol = -w.sol; } else out.push({ kind: 'OUT', at: w.at, sol: -w.sol, tx: w.tx, mode: 'live', to: w.to }); }
-  for (const f of s.fundings || []) if (f.tx && !out.some((x) => x.tx === f.tx)) out.push({ kind: 'FUND', at: f.at, sol: f.sol, tx: f.tx, mode: 'live', from: f.from, reason: f.source });
   return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 30);
 }
 app.get(['/m', '/agent/live'], (_, res) => res.sendFile(path.join(__dirname, 'public', 'm.html')));

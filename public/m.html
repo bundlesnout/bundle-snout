@@ -47,7 +47,7 @@ h2 span{letter-spacing:0;text-transform:none;font-weight:600}
 .feed li{display:grid;grid-template-columns:40px 52px 1fr auto;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums}
 .feed li:first-child{border-top:0}
 .feed .t{color:var(--mu);font-size:12.5px}.feed .k{font-weight:800;font-size:12px;border-radius:6px;padding:1px 0;text-align:center}
-.k.BUY{background:#12304f;color:var(--b)}.k.SELL{background:#3a1f2a;color:#ffb3ae}.k.FUND,.k.IN{background:#123a29;color:var(--g)}.k.PAYOUT{background:#3a2f10;color:var(--y)}.k.OUT{background:#3a2f10;color:var(--y)}.k.WALLET{background:#22223a;color:var(--mu)}
+.k.BUY{background:#12304f;color:var(--b)}.k.SELL{background:#3a1f2a;color:#ffb3ae}.k.FUND,.k.IN{background:#123a29;color:var(--g)}.k.PAYOUT{background:#3a2f10;color:var(--y)}.k.WALLET{background:#22223a;color:var(--mu)}
 .feed .c{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.feed .c small{color:var(--mu)}
 .feed .r{text-align:right;font-weight:700;white-space:nowrap}.feed .r small{display:block;font-weight:400;color:var(--mu);font-size:11.5px}
 .empty{color:var(--mu);font-size:14px;padding:4px 0}
@@ -186,11 +186,11 @@ function render(d) {
   } else { $('chTitle').textContent = 'Price'; $('chSub').textContent = ''; $('chBig').textContent = ''; $('chSmall').textContent = ''; drawChart(null); }
   // transactions feed
   const fd = d.feed || [];
-  $('feedSub').textContent = `${fd.length} latest${live ? '' : ' · paper trades + real wallet'}`;
+  $('feedSub').textContent = `${fd.length} latest${live ? '' : ' · paper trades'}`;
   $('feed').innerHTML = fd.length ? fd.map((f) => {
     const sw = f.kind === 'BUY' || f.kind === 'SELL'; const link = f.tx ? `<a href="https://solscan.io/tx/${esc(f.tx)}" target="_blank" rel="noopener">${sw ? `$${esc(f.symbol || '?')}` : 'Solscan'} ↗</a>` : sw ? `$${esc(f.symbol || f.mint?.slice(0, 6))}` : '';
-    const sub = sw ? `${f.mcSol && d.solUsd ? `MC ${usd(f.mcSol * d.solUsd)}` : ''}${f.mode === 'paper' ? ' · paper' : ''}` : f.kind === 'FUND' ? 'funding in' : f.kind === 'PAYOUT' ? 'principal returned' : f.kind === 'OUT' ? 'sent out by owner' : 'wallet tx';
-    const right = f.kind === 'SELL' ? `<span class="${cls(f.pnlSol)}">${sgn(f.pnlSol)}</span><small>${pct(f.pnlPct)} · ${sol(f.sol, 3)}</small>` : `<span class="${f.kind === 'FUND' ? 'pos' : ''}">${f.kind === 'BUY' || f.kind === 'PAYOUT' || f.kind === 'OUT' ? '−' : f.sol > 0 ? '+' : ''}${Math.abs(f.sol ?? 0).toFixed(4)}</span><small>SOL</small>`;
+    const sub = sw ? `${f.mcSol && d.solUsd ? `MC ${usd(f.mcSol * d.solUsd)}` : ''}${f.mode === 'paper' ? ' · paper' : ''}` : f.kind === 'PAYOUT' ? 'principal returned' : 'wallet tx';
+    const right = f.kind === 'SELL' ? `<span class="${cls(f.pnlSol)}">${sgn(f.pnlSol)}</span><small>${pct(f.pnlPct)} · ${sol(f.sol, 3)}</small>` : `<span class="${f.kind === 'FUND' ? 'pos' : ''}">${f.kind === 'BUY' || f.kind === 'PAYOUT' ? '−' : f.sol > 0 ? '+' : ''}${Math.abs(f.sol ?? 0).toFixed(4)}</span><small>SOL</small>`;
     return `<li title="${esc(f.reason || '')}"><span class="t">${hhmm(f.at)}</span><span class="k ${esc(f.kind)}">${esc(f.kind)}</span><span class="c">${link}<br><small>${esc(sub)}</small></span><span class="r">${right}</span></li>`;
   }).join('') : '<li class="empty">No transactions yet.</li>';
   // below the fold

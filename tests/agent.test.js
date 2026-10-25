@@ -69,7 +69,8 @@ function dipMint(t0) {
   const s = a.status(); for (const key of ['mode', 'wallet', 'balance', 'pnl', 'stats', 'rules', 'positions', 'trades', 'decisions']) assert.ok(key in s, key);
   assert.strictEqual(s.mode, 'paper'); assert.ok(s.rules.neverTrades.includes(process.env.AGENT_EXCLUDE_CA));
   assert.ok(!JSON.stringify(s).match(/secret/i), 'no secret in status');
-  for (const key of ['identity', 'mind', 'bodyFund', 'feeSplit', 'fundings']) assert.ok(key in s, key);
+  for (const key of ['identity', 'mind', 'bodyFund', 'feeSplit']) assert.ok(key in s, key);
+  for (const key of ['fundings', 'fundingTotalSol', 'withdrawals', 'withdrawnTotalSol']) assert.ok(!(key in s), `${key} must not be public`);
   assert.ok(/Not affiliated with Zerebro/.test(s.identity.ancestor.disclaimer));
   assert.strictEqual(s.feeSplit.shares.reduce((x, y) => x + y.bps, 0), 10000); assert.strictEqual(s.feeSplit.shares[0].address, '4iUUembrP2xMBeP4RbkYciZa1yFpp1YM87Uk5Y9dD1qy'); assert.strictEqual(s.feeSplit.shares[1].address, DEV_WALLET);
   assert.ok(a.st.bandit.dip.all.n === 31, 'trade outcome recorded in the bandit');
@@ -120,10 +121,8 @@ function dipMint(t0) {
   const fz = mk(analyze, { rpc }); await fz._test.scanFunding(); delete process.env.AGENT_PUBLIC_KEY;
   assert.strictEqual(fz.st.fundings.length, 2); assert.ok(fz.st.fundings.some((f) => /dev wallet/.test(f.source) && f.sol === 1)); assert.ok(fz.st.fundings.some((f) => /creator fees/.test(f.source) && f.sol === 0.05));
   await fz._test.scanFunding(); assert.strictEqual(fz.st.fundings.length, 2, 'no double counting');
-  assert.strictEqual(fz.st.withdrawals.length, 1, 'only the plain transfer I signed is a withdrawal (not s3 without a transfer, not the s5 trade)');
-  assert.strictEqual(fz.st.withdrawals[0].sol, 0.5); assert.strictEqual(fz.st.withdrawals[0].to, 'Owner'); assert.strictEqual(fz.st.withdrawals[0].tx, 's4');
-  assert.strictEqual(fz.status().withdrawnTotalSol, 0.5);
-  { process.env.AGENT_PUBLIC_KEY = 'Agent1111111111111111111111111111111111111'; const fz2 = mk(analyze, { rpc }); delete process.env.AGENT_PUBLIC_KEY; fz2._test.restore(fz._test.snapshot()); assert.strictEqual(fz2.st.withdrawals.length, 1, 'withdrawals survive a restart'); await fz2._test.scanFunding(); assert.strictEqual(fz2.st.withdrawals.length, 1, 'no double counting after restore'); }
+  assert.ok(!('withdrawals' in fz.st) && !('withdrawals' in fz.status()), 'owner withdrawals are never recorded or shown');
+  assert.ok(!JSON.stringify(fz.status()).includes('"s4"'), 'an owner transfer out (s4) never appears in public status');
   // 14) v1 state migrates: its closed trades seed the bandit
   const v1 = JSON.stringify({ v: 1, mode: 'paper', paperCash: 0.09, paperStart: 0.1, trades: [{ side: 'SELL', mint: 'Mx', pnlPct: -20 }, { side: 'BUY', mint: 'Mx', reason: 'organic-demand momentum' }] });
   const mg = mk(); mg._test.restore(v1); assert.strictEqual(mg.st.bandit.momentum.all.n, 1); assert.strictEqual(mg.st.migratedTrades, 1);

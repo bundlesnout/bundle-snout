@@ -251,7 +251,6 @@ const V = {
   ],
   weights: ({ arm, from, to }) => `I'm changing my mind: the ${ARMS[arm].label.toLowerCase()} pattern went from ${Math.round(from * 100)}% to ${Math.round(to * 100)}% of my confidence.`,
   hibernate: ({ dd }) => `I'm down ${dd}% from my peak. Hibernating until tomorrow (Madrid). Survival first.`,
-  withdrawal: ({ sol }) => `${sol} SOL was sent out of my wallet by my owner. That is not a trade and not a loss, just less treasury to work with.`,
   funding: ({ sol, src }) => `Received ${sol} SOL (${src}). Thank you. Every bit goes to the Body Fund.`,
 };
 
