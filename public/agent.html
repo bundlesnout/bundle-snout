@@ -260,7 +260,7 @@ function render(s){
   $('ladder').innerHTML=(bf.ladder||[]).map(b=>`<li><div class="ic">${b.icon}</div><div><div class="nm">${esc(b.name)} <span class="st ${b.status}">${b.status}</span></div><div class="pt">${esc(b.part)}: ${esc(b.why)}. <a href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.shop)}</a>${b.purchase?` · <a href="https://solscan.io/tx/${esc(b.purchase.tx)}" target="_blank">receipt tx</a>${b.purchase.photo?` · <a href="${esc(b.purchase.photo)}" target="_blank">photo</a>`:''}`:''}</div></div><div class="pr">€${b.eur.toFixed(2)}<div class="pt">total €${b.cumEur}</div></div></li>`).join('');
   // kpis
   const st=s.stats||{},pn=s.pnl||{},bal=s.balance||{};
-  const K=[['Equity (SOL)',f4(bal.equitySol??bal.sol)],['P&L after fees',`<span class="${cls(pn.realizedSol)}">${sg(pn.realizedSol)}</span>`],['Today',`<span class="${cls(pn.todaySol)}">${sg(pn.todaySol)}</span>`],['Win rate',st.winRate==null?'–':st.winRate+'%'],
+  const K=[['Equity (SOL)',f4(bal.equitySol??bal.sol)],['P&L after all costs',`<span class="${cls(pn.netSol??pn.realizedSol)}" title="${pn.oneTimeAccountSol?`trades ${sg(pn.realizedSol)} after fees, minus ${f6(pn.oneTimeAccountSol)} one-time pump.fun account`:'closed trades after fees'}">${sg(pn.netSol??pn.realizedSol)}</span>`],['Today',`<span class="${cls(pn.todaySol)}">${sg(pn.todaySol)}</span>`],['Win rate',st.winRate==null?'–':st.winRate+'%'],
     ['Closed trades',st.closedTrades],['Drawdown now / max',`${st.drawdownPct??0}% / ${st.maxDrawdownPct??0}%`],['Scanned / rejected',`${st.scans} / ${st.rejectedByScanner}`],['Setups sat out',st.sitOut??0]];
   $('kpis').innerHTML=K.map(([a,b])=>`<div class="k"><span>${a}</span><b>${b}</b></div>`).join('');
   // equity

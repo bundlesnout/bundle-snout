@@ -59,6 +59,7 @@ function dipMint(t0) {
   const pb = b.st.positions[0]; pb.vs = 34; pb.vt = (40 * 800e6) / 34; b._test.checkExit(pb); await settle();
   assert.ok(/stop loss/.test(b.st.trades[0].reason)); assert.ok(b.status().state.startsWith('paused'), b.status().state);
   assert.ok(b.st.decisions.some((d) => d.action === 'PAUSE'));
+  { const sp = b.status(); assert.ok(sp.pnl.oneTimeAccountSol > 0, 'one-time account shown'); assert.ok(Math.abs(sp.pnl.netSol - (sp.balance.equitySol - sp.balance.startSol)) < 2e-6, `net P&L matches equity: ${sp.pnl.netSol} vs ${sp.balance.equitySol - sp.balance.startSol}`); }
 
   // 6) live mode without a key halts; kill switch stops entries
   process.env.AGENT_MODE = 'live'; const l = mk(); assert.ok(/AGENT_SECRET_KEY/.test(l.status().halted)); assert.strictEqual(l.status().state, 'halted'); delete process.env.AGENT_MODE;
