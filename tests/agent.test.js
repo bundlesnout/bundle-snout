@@ -207,6 +207,11 @@ function dipMint(t0) {
     t = t1 + 6e3; push(t, 0.5, true, 'BOT0'); sa.onTrade({ mint: vmint, vs: vm.vs, vt: vm.vt }, vm); assert.ok(!sa.st.shadow.open[0].pending && sa.st.shadow.open[0].cost > 0.02, 'filled on the first trade >= 5 s later');
     t = t1 + 120e3; sa._test.safeTick(); assert.strictEqual(sa.st.shadow.closed.length, 1, 'shadow closed by bot-stop'); assert.ok(/stopped/.test(sa.st.shadow.closed[0].why));
     assert.strictEqual(sa.st.bandit.volbot.all.n, 0, 'shadow does not teach the bandit'); const vv = sa.status().shadow.variants.find((x) => x.id === 'volbot'); assert.ok(vv && vv.closed === 1 && vv.maxDDSol >= 0);
+    assert.strictEqual(vv.edge, 'too few trades'); assert.ok(/No variant has a proven positive edge/.test(sa.status().shadow.verdict));
+    Object.assign(sa.st.shadow.byVar.volbot, { vN: 100, vSum: -500, vSq: 100 * (25 + 16) }); // mean -5%, sd ~4%: clearly negative
+    const vn = sa.status().shadow.variants.find((x) => x.id === 'volbot'); assert.strictEqual(vn.edge, 'negative'); assert.ok(vn.ci95Pct[1] < 0 && vn.ci95Pct[0] < -5);
+    Object.assign(sa.st.shadow.byVar.volbot, { vN: 100, vSum: 500, vSq: 100 * (25 + 16) });
+    assert.strictEqual(sa.status().shadow.variants.find((x) => x.id === 'volbot').edge, 'positive'); assert.ok(/positive edge with 95% confidence: volbot/.test(sa.status().shadow.verdict));
     // stricter rug filters when it does trade
     const { volbotGate } = require('../agent'); const young = cleanRep({ creation: { time: new Date(t1 - 3 * 60e3).toISOString() } });
     assert.ok(volbotGate(young, t1).some((x) => /min old/.test(x)), 'young coin rejected'); assert.deepStrictEqual(volbotGate(cleanRep({ creation: { time: new Date(t1 - 30 * 60e3).toISOString() } }), t1), []);

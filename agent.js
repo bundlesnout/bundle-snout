@@ -249,17 +249,25 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     sh.closed.unshift({ v: p.v, arm: p.arm, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt, closedAt: iso(t), heldMin: r1(age), sizeSol: p.size, pnlSol: pnl, pnlPct: r1(pct), why }); sh.closed.length = Math.min(sh.closed.length, 300);
     const a = sh.byVar[p.v] || (sh.byVar[p.v] = { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0, eq: 0, peak: 0, maxDD: 0, firstAt: p.openedAt });
     a.n++; if (pnl > 0) a.wins++; if (/^take profit/.test(why)) a.tpHits++; a.netSol = r6(a.netSol + pnl); a.sumPct = r1(a.sumPct + pct);
+    a.vN = (a.vN || 0) + 1; a.vSum = (a.vSum || 0) + pct; a.vSq = (a.vSq || 0) + pct * pct; // per-trade % moments for a confidence interval
     a.eq = r6(a.eq + pnl); a.peak = Math.max(a.peak, a.eq); a.maxDD = r6(Math.max(a.maxDD, a.peak - a.eq)); a.lastAt = iso(t); dirty = true;
   }
   function shadowTick(t) { for (const p of [...st.shadow.open]) shadowExit(p, scalper?.mints?.get(p.mint), t); }
+  function shadowEdge(a) { // 95% interval of the average net % per trade, from trades closed since tracking started
+    const n = a.vN || 0; if (n < 30) return { ci95Pct: null, edge: 'too few trades', edgeN: n };
+    const mean = a.vSum / n, sd = Math.sqrt(Math.max(0, (a.vSq - n * mean * mean) / (n - 1))), h = 1.96 * sd / Math.sqrt(n);
+    return { ci95Pct: [r1(mean - h), r1(mean + h)], edge: mean - h > 0 ? 'positive' : mean + h < 0 ? 'negative' : 'unproven', edgeN: n };
+  }
   function shadowStatus() {
     const sh = st.shadow;
     const variants = VARIANTS.map((v) => { const a = sh.byVar[v.id] || { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0, maxDD: 0 };
       return { id: v.id, arm: v.arm, label: armLabel(v.arm), exits: `+${v.tp}% / -${v.sl}% / ${v.hold} min`, sizeSol: v.size, filter: v.filter || null, note: v.note || null,
         closed: a.n, wins: a.wins, winRate: a.n ? r1((a.wins / a.n) * 100) : null, tpHitRatePct: a.n ? r1((a.tpHits / a.n) * 100) : null, avgPct: a.n ? r1(a.sumPct / a.n) : null, netSol: a.netSol, maxDDSol: a.maxDD || 0,
-        firstAt: a.firstAt || null, lastAt: a.lastAt || null, open: sh.open.filter((p) => p.v === v.id && !p.pending).length }; });
+        firstAt: a.firstAt || null, lastAt: a.lastAt || null, open: sh.open.filter((p) => p.v === v.id && !p.pending).length, ...shadowEdge(a) }; });
+    const proven = variants.filter((v) => v.edge === 'positive'), neg = variants.filter((v) => v.edge === 'negative').length;
+    const verdict = proven.length ? `${proven.length} variant(s) show a positive edge with 95% confidence: ${proven.map((v) => v.id).join(', ')}` : `No variant has a proven positive edge yet (${neg} of ${variants.length} are negative with 95% confidence)`;
     return { note: `Forward paper test: candidate strategies run side by side on the live stream. Each signal gets a paper fill on the first trade ≥${FILL_DELAY_MS / 1000} s later, with my real direct-route costs and that variant's exits. No money moves, my beliefs do not learn from it, and my scanner (rug filters) is not run on these coins.`,
-      since: sh.since, signals: sh.signals, variants, open: sh.open.filter((p) => !p.pending).slice(0, 40).map((p) => ({ v: p.v, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt })), closed: sh.closed.slice(0, 40) };
+      since: sh.since, signals: sh.signals, verdict, variants, open: sh.open.filter((p) => !p.pending).slice(0, 40).map((p) => ({ v: p.v, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt })), closed: sh.closed.slice(0, 40) };
   }
   const curMood = () => moodNow();
   const moodBase = () => M.mood({ ddPct: dd().ddPct, regime: st.regime.label, dayPnl: st.dayPnl, streak: st.streak, open: st.positions.length, halted: st.halted || !cfg.enabled, hibernating: st.hibernateDay === st.day });
