@@ -55,6 +55,30 @@
    }
   },
   {
+   "id": "mom_50_8_5_b30",
+   "arm": "momentum",
+   "tp": 50,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02,
+   "filter": {
+    "minBuyers": 30
+   },
+   "note": "added 2026-10-26 14:15 Berlin, fresh window: b20 (>=20 buyers) was the least negative variant (-2.6%/trade vs -3.6% unfiltered over 639 vs 1494 trades), tests whether more buyers keeps improving"
+  },
+  {
+   "id": "mom_50_8_5_b40",
+   "arm": "momentum",
+   "tp": 50,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02,
+   "filter": {
+    "minBuyers": 40
+   },
+   "note": "added 2026-10-26 14:15 Berlin, fresh window: same buyer-count gradient test as b30"
+  },
+  {
    "id": "mom_50_8_5_c30",
    "arm": "momentum",
    "tp": 50,
