@@ -379,6 +379,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     M.regimeObserve(st.regime, t, tr.sol || 0, m.trades?.length === 1 && tr.vt > 1060e6);
     if (excluded(tr.mint)) return; // never even evaluated
     ACT.seen.set(tr.mint, t);
+    // the dev's own sell is visible on the trade stream (TradeEvent.creator == seller): my scanner would reject the coin for it anyway
+    if (m && tr.buy === false && tr.creator && tr.user === tr.creator) m.devSoldSeen = true;
     try { shadowObserve(tr, m, t); } catch (e) { noteError('shadow', e); }
     for (const pos of st.positions) if (pos.mint === tr.mint) { pos.vs = tr.vs; pos.vt = tr.vt; pos.lastAt = t; pos.complete = m.complete; checkExit(pos); }
     if (m.complete) return;
@@ -413,6 +415,13 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     if (rt.totalPct > cfg.maxCostShare * gross) {
       cand(tr.mint, symNow, { ...cb, verdict: 'pass', why: `${armLabel(best.arm).toLowerCase()} setup, but a round trip costs ${rt.totalPct}%, more than ${Math.round(cfg.maxCostShare * 100)}% of the ${r1(gross)}% gross edge I expect` });
       st.totals.costSkips = (st.totals.costSkips || 0) + 1; st.dayStats.costSkips = (st.dayStats.costSkips || 0) + 1; st.seen[tr.mint] = t + cfg.sitOutMin * 60e3; return;
+    }
+    // the dev already sold on the live stream: my scanner rejects any dev sell, so skip it without spending a scan (or Helius credits)
+    if (m.devSoldSeen && !radarCfg?.allowDevSell) {
+      cand(tr.mint, symNow, { ...cb, verdict: 'pass', why: `${armLabel(best.arm).toLowerCase()} setup, but I saw the dev sell on the live stream: not touching it (no scan needed)` });
+      st.totals.devSellSkips = (st.totals.devSellSkips || 0) + 1; const ds = st.dayStats; ds.devSellSkips = (ds.devSellSkips || 0) + 1;
+      if (ds.devSellSkips === 1) think('I now skip coins whose dev I already saw selling on the live trade stream, before running my scanner. My scanner rejects any dev sell anyway, so this only saves scanner checks for other coins. My entry rules are unchanged.', 'diary');
+      st.seen[tr.mint] = t + cfg.cooldownMin * 60e3; return;
     }
     // credit pacing for the scanner (Helius): allowance grows through the Madrid day
     const [hh, mm] = new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Europe/Madrid', hour12: false }).split(':').map(Number);
@@ -945,7 +954,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const watchTxt = watching.length ? `, watching: ${watching.map((c) => `${c.label} (${c.why})`).join('; ')}` : ', nothing worth a closer look yet';
     const headline = ['limbo', 'stopped', 'halted'].includes(key) ? `${label}. ${detail}` : key === 'evaluating' ? `${label}: ${detail}` : `${label} — ${scanTxt}${watchTxt}`;
     return { key, label, headline, detail, now: iso(t), scannedLastMin, activeCoinsLastMin: activeLastMin, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday,
-      lastScanAt: ACT.lastEvalAt ? iso(ACT.lastEvalAt) : null, scanner: { checksToday: st.scansToday, dailyBudget: cfg.maxScansPerDay, allowedSoFarToday: allowance, lastAt: st.lastScanAt ? iso(st.lastScanAt) : null, nextSlotInSec: nextScannerSec, minGapSec: cfg.scanGapSec, credits: (() => { const n = st.totals.scansCredited || 0, per = n ? r1((st.totals.scanCredits || 0) / n) : null; return { today: st.dayStats?.scanCredits || 0, perScan: per, scansMeasured: n, fullBudgetPerDay: per == null ? null : Math.round(per * cfg.maxScansPerDay), note: 'Helius credits my scanner spends (1 per RPC call, 10 per getProgramAccounts); fullBudgetPerDay = per-scan cost x my daily scan budget' }; })(), bonusToday: st.dayStats?.bonusScans || 0, bonusMax: cfg.bonusScansPerDay, missedToday: { budget: st.dayStats?.missed?.budget || 0, gap: st.dayStats?.missed?.gap || 0, note: 'coins that cleared my bar but were not scanned because the scanner budget or min gap was in the way (one count per coin per day)' }, running: ACT.scanning ? { mint: ACT.scanning.mint, symbol: ACT.scanning.symbol } : null },
+      lastScanAt: ACT.lastEvalAt ? iso(ACT.lastEvalAt) : null, scanner: { checksToday: st.scansToday, dailyBudget: cfg.maxScansPerDay, allowedSoFarToday: allowance, lastAt: st.lastScanAt ? iso(st.lastScanAt) : null, nextSlotInSec: nextScannerSec, minGapSec: cfg.scanGapSec, credits: (() => { const n = st.totals.scansCredited || 0, per = n ? r1((st.totals.scanCredits || 0) / n) : null; return { today: st.dayStats?.scanCredits || 0, perScan: per, scansMeasured: n, fullBudgetPerDay: per == null ? null : Math.round(per * cfg.maxScansPerDay), note: 'Helius credits my scanner spends (1 per RPC call, 10 per getProgramAccounts); fullBudgetPerDay = per-scan cost x my daily scan budget' }; })(), bonusToday: st.dayStats?.bonusScans || 0, bonusMax: cfg.bonusScansPerDay, devSellSkipsToday: st.dayStats?.devSellSkips || 0, missedToday: { budget: st.dayStats?.missed?.budget || 0, gap: st.dayStats?.missed?.gap || 0, note: 'coins that cleared my bar but were not scanned because the scanner budget or min gap was in the way (one count per coin per day)' }, running: ACT.scanning ? { mint: ACT.scanning.mint, symbol: ACT.scanning.symbol } : null },
       candidates: cands, log: ACT.log.slice(0, 30), openPositions: st.positions.length,
       stream: { connected: !!si?.connected, lastTradeAgoSec: streamAgoSec, coinsTracked: si?.mintsTracked ?? null },
       loop: { running: ACT.lastTickAt > 0 && t - ACT.lastTickAt < 20e3, ticks: ACT.ticks, lastTickAt: ACT.lastTickAt ? iso(ACT.lastTickAt) : null, uptimeSec: Math.round((t - t0) / 1000), errorsCaught: ACT.errors, lastError: ACT.lastError, lastErrorAt: ACT.lastErrorAt, downtimes: ACT.downtimes.slice(0, 10) } };

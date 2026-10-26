@@ -56,6 +56,16 @@ function dipMint(t0) {
   assert.strictEqual(scans, 2, 'spare credits: extra scan'); assert.strictEqual(act.scanner.bonusToday, 1); assert.strictEqual(act.scanner.missedToday.budget, 1);
   assert.ok(a.st.thoughts.some((e) => e.kind === 'diary' && /Spare Helius credits/.test(e.text)), 'diary note');
   a.st.scansToday = keepScans; delete cs.today; a.st.lastScanAt = 0;
+  // the dev's sell seen on the live stream: skipped before the scanner (no scan, no credits), diary note once
+  { t += 61e3; a.st.lastScanAt = 0; const s0 = scans; const mH = dipMint(t); mints.set('CoinHHH', mH);
+    a.onTrade({ mint: 'CoinHHH', vs: mH.vs, vt: mH.vt, buy: false, user: 'DevH', creator: 'DevH' }, mH);
+    await new Promise((r) => setTimeout(r, 20)); const ah = a.activity();
+    assert.strictEqual(scans, s0, 'dev sell seen: no scan'); assert.strictEqual(ah.scanner.devSellSkipsToday, 1);
+    assert.ok(/saw the dev sell/.test(ah.candidates.find((x) => x.mint === 'CoinHHH')?.why || ''), JSON.stringify(ah.candidates));
+    assert.ok(a.st.thoughts.some((e) => e.kind === 'diary' && /dev I already saw selling/.test(e.text)), 'diary note');
+    // someone else's sell does not count as the dev's
+    const mI = dipMint(t); mints.set('CoinIII', mI); a.onTrade({ mint: 'CoinIII', vs: mI.vs, vt: mI.vt, buy: false, user: 'W1', creator: 'DevI' }, mI);
+    await new Promise((r) => setTimeout(r, 20)); assert.strictEqual(scans, s0 + 1, 'other seller: scanned'); a.st.lastScanAt = 0; }
   assert.ok(act.log.length <= 30);
   // in a trade: state + detail
   await a._test.openPosition({ mint: 'CoinDDD', symbol: 'DDD', size: 0.01, vs: 40, vt: 800e6, reason: 'r' });
