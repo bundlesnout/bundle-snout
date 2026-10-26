@@ -22,6 +22,7 @@ const CFG = () => ({
   pages: num('RADAR_PAGES', 2),
   maxScansPerDay: num('RADAR_MAX_SCANS_PER_DAY', 250),
   maxDeepPerDay: num('RADAR_MAX_DEEP_PER_DAY', 40),
+  persistDecided: num('RADAR_PERSIST_DECIDED', 250), // today's judged coins kept across restarts (RADAR_STATE env blob, ~48 bytes each)
   dailyCreditCap: num('RADAR_DAILY_CREDIT_CAP', 28000), // Helius free = 1M/month -> ~33k/day; leave headroom for /api/analyze + Telegram scans
   maxPct: num('RADAR_MAX_PCT', 97), // skip coins that are basically graduating already
   // clean thresholds
@@ -347,11 +348,22 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
     stop() { stopped = true; st.running = false; clearInterval(pollTimer); clearInterval(chainTimer); clearInterval(geckoTimer); clearInterval(pruneTimer); try { ws?.close(); } catch {} },
     onTrade, geckoPoll, chainTick, prune,
     // today's scan counters survive restarts (same UTC day), so the daily scan budgets hold across deploys
-    budgetSnapshot: () => ({ day: st.scans.day, today: st.scans.today, deepToday: st.scans.deepToday }),
+    // also today's decided coins (compact: [mint, clean 0/1]), so a restart doesn't rescan coins it already judged
+    // (measured 2026-10-26: 27 rescans / ~1.5k Helius credits in the first 6 min after a deploy)
+    budgetSnapshot: () => {
+      const d0 = Date.parse(new Date().toISOString().slice(0, 10));
+      const dec = [...decided.entries()].filter(([, v]) => v.at >= d0 && !v.errored && !v.budget && !v.restored).sort((a, b) => b[1].at - a[1].at).slice(0, cfg.persistDecided).map(([m, v]) => [m, v.clean ? 1 : 0]);
+      const prev = (st.restoredDecided || []).filter(([m]) => !dec.some(([x]) => x === m));
+      const all = dec.concat(prev).slice(0, cfg.persistDecided);
+      return all.length ? { day: st.scans.day, today: st.scans.today, deepToday: st.scans.deepToday, decided: all } : { day: st.scans.day, today: st.scans.today, deepToday: st.scans.deepToday };
+    },
     restoreBudget(snap) {
       if (!snap || snap.day !== new Date().toISOString().slice(0, 10) || st.scans.restored) return false;
       if (st.scans.day !== snap.day) { st.scans.day = snap.day; st.scans.today = 0; st.scans.deepToday = 0; }
       st.scans.today += Number(snap.today) || 0; st.scans.deepToday += Number(snap.deepToday) || 0; st.scans.restored = true;
+      const dec = Array.isArray(snap.decided) ? snap.decided.filter((x) => Array.isArray(x) && typeof x[0] === 'string').slice(0, cfg.persistDecided) : [];
+      const at = Date.now(); for (const [m, c] of dec) if (!decided.has(m)) decided.set(m, { at, clean: !!c, reasons: ['judged earlier today, before a restart'], restored: true });
+      st.restoredDecided = dec; st.scans.restoredDecided = dec.length;
       return true;
     },
     status() {
