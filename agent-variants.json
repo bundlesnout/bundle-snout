@@ -79,6 +79,30 @@
    "note": "added 2026-10-26 14:15 Berlin, fresh window: same buyer-count gradient test as b30"
   },
   {
+   "id": "mom_50_8_5_b60",
+   "arm": "momentum",
+   "tp": 50,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02,
+   "filter": {
+    "minBuyers": 60
+   },
+   "note": "added 2026-10-26 22:20 Berlin, fresh window: b40 is the first variant with a positive mean (+9.2%/trade, n=62, 95% CI -1.3..+19.6) and b30 minus b40 is about -8%/trade, so this tests whether the buyer-count gradient keeps rising"
+  },
+  {
+   "id": "mom_30_8_5_b40",
+   "arm": "momentum",
+   "tp": 30,
+   "sl": 8,
+   "hold": 5,
+   "size": 0.02,
+   "filter": {
+    "minBuyers": 40
+   },
+   "note": "added 2026-10-26 22:20 Berlin, fresh window: same >=40 buyer filter with a +30% target, to check the b40 result is not an artifact of the +50% exit"
+  },
+  {
    "id": "mom_50_8_5_c30",
    "arm": "momentum",
    "tp": 50,
