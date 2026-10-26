@@ -1091,8 +1091,16 @@ function exitSlippage(trades) {
     m = x.reason.match(/^take profit: .*≥ \+([\d.]+)%/); if (m) tp.push(x.pnlPct - Number(m[1]));
   }
   const avg = (a) => (a.length ? Math.round((a.reduce((s, v) => s + v, 0) / a.length) * 10) / 10 : null);
+  // Split stop overshoot by price feed: exits watched by the 2 s curve-account poll vs the older stream-only exits, so the poll's effect is measured, not assumed.
+  const slCurve = [], slStream = [];
+  for (const x of trades || []) {
+    if (x.side !== 'SELL' || typeof x.reason !== 'string' || typeof x.pnlPct !== 'number') continue;
+    const m = x.reason.match(/^stop loss: .*≤ -([\d.]+)%/); if (!m) continue;
+    (x.feed && x.feed.curvePolls > 0 ? slCurve : slStream).push(-Number(m[1]) - x.pnlPct);
+  }
   return { stopLosses: sl.length, avgPctPastStop: avg(sl), worstPctPastStop: sl.length ? Math.round(Math.max(...sl) * 10) / 10 : null, takeProfits: tp.length, avgPctPastTarget: avg(tp),
-    note: 'how many % points my stop-loss exits lost beyond the stop (and take-profits gained beyond the target), because a price can jump past a level between two trades' };
+    byFeed: { curvePoll: { stopLosses: slCurve.length, avgPctPastStop: avg(slCurve) }, streamOnly: { stopLosses: slStream.length, avgPctPastStop: avg(slStream) } },
+    note: 'how many % points my stop-loss exits lost beyond the stop (and take-profits gained beyond the target), because a price can jump past a level between two trades; byFeed splits stops watched by my 2 s curve-account poll from older stream-only exits' };
 }
 
 // pump.fun BondingCurve account: 8-byte discriminator, then virtual token, virtual SOL, real token, real SOL, total supply (u64), complete (bool)

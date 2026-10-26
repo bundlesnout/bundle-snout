@@ -224,6 +224,8 @@ function dipMint(t0) {
   { const { exitSlippage } = require('../agent');
     const es = exitSlippage([{ side: 'SELL', pnlPct: -13.8, reason: 'stop loss: -13.8% ≤ -8%' }, { side: 'SELL', pnlPct: -9, reason: 'stop loss: -9% ≤ -8%' }, { side: 'SELL', pnlPct: 65.6, reason: 'take profit: +65.6% ≥ +50%' }, { side: 'SELL', pnlPct: 2, reason: 'time stop: 10 min held, +2%' }, { side: 'BUY', reason: 'x' }]);
     assert.strictEqual(es.stopLosses, 2); assert.strictEqual(es.avgPctPastStop, 3.4); assert.strictEqual(es.worstPctPastStop, 5.8); assert.strictEqual(es.takeProfits, 1); assert.strictEqual(es.avgPctPastTarget, 15.6);
-    assert.strictEqual(exitSlippage([]).avgPctPastStop, null); }
+    assert.strictEqual(exitSlippage([]).avgPctPastStop, null);
+    const bf = exitSlippage([{ side: 'SELL', pnlPct: -23.5, reason: 'stop loss: -23.5% ≤ -8%', feed: { curvePolls: 31 } }, { side: 'SELL', pnlPct: -30.3, reason: 'stop loss: -30.3% ≤ -15%' }]).byFeed;
+    assert.strictEqual(bf.curvePoll.stopLosses, 1); assert.strictEqual(bf.curvePoll.avgPctPastStop, 15.5); assert.strictEqual(bf.streamOnly.avgPctPastStop, 15.3); }
   console.log('agent tests OK');
 })().catch((e) => { console.error(e); process.exit(1); });
