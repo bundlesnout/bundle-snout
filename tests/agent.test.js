@@ -209,7 +209,7 @@ function dipMint(t0) {
     assert.strictEqual(sa.st.bandit.volbot.all.n, 0, 'shadow does not teach the bandit'); const vv = sa.status().shadow.variants.find((x) => x.id === 'volbot'); assert.ok(vv && vv.closed === 1 && vv.maxDDSol >= 0);
     assert.strictEqual(vv.edge, 'too few trades'); assert.ok(/No variant has a proven positive edge/.test(sa.status().shadow.verdict));
     Object.assign(sa.st.shadow.byVar.volbot, { vN: 100, vSum: -500, vSq: 100 * (25 + 16) }); // mean -5%, sd ~4%: clearly negative
-    const vn = sa.status().shadow.variants.find((x) => x.id === 'volbot'); assert.strictEqual(vn.edge, 'negative'); assert.ok(vn.ci95Pct[1] < 0 && vn.ci95Pct[0] < -5);
+    const vn = sa.status().shadow.variants.find((x) => x.id === 'volbot'); assert.strictEqual(vn.edge, 'negative'); assert.ok(vn.ci95Pct[1] < 0 && vn.ci95Pct[0] < -5); assert.ok(vn.ciFamilyPct[0] <= vn.ci95Pct[0] && vn.ciFamilyPct[1] >= vn.ci95Pct[1]); assert.ok(['positive','negative','unproven'].includes(vn.edgeFamily)); assert.ok(sa.status().shadow.familyZ >= 1.96);
     Object.assign(sa.st.shadow.byVar.volbot, { vN: 100, vSum: 500, vSq: 100 * (25 + 16) });
     assert.strictEqual(sa.status().shadow.variants.find((x) => x.id === 'volbot').edge, 'positive'); assert.ok(/positive edge with 95% confidence: volbot/.test(sa.status().shadow.verdict));
     // stricter rug filters when it does trade

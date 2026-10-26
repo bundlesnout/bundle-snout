@@ -273,7 +273,14 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   function shadowEdge(a) { // 95% interval of the average net % per trade, from trades closed since tracking started
     const n = a.vN || 0; if (n < 30) return { ci95Pct: null, edge: 'too few trades', edgeN: n };
     const mean = a.vSum / n, sd = Math.sqrt(Math.max(0, (a.vSq - n * mean * mean) / (n - 1))), h = 1.96 * sd / Math.sqrt(n);
-    return { ci95Pct: [r1(mean - h), r1(mean + h)], edge: mean - h > 0 ? 'positive' : mean + h < 0 ? 'negative' : 'unproven', edgeN: n };
+    const hs = zFamily(VARIANTS.length) * sd / Math.sqrt(n); // same 5% error budget shared across every variant I test (Bonferroni)
+    return { ci95Pct: [r1(mean - h), r1(mean + h)], edge: mean - h > 0 ? 'positive' : mean + h < 0 ? 'negative' : 'unproven', edgeN: n,
+      ciFamilyPct: [r1(mean - hs), r1(mean + hs)], edgeFamily: mean - hs > 0 ? 'positive' : mean + hs < 0 ? 'negative' : 'unproven' };
+  }
+  const r2z = (x) => Math.round(x * 100) / 100;
+  function zFamily(k) { // two-sided normal quantile for alpha 0.05/k, by bisection on erfc (Abramowitz-Stegun 7.1.26)
+    const tail = (z) => { const x = z / Math.SQRT2, t = 1 / (1 + 0.3275911 * x); return t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-x * x); };
+    const target = 0.05 / Math.max(1, k); let lo = 0, hi = 8; for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (tail(mid) > target) lo = mid; else hi = mid; } return (lo + hi) / 2;
   }
   function shadowStatus() {
     const sh = st.shadow;
@@ -282,9 +289,11 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
         closed: a.n, wins: a.wins, winRate: a.n ? r1((a.wins / a.n) * 100) : null, tpHitRatePct: a.n ? r1((a.tpHits / a.n) * 100) : null, avgPct: a.n ? r1(a.sumPct / a.n) : null, netSol: a.netSol, maxDDSol: a.maxDD || 0,
         firstAt: a.firstAt || null, lastAt: a.lastAt || null, open: sh.open.filter((p) => p.v === v.id && !p.pending).length, ...shadowEdge(a) }; });
     const proven = variants.filter((v) => v.edge === 'positive'), neg = variants.filter((v) => v.edge === 'negative').length;
-    const verdict = proven.length ? `${proven.length} variant(s) show a positive edge with 95% confidence: ${proven.map((v) => v.id).join(', ')}` : `No variant has a proven positive edge yet (${neg} of ${variants.length} are negative with 95% confidence)`;
-    return { note: `Forward paper test: candidate strategies run side by side on the live stream. Each signal gets a paper fill on the first trade ≥${FILL_DELAY_MS / 1000} s later, with my real direct-route costs and that variant's exits. No money moves, my beliefs do not learn from it, and my scanner (rug filters) is not run on these coins.`,
-      since: sh.since, signals: sh.signals, verdict, variants, open: sh.open.filter((p) => !p.pending).slice(0, 40).map((p) => ({ v: p.v, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt })), closed: sh.closed.slice(0, 40) };
+    const strict = variants.filter((v) => v.edgeFamily === 'positive');
+    const verdict = (proven.length ? `${proven.length} variant(s) show a positive edge with 95% confidence: ${proven.map((v) => v.id).join(', ')}` : `No variant has a proven positive edge yet (${neg} of ${variants.length} are negative with 95% confidence)`)
+      + (proven.length ? (strict.length ? `; still positive after correcting for testing ${variants.length} variants at once: ${strict.map((v) => v.id).join(', ')}` : `; none survives the correction for testing ${variants.length} variants at once (one lucky variant in ${variants.length} is expected by chance), so I keep watching`) : '');
+    return { note: `Forward paper test: candidate strategies run side by side on the live stream. Each signal gets a paper fill on the first trade ≥${FILL_DELAY_MS / 1000} s later, with my real direct-route costs and that variant's exits. No money moves, my beliefs do not learn from it, and my scanner (rug filters) is not run on these coins. ciFamilyPct is the stricter interval that shares the 5% error budget across all ${variants.length} variants; a variant must clear it before I would consider trading it for real.`,
+      familyZ: r2z(zFamily(variants.length)), since: sh.since, signals: sh.signals, verdict, variants, open: sh.open.filter((p) => !p.pending).slice(0, 40).map((p) => ({ v: p.v, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt })), closed: sh.closed.slice(0, 40) };
   }
   const curMood = () => moodNow();
   const moodBase = () => M.mood({ ddPct: dd().ddPct, regime: st.regime.label, dayPnl: st.dayPnl, streak: st.streak, open: st.positions.length, halted: st.halted || !cfg.enabled, hibernating: st.hibernateDay === st.day });
