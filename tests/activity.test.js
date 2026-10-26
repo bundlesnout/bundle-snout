@@ -65,7 +65,13 @@ function dipMint(t0) {
     assert.ok(a.st.thoughts.some((e) => e.kind === 'diary' && /dev I already saw selling/.test(e.text)), 'diary note');
     // someone else's sell does not count as the dev's
     const mI = dipMint(t); mints.set('CoinIII', mI); a.onTrade({ mint: 'CoinIII', vs: mI.vs, vt: mI.vt, buy: false, user: 'W1', creator: 'DevI' }, mI);
-    await new Promise((r) => setTimeout(r, 20)); assert.strictEqual(scans, s0 + 1, 'other seller: scanned'); a.st.lastScanAt = 0; }
+    await new Promise((r) => setTimeout(r, 20)); assert.strictEqual(scans, s0 + 1, 'other seller: scanned'); a.st.lastScanAt = 0;
+    // the scalper forgot CoinJJJ after its dev sold (idle eviction gives a fresh market object): still skipped, no scan
+    t += 61e3; const s1 = scans; const mJ = dipMint(t); mints.set('CoinJJJ', mJ); a.onTrade({ mint: 'CoinJJJ', vs: mJ.vs, vt: mJ.vt, buy: false, user: 'DevJ', creator: 'DevJ' }, { trades: [], vs: mJ.vs, vt: mJ.vt, complete: true });
+    t += 15 * 60e3; const mJ2 = dipMint(t); mints.set('CoinJJJ', mJ2); a.onTrade({ mint: 'CoinJJJ', vs: mJ2.vs, vt: mJ2.vt, buy: true, user: 'W2', creator: 'DevJ' }, mJ2);
+    await new Promise((r) => setTimeout(r, 20)); const aj = a.activity();
+    assert.strictEqual(scans, s1, 'remembered dev sell: no scan'); assert.strictEqual(aj.scanner.devSellRememberedToday, 1, JSON.stringify(aj.scanner));
+    assert.ok(/saw the dev sell/.test(aj.candidates.find((x) => x.mint === 'CoinJJJ')?.why || ''), JSON.stringify(aj.candidates)); a.st.lastScanAt = 0; }
   assert.ok(act.log.length <= 30);
   // in a trade: state + detail
   await a._test.openPosition({ mint: 'CoinDDD', symbol: 'DDD', size: 0.01, vs: 40, vt: 800e6, reason: 'r' });
