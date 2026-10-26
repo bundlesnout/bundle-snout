@@ -31,6 +31,7 @@ const SCFG = () => ({
   ridePrimary: process.env.RIDE_PRIMARY || 'RIDE-0.1-40k-sl35-h60',
   saveMin: num('SCALP_SAVE_MIN', 10),
   maxLagMs: num('SCALP_MAX_LAG_MS', 600),       // sustained event-loop lag (EWMA, 10 s) before the stream backs off
+  maxStateB64: num('SCALP_MAX_STATE_B64', 100000), // < 128 KiB per env string, with room for the key name
   lagPauseMs: num('SCALP_LAG_PAUSE_MS', 60000), // short: the stream also feeds the agent and Bond Radar
 });
 const DISC = crypto.createHash('sha256').update('event:TradeEvent').digest().subarray(0, 8);
@@ -159,7 +160,17 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
   function snapshot() {
     const v = {}; for (const x of variants.values()) if (x.n) v[x.key] = [x.n, x.wins, r6(x.net), r6(x.sumWin), r6(x.sumLoss), r6(x.equity), r6(x.peak), r6(x.maxDD), x.reasons];
     const j = { savedAt: new Date(now()).toISOString(), v, primary: logs.primary.slice(0, 60), ride: logs.ride.slice(0, 60), signals: logs.signals.slice(0, 30), st: { signals: st.signals, entries: st.entries, closes: st.closes, startedAt: st.startedAt } };
-    return zlib.gzipSync(JSON.stringify(j)).toString('base64');
+    // The state lives in one Render env var, and Linux refuses to start a process with any single env string > 128 KiB
+    // (MAX_ARG_STRLEN): on 2026-10-26 SCALP_STATE reached 131 280 bytes and every deploy failed with "argument list too long".
+    // Keep it under the cap: first drop per-variant exit-reason tallies, then trim logs, then keep the most-traded variants.
+    const enc = () => zlib.gzipSync(JSON.stringify(j)).toString('base64');
+    let out = enc(); if (out.length <= cfg.maxStateB64) return out;
+    for (const k of Object.keys(v)) v[k] = v[k].slice(0, 8); out = enc(); st.stateTrimmed = 'reasons';
+    if (out.length > cfg.maxStateB64) { j.primary = j.primary.slice(0, 20); j.ride = j.ride.slice(0, 20); j.signals = j.signals.slice(0, 10); out = enc(); st.stateTrimmed = 'logs'; }
+    while (out.length > cfg.maxStateB64 && Object.keys(j.v).length > 50) {
+      const keep = Object.entries(j.v).sort((a, b) => b[1][0] - a[1][0]).slice(0, Math.floor(Object.keys(j.v).length * 0.8)); j.v = Object.fromEntries(keep); out = enc(); st.stateTrimmed = `variants (${keep.length} kept)`;
+    }
+    return out;
   }
   async function save(force = false) {
     if (!store || (!force && now() - lastSave < cfg.saveMin * 60e3)) return; lastSave = now();
