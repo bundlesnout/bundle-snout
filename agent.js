@@ -28,8 +28,17 @@ const PUMP_PROGRAMS = ['6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P', 'pfeeUxB6j
 // forward-test variants (agent-variants.json or AGENT_VARIANTS_FILE): [{ id, arm, tp, sl, hold, size, filter }]; default = shadow arms
 function loadVariants(arms) {
   let list = null; try { list = JSON.parse(fs.readFileSync(process.env.AGENT_VARIANTS_FILE || path.join(__dirname, 'agent-variants.json'), 'utf8')).variants; } catch {}
-  if (!Array.isArray(list)) list = Object.keys(arms).filter((k) => arms[k].shadow).map((k) => ({ id: k, arm: k }));
-  return list.filter((v) => v && v.id && arms[v.arm]).map((v) => ({ size: 0.02, tp: arms[v.arm].tp, sl: arms[v.arm].sl, hold: arms[v.arm].hold, ...v }));
+  const fromFile = Array.isArray(list);
+  if (!fromFile) list = Object.keys(arms).filter((k) => arms[k].shadow).map((k) => ({ id: k, arm: k }));
+  const out = list.filter((v) => v && v.id && arms[v.arm]).map((v) => ({ size: 0.02, tp: arms[v.arm].tp, sl: arms[v.arm].sl, hold: arms[v.arm].hold, ...v }));
+  // always forward-test the exact exits I trade with, so the shadow judges my real strategy and not only neighbours of it
+  for (const k of Object.keys(arms)) {
+    const a = arms[k]; if (!fromFile || !a.enabled) continue;
+    if (out.some((v) => v.arm === k && v.tp === a.tp && v.sl === a.sl && v.hold === a.hold && !v.filter && v.size === 0.02)) continue;
+    out.push({ id: `live_${k}_${a.tp}_${a.sl}_${a.hold}`, arm: k, tp: a.tp, sl: a.sl, hold: a.hold, size: 0.02, live: true, note: 'mirrors the exits I trade with right now (added automatically)' });
+  }
+  for (const v of out) v.live = !!arms[v.arm].enabled && v.tp === arms[v.arm].tp && v.sl === arms[v.arm].sl && v.hold === arms[v.arm].hold && !v.filter;
+  return out;
 }
 function loadParams() { try { return JSON.parse(fs.readFileSync(process.env.AGENT_PARAMS_FILE || path.join(__dirname, 'agent-params.json'), 'utf8')); } catch { return null; } }
 const ACFG = () => ({
@@ -261,7 +270,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   function shadowStatus() {
     const sh = st.shadow;
     const variants = VARIANTS.map((v) => { const a = sh.byVar[v.id] || { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0, maxDD: 0 };
-      return { id: v.id, arm: v.arm, label: armLabel(v.arm), exits: `+${v.tp}% / -${v.sl}% / ${v.hold} min`, sizeSol: v.size, filter: v.filter || null, note: v.note || null,
+      return { id: v.id, arm: v.arm, label: armLabel(v.arm), exits: `+${v.tp}% / -${v.sl}% / ${v.hold} min`, sizeSol: v.size, filter: v.filter || null, note: v.note || null, myLiveExits: !!v.live,
         closed: a.n, wins: a.wins, winRate: a.n ? r1((a.wins / a.n) * 100) : null, tpHitRatePct: a.n ? r1((a.tpHits / a.n) * 100) : null, avgPct: a.n ? r1(a.sumPct / a.n) : null, netSol: a.netSol, maxDDSol: a.maxDD || 0,
         firstAt: a.firstAt || null, lastAt: a.lastAt || null, open: sh.open.filter((p) => p.v === v.id && !p.pending).length, ...shadowEdge(a) }; });
     const proven = variants.filter((v) => v.edge === 'positive'), neg = variants.filter((v) => v.edge === 'negative').length;
