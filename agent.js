@@ -46,6 +46,7 @@ const ACFG = () => ({
   enabled: process.env.AGENT_ENABLED !== '0',
   exclude: new Set([...csv('AGENT_EXCLUDE_CA'), ...csv('RIPS_CA'), ...csv('AGENT_COIN_CA')]),
   protectedWallets: new Set([DEV_WALLET, PAYOUT_PIN, ...csv('RIPS_DEV_WALLET'), ...csv('AGENT_PROTECTED_WALLETS')]),
+  maxStateB64: num('AGENT_MAX_STATE_B64', 100000), // AGENT_STATE env string must stay < 128 KiB or Render cannot start the service
   maxTradeSol: num('AGENT_MAX_TRADE_SOL', 0.02),
   sizePct: num('AGENT_SIZE_PCT', 20),            // hard cap: % of free balance per trade
   minTradeSol: num('AGENT_MIN_TRADE_SOL', 0.005),
@@ -854,7 +855,22 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const j = { v: 2, mode: cfg.mode, bornAt: st.bornAt, paperCash: st.paperCash, paperStart: st.paperStart, positions: st.positions.map(({ closing, ...p }) => p), trades: st.trades, decisions: st.decisions.slice(0, 30), thoughts: st.thoughts.slice(0, 50), seen: st.seen, day: st.day, dayPnl: st.dayPnl, scansDay: st.scansDay, scansToday: st.scansToday, totals: st.totals,
       bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn, payout: st.payout, paperArchive: st.paperArchive, liveStartedAt: st.liveStartedAt, volAccPaid: st.volAccPaid, shadow: st.shadow,
       activity: { log: ACT.log.slice(0, 30), downtimes: ACT.downtimes.slice(0, 20), dayKey: ACT.dayKey, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday }, savedAt: new Date(now()).toISOString(), final: !!final };
-    return 'gz:' + zlib.gzipSync(JSON.stringify(j)).toString('base64');
+    // AGENT_STATE lives in one Render env var: Linux refuses to start a process with any env string > 128 KiB, so an
+    // oversized snapshot would make every later deploy/restart fail. Trim the least important history until it fits.
+    const enc = () => 'gz:' + zlib.gzipSync(JSON.stringify(j)).toString('base64');
+    let b64 = enc(); st.stateBytes = b64.length; st.stateTrimmed = null; if (b64.length <= cfg.maxStateB64) return b64;
+    const steps = [
+      ['missed-mints', () => { if (j.dayStats?.missed?.mints) j.dayStats.missed = { ...j.dayStats.missed, mints: j.dayStats.missed.mints.slice(-40) }; }],
+      ['shadow-closed', () => { j.shadow = { ...j.shadow, closed: (j.shadow.closed || []).slice(0, 120) }; }],
+      ['logs', () => { j.decisions = j.decisions.slice(0, 15); j.thoughts = j.thoughts.slice(0, 25); j.activity = { ...j.activity, log: j.activity.log.slice(0, 10) }; }],
+      ['archive', () => { if (j.paperArchive) j.paperArchive = { ...j.paperArchive, trades: (j.paperArchive.trades || []).slice(0, 20), diaries: (j.paperArchive.diaries || []).slice(0, 3) }; }],
+      ['history', () => { j.equityHist = j.equityHist.slice(-300); j.weightsHist = j.weightsHist.slice(-120); j.diaries = j.diaries.slice(0, 30); }],
+      ['trades', () => { j.trades = j.trades.slice(0, 80); }],
+      ['shadow-closed-min', () => { j.shadow = { ...j.shadow, closed: (j.shadow.closed || []).slice(0, 40) }; }],
+    ];
+    for (const [name, fn] of steps) { fn(); b64 = enc(); st.stateTrimmed = name; if (b64.length <= cfg.maxStateB64) break; }
+    st.stateBytes = b64.length; if (b64.length > cfg.maxStateB64) throw new Error(`state ${b64.length} B over the ${cfg.maxStateB64} B cap after trimming; kept the last snapshot that fits`);
+    return b64;
   }
   function decode(raw) { try { return raw.startsWith('gz:') ? JSON.parse(zlib.gunzipSync(Buffer.from(raw.slice(3), 'base64')).toString()) : JSON.parse(raw); } catch { return null; } }
   function restore(raw) {
@@ -962,7 +978,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       execution: execution(), shadow: shadowStatus(),
       payout: payoutStatus(), paperArchive: st.paperArchive ? { ...st.paperArchive, trades: st.paperArchive.trades.slice(0, 30) } : null,
       positions: open, trades: st.trades, decisions: st.decisions,
-      stream: scalper?.streamInfo?.() || null, persistence: store ? { backend: store.name, saves: st.saves, lastSaveAt: st.lastSaveAt, lastSaveError: st.lastSaveError, handover: st.handover || null } : { backend: 'memory' },
+      stream: scalper?.streamInfo?.() || null, persistence: store ? { backend: store.name, saves: st.saves, lastSaveAt: st.lastSaveAt, lastSaveError: st.lastSaveError, handover: st.handover || null, stateBytes: st.stateBytes ?? null, maxStateBytes: cfg.maxStateB64, stateTrimmed: st.stateTrimmed || null } : { backend: 'memory' },
       lastDecisionAt: st.lastDecisionAt, activity: activity(),
     };
   }
