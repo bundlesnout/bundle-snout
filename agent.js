@@ -63,6 +63,9 @@ const ACFG = () => ({
   route: (process.env.AGENT_ROUTE || 'direct') === 'pumpportal' ? 'pumpportal' : 'direct', fallbackRoute: 'pumpportal',
   curveFeePct: num('AGENT_CURVE_FEE_PCT', 1.25),  // pump.fun on-chain FeeConfig today: 0.95 protocol + 0.30 creator (read live per trade)
   get feePct() { return this.curveFeePct + (E.ROUTE_FEE_PCT[this.route] || 0); }, // per side, used by paper fills + bandit priors
+  // open positions + entry fills read the bonding curve account straight from RPC (0 Helius credits on the public RPC): the
+  // shared logsSubscribe stream on Render delivers only part of the pump.fun trades, so stops/targets fired late on it
+  curveRpcUrl: process.env.AGENT_CURVE_RPC_URL || 'https://api.mainnet-beta.solana.com', posPollMs: num('AGENT_POS_POLL_MS', 2000),
   txFeeSol: num('AGENT_TX_FEE_SOL', E.networkSol('buy')), // base 5000 lamports + priority (CU fitted, price = recent median, capped)
   maxCostShare: num('AGENT_MAX_COST_SHARE', 0.75), // skip when the round-trip cost would eat more than this share of the expected gross edge
   maxImpactPct: num('AGENT_MAX_IMPACT_PCT', 0.5),  // size down so my own buy moves the price at most this much
@@ -375,6 +378,33 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     decide({ action: 'REVIVED', reason: VT.VV.revived({ life: st.life, token }) }); return true;
   }
 
+  // ---- direct curve reads: the bonding curve account itself (virtual reserves after the last trade, whichever stream saw it)
+  const PUMP_PK = new PublicKey(PUMP_PROGRAMS[0]); const bcPdaCache = new Map();
+  const bcPda = (mint) => { let k = bcPdaCache.get(mint); if (!k) { k = PublicKey.findProgramAddressSync([Buffer.from('bonding-curve'), new PublicKey(mint).toBuffer()], PUMP_PK)[0].toBase58(); bcPdaCache.set(mint, k); if (bcPdaCache.size > 500) bcPdaCache.delete(bcPdaCache.keys().next().value); } return k; };
+  const FEED = { polls: 0, pollErrors: 0, pollUpdates: 0, entryReads: 0, entryReadFails: 0, lastPollAt: null, lastError: null, backoffUntil: 0 };
+  async function curveState(mint) {
+    const r = await fetchFn(cfg.curveRpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getAccountInfo', params: [bcPda(mint), { encoding: 'base64', commitment: 'confirmed' }] }), signal: AbortSignal.timeout(4000) });
+    if (r.status === 429) { FEED.backoffUntil = now() + 10e3; throw new Error('RPC 429'); }
+    const j = await r.json(); const v = j?.result?.value; if (!v?.data?.[0]) throw new Error('no curve account');
+    return decodeCurve(Buffer.from(v.data[0], 'base64'), j.result.context?.slot ?? null);
+  }
+  let pollBusy = false;
+  async function pollPositions() {
+    if (pollBusy || !ready || !st.positions.length || now() < FEED.backoffUntil) return; pollBusy = true;
+    try {
+      for (const pos of [...st.positions]) {
+        if (pos.closing || pos.kind === 'recovered') continue;
+        FEED.polls++; FEED.lastPollAt = now();
+        let c; try { c = await curveState(pos.mint); } catch (e) { FEED.pollErrors++; FEED.lastError = e.message.slice(0, 80); continue; }
+        if (!st.positions.includes(pos) || pos.closing) continue;
+        if (c.slot != null && pos.slot != null && c.slot < pos.slot) continue; // never step back to an older state
+        pos.slot = c.slot; pos.polls = (pos.polls || 0) + 1;
+        if (c.complete) pos.complete = true;
+        else if (c.vs !== pos.vs || c.vt !== pos.vt) { pos.vs = c.vs; pos.vt = c.vt; pos.pollTicks = (pos.pollTicks || 0) + 1; FEED.pollUpdates++; }
+        checkExit(pos);
+      }
+    } finally { pollBusy = false; }
+  }
   // ---- stream hook (called by the scalper for every bonding-curve trade)
   function onTrade(tr, m) { if (!ready) return; try { onTradeInner(tr, m); } catch (e) { noteError('market', e); } }
   function onTradeInner(tr, m) {
@@ -386,7 +416,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     // remembered per mint for 24 h on my side too: the scalper forgets a mint after 10 idle minutes, and a coin often comes back to life after its dev sold
     if (tr.buy === false && tr.creator && tr.user === tr.creator) { if (m) m.devSoldSeen = true; if (!ACT.devSold.has(tr.mint)) { ACT.devSold.set(tr.mint, t); if (ACT.devSold.size > 20000) { for (const [k, at] of ACT.devSold) if (at < t - 864e5 || ACT.devSold.size > 15000) ACT.devSold.delete(k); else break; } } }
     try { shadowObserve(tr, m, t); } catch (e) { noteError('shadow', e); }
-    for (const pos of st.positions) if (pos.mint === tr.mint) { pos.vs = tr.vs; pos.vt = tr.vt; pos.lastAt = t; pos.complete = m.complete; checkExit(pos); }
+    for (const pos of st.positions) if (pos.mint === tr.mint) { pos.vs = tr.vs; pos.vt = tr.vt; pos.lastAt = t; pos.complete = pos.complete || m.complete; pos.streamTicks = (pos.streamTicks || 0) + 1; checkExit(pos); }
     if (m.complete) return;
     if (busy || blockers()) return watchOnly(tr, m, t);
     if ((m.agentEval || 0) > t - 3000) return; m.agentEval = t;
@@ -485,7 +515,10 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       }
       cand(mint, s, { gate: 'pass' });
       const b = blockers(); if (b) { cand(mint, s, { verdict: 'pass', why: 'scanner clean, but ' + holdWhy() }); return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: M.V.blocked({ sym: sym(s, mint), b }) }); }
-      const cur = scalper?.mints?.get(mint) || m;
+      let cur = scalper?.mints?.get(mint) || m;
+      // fill at the curve as it is now, not at the last trade my stream happened to catch (often 10-40 s old)
+      let priceFrom = 'stream';
+      if (cfg.mode === 'paper' && now() >= FEED.backoffUntil) { FEED.entryReads++; try { const c = await curveState(mint); cur = { ...cur, vs: c.vs, vt: c.vt, complete: cur.complete || c.complete }; priceFrom = 'curve account'; } catch (e) { FEED.entryReadFails++; FEED.lastError = e.message.slice(0, 80); } }
       if (cur.complete) return decide({ action: 'SKIP', mint, symbol: s, signal: sg.arm, reason: `${sym(s, mint)} graduated while I was scanning it.` });
       const z = sizeFor(sg.smp, sg.pol || pol(sg.arm));
       if (z.size && cur.vs) z.size = r4(Math.min(z.size, (cfg.maxImpactPct / 100) * cur.vs)); // keep my own price impact small vs the curve's depth
@@ -493,14 +526,14 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       const ap = arms[sg.arm];
       const reason = M.V.buy({ sym: sym(s, mint), facts: sg.facts, arm: sg.arm, s: sg.smp, size: z.size, regime: st.regime.label, clean: cleanSummary(rep), ap }) + (z.ddMult < 1 ? ` Betting ${Math.round(z.ddMult * 100)}% of normal size because I'm in drawdown.` : '') + (z.survivalMult < 1 ? ` Survival sizing ×${z.survivalMult} (signal ${vit().signal}%, pain ${pol().pain}).` : '') + ` (Rules: TP +${ap.tp}% / SL -${ap.sl}% / max ${ap.hold} min.)`;
       cand(mint, s, { verdict: 'bought', why: `scanner clean, edge +${r1(sg.smp.ev)}%: bought ${z.size} SOL` });
-      await openPosition({ mint, symbol: s, size: z.size, vs: cur.vs, vt: cur.vt, reason, signal: sg.arm, progress: sg.f.progress, belief: { p: r4(sg.smp.p), ev: r1(sg.smp.ev), kelly: r4(sg.smp.kelly) }, volPct: volPctOf(cur, now()), dev: rep.dev?.wallet || rep.curve?.creatorOnCurve || null, bots: sg.vb?.bots || null, clip: sg.vb?.clip || 0 });
+      await openPosition({ mint, symbol: s, size: z.size, vs: cur.vs, vt: cur.vt, reason, signal: sg.arm, progress: sg.f.progress, belief: { p: r4(sg.smp.p), ev: r1(sg.smp.ev), kelly: r4(sg.smp.kelly) }, volPct: volPctOf(cur, now()), priceFrom, dev: rep.dev?.wallet || rep.curve?.creatorOnCurve || null, bots: sg.vb?.bots || null, clip: sg.vb?.clip || 0 });
     } finally { busy = false; ACT.scanning = null; ACT.lastScanEndAt = now(); }
   }
 
-  async function openPosition({ mint, symbol, size, vs, vt, reason, signal: kind = 'dip', progress, belief = null, volPct = 0, dev = null, bots = null, clip = 0 }) {
+  async function openPosition({ mint, symbol, size, vs, vt, reason, signal: kind = 'dip', progress, belief = null, volPct = 0, priceFrom = null, dev = null, bots = null, clip = 0 }) {
     if (excluded(mint)) throw new Error('refusing to trade excluded coin');
     const ap = arms[kind] || { tp: cfg.tpPct, sl: cfg.slPct, hold: cfg.maxHoldMin };
-    const base = { mint, symbol, kind, arm: kind, regime: regimeNow(), tp: ap.tp, sl: ap.sl, hold: ap.hold, belief, openAt: now(), lastAt: now(), progress, reason, dev, bots, clip, entryVs: vs, entryVt: vt };
+    const base = { mint, symbol, kind, arm: kind, regime: regimeNow(), tp: ap.tp, sl: ap.sl, hold: ap.hold, belief, openAt: now(), lastAt: now(), progress, reason, dev, bots, clip, entryVs: vs, entryVt: vt, priceFrom };
     let pos;
     if (cfg.mode === 'paper') {
       const bq = E.buyQuote(vs, vt, size, { curveFeePct: cfg.curveFeePct, routeFeePct: routeFee(), netSol: cfg.txFeeSol });
@@ -569,7 +602,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const rtSol = r6((b.pumpFeeSol || 0) + (b.routeFeeSol || 0) + (b.networkSol || 0) + (b.oneTimeAccountSol || 0) + (sc.pumpFeeSol || 0) + (sc.routeFeeSol || 0) + (sc.networkSol || 0));
     const costs = { route: pos.costs?.route || cfg.route, venue: sc.venue || pos.costs?.venue || 'pump.fun curve', ...sc, roundTrip: { feesSol: r6((b.pumpFeeSol || 0) + (sc.pumpFeeSol || 0)), routeFeesSol: r6((b.routeFeeSol || 0) + (sc.routeFeeSol || 0)), networkSol: r6((b.networkSol || 0) + (sc.networkSol || 0)), oneTimeSol: r6(b.oneTimeAccountSol || 0), totalSol: rtSol, totalPct: pos.cost ? r1((rtSol / pos.cost) * 1000) / 10 : null, impactBuyPct: b.impactPct ?? null, impactSellPct: sc.impactPct ?? null } };
     st.totals.costsSol = r6((st.totals.costsSol || 0) + rtSol);
-    pushTrade({ side: 'SELL', mint: pos.mint, symbol: pos.symbol, arm: pos.arm, sol: r6(proceeds), pnlSol: pnl, pnlPct: r1(pnlPct), reason: why, tx, posId: pos.id, heldMin: held, costs });
+    pushTrade({ side: 'SELL', mint: pos.mint, symbol: pos.symbol, arm: pos.arm, sol: r6(proceeds), pnlSol: pnl, pnlPct: r1(pnlPct), reason: why, tx, posId: pos.id, heldMin: held, costs, feed: { streamTicks: pos.streamTicks || 0, curvePolls: pos.polls || 0, curveUpdates: pos.pollTicks || 0, entryPriceFrom: pos.priceFrom || null } });
     const args = { sym: sym(pos.symbol, pos.mint), pnl: (pnl >= 0 ? '+' : '') + r4(pnl), p: (pnlPct >= 0 ? '+' : '') + r1(pnlPct) + '%', why: why[0].toUpperCase() + why.slice(1), held };
     decide({ action: 'SELL', mint: pos.mint, symbol: pos.symbol, signal: pos.arm, reason: pnl > 0 ? M.V.sellWin(args) : M.V.sellLoss(args) });
     think(fe.event.kind === 'pain' ? VT.VV.hurt(fe.event) : VT.VV.relief(fe.event), fe.event.kind, { arm: pos.arm });
@@ -963,7 +996,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     return { key, label, headline, detail, now: iso(t), scannedLastMin, activeCoinsLastMin: activeLastMin, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday,
       lastScanAt: ACT.lastEvalAt ? iso(ACT.lastEvalAt) : null, scanner: { checksToday: st.scansToday, dailyBudget: cfg.maxScansPerDay, allowedSoFarToday: allowance, lastAt: st.lastScanAt ? iso(st.lastScanAt) : null, nextSlotInSec: nextScannerSec, minGapSec: cfg.scanGapSec, credits: (() => { const n = st.totals.scansCredited || 0, per = n ? r1((st.totals.scanCredits || 0) / n) : null; return { today: st.dayStats?.scanCredits || 0, perScan: per, scansMeasured: n, fullBudgetPerDay: per == null ? null : Math.round(per * cfg.maxScansPerDay), note: 'Helius credits my scanner spends (1 per RPC call, 10 per getProgramAccounts); fullBudgetPerDay = per-scan cost x my daily scan budget' }; })(), bonusToday: st.dayStats?.bonusScans || 0, bonusMax: cfg.bonusScansPerDay, devSellSkipsToday: st.dayStats?.devSellSkips || 0, devSellRememberedToday: st.dayStats?.devSellRemembered || 0, missedToday: { budget: st.dayStats?.missed?.budget || 0, gap: st.dayStats?.missed?.gap || 0, note: 'coins that cleared my bar but were not scanned because the scanner budget or min gap was in the way (one count per coin per day)' }, running: ACT.scanning ? { mint: ACT.scanning.mint, symbol: ACT.scanning.symbol } : null },
       candidates: cands, log: ACT.log.slice(0, 30), openPositions: st.positions.length,
-      stream: { connected: !!si?.connected, lastTradeAgoSec: streamAgoSec, coinsTracked: si?.mintsTracked ?? null },
+      stream: { connected: !!si?.connected, lastTradeAgoSec: streamAgoSec, coinsTracked: si?.mintsTracked ?? null, positionFeed: { note: 'open positions and paper entry fills read the bonding curve account directly every ' + cfg.posPollMs / 1000 + ' s, because the shared trade stream misses many trades', polls: FEED.polls, pollErrors: FEED.pollErrors, pollUpdates: FEED.pollUpdates, entryReads: FEED.entryReads, entryReadFails: FEED.entryReadFails, lastError: FEED.lastError } },
       loop: { running: ACT.lastTickAt > 0 && t - ACT.lastTickAt < 20e3, ticks: ACT.ticks, lastTickAt: ACT.lastTickAt ? iso(ACT.lastTickAt) : null, uptimeSec: Math.round((t - t0) / 1000), errorsCaught: ACT.errors, lastError: ACT.lastError, lastErrorAt: ACT.lastErrorAt, downtimes: ACT.downtimes.slice(0, 10) } };
   }
   function vitalsStatus() {
@@ -1022,13 +1055,13 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       if (!st.thoughts.length) think(IDENTITY.story[0], 'birth');
       if (!st.restoredFrom) actLog('wake', 'Started. Watching the pump.fun trade stream.');
       updateWeights(true);
-      timers.push(setInterval(safeTick, 5000), setInterval(refreshBalance, 120e3), setInterval(() => reconcile().catch(() => {}), 600e3));
+      timers.push(setInterval(() => pollPositions().catch((e) => noteError('curve poll', e)), cfg.posPollMs), setInterval(safeTick, 5000), setInterval(refreshBalance, 120e3), setInterval(() => reconcile().catch(() => {}), 600e3));
       if (cfg.mode === 'live') reconcile().catch(() => {}); timers.forEach((x) => x.unref?.());
       out(`[agent] ALMA ${cfg.mode.toUpperCase()} ${cfg.enabled ? 'enabled' : 'DISABLED'} wallet ${address || 'none'}; arms ${M.ARM_KEYS.filter((k) => arms[k].enabled).join(',')}; params ${P?.source || 'defaults'}; excludes ${[...cfg.exclude].join(',') || 'none'}${st.halted ? '; HALTED: ' + st.halted : ''}`);
     },
     stop() { timers.forEach(clearInterval); }, save: () => save(true), saveFinal: async () => { ready = false; timers.forEach(clearInterval); await save(true, true); }, onTrade, status, activity, diary, tick, cfg, st, arms, equity,
     isBusy: () => busy,
-    _test: { checkVitals, maybeRevive, vit, pol, enterLimbo, sizeFor, blockers, reconcile, signal, gate, buildPortalTx, simulateGuard, openPosition, closePosition, checkExit, scanAndEnter, scanFunding, snapshot, restore, rollDay, safeTick, ACT },
+    _test: { pollPositions, curveState, FEED, checkVitals, maybeRevive, vit, pol, enterLimbo, sizeFor, blockers, reconcile, signal, gate, buildPortalTx, simulateGuard, openPosition, closePosition, checkExit, scanAndEnter, scanFunding, snapshot, restore, rollDay, safeTick, ACT },
   };
 }
 
@@ -1046,4 +1079,11 @@ function exitSlippage(trades) {
     note: 'how many % points my stop-loss exits lost beyond the stop (and take-profits gained beyond the target), because a price can jump past a level between two trades' };
 }
 
-module.exports = { createAgent, ACFG, parseSecret, signal, gate, volbotGate, DEV_WALLET, IDENTITY, FEE_SPLIT, exitSlippage };
+// pump.fun BondingCurve account: 8-byte discriminator, then virtual token, virtual SOL, real token, real SOL, total supply (u64), complete (bool)
+function decodeCurve(b, slot = null) {
+  if (!b || b.length < 49) throw new Error('short curve account');
+  const vt = Number(b.readBigUInt64LE(8)) / 1e6, vs = Number(b.readBigUInt64LE(16)) / 1e9, realTok = Number(b.readBigUInt64LE(24)) / 1e6;
+  return { vs, vt, realTok, complete: b[48] === 1 || realTok === 0, slot };
+}
+
+module.exports = { decodeCurve, createAgent, ACFG, parseSecret, signal, gate, volbotGate, DEV_WALLET, IDENTITY, FEE_SPLIT, exitSlippage };
