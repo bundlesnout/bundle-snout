@@ -346,6 +346,14 @@ function createRadar({ onWsEvent = null, onAlert, picker = null, isAlerted = () 
     },
     stop() { stopped = true; st.running = false; clearInterval(pollTimer); clearInterval(chainTimer); clearInterval(geckoTimer); clearInterval(pruneTimer); try { ws?.close(); } catch {} },
     onTrade, geckoPoll, chainTick, prune,
+    // today's scan counters survive restarts (same UTC day), so the daily scan budgets hold across deploys
+    budgetSnapshot: () => ({ day: st.scans.day, today: st.scans.today, deepToday: st.scans.deepToday }),
+    restoreBudget(snap) {
+      if (!snap || snap.day !== new Date().toISOString().slice(0, 10) || st.scans.restored) return false;
+      if (st.scans.day !== snap.day) { st.scans.day = snap.day; st.scans.today = 0; st.scans.deepToday = 0; }
+      st.scans.today += Number(snap.today) || 0; st.scans.deepToday += Number(snap.deepToday) || 0; st.scans.restored = true;
+      return true;
+    },
     status() {
       const list = [...tracked.values()];
       const lastEvt = [st.poll.lastOkAt, st.ws.lastEventAt, st.chain.lastAt, st.stream.lastAt].filter(Boolean).sort().pop() || null;

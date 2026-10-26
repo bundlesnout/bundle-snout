@@ -25,7 +25,17 @@ let rpcCalls = 0;
 const credits = { day: new Date().toISOString().slice(0, 10), today: 0, total: 0, byTag: {} };
 let creditTag = 'other';
 function setCreditTag(t) { const prev = creditTag; creditTag = t; return prev; }
-function creditStats() { const d = new Date().toISOString().slice(0, 10); if (d !== credits.day) { credits.day = d; credits.today = 0; credits.byTag = {}; } return credits; }
+function creditStats() { const d = new Date().toISOString().slice(0, 10); if (d !== credits.day) { credits.day = d; credits.today = 0; credits.byTag = {}; credits.restored = 0; } return credits; }
+// Restarts (every deploy) used to reset the per-day counter, so the daily credit cap never held. Add back today's
+// pre-restart spend from a persisted snapshot (same UTC day only).
+function restoreCredits(snap) {
+  const c = creditStats();
+  if (!snap || snap.day !== c.day || !(snap.today > 0) || c.restored) return 0;
+  c.today += snap.today; c.restored = snap.today;
+  for (const [k, v] of Object.entries(snap.byTag || {})) c.byTag[k] = (c.byTag[k] || 0) + (Number(v) || 0);
+  return snap.today;
+}
+function creditSnapshot() { const c = creditStats(); return { day: c.day, today: c.today, byTag: { ...c.byTag } }; }
 
 // --- RPC with rate-limit handling (429 / -32429 / network errors -> exponential backoff)
 let lastCall = 0;
@@ -419,7 +429,7 @@ function scoreRisk(r) {
   return { level, levelEn, score, flags, disclaimer: { es: 'Señales automáticas on-chain, no son consejo financiero. Un riesgo BAJO no garantiza nada.', en: 'Automated on-chain signals, not financial advice. LOW risk guarantees nothing.' } };
 }
 
-module.exports = { analyze, rpc, getTx, ownerDeltas, getDexScreener, mapLimit, creditStats, setCreditTag, PUMP_PROGRAM_ID: PUMP_PROGRAM.toBase58() };
+module.exports = { analyze, rpc, getTx, ownerDeltas, getDexScreener, mapLimit, creditStats, setCreditTag, restoreCredits, creditSnapshot, PUMP_PROGRAM_ID: PUMP_PROGRAM.toBase58() };
 
 if (require.main === module) {
   analyze(process.argv[2]).then((r) => console.log(JSON.stringify(r, null, 2))).catch((e) => { console.error('ERROR', e.message); process.exit(1); });

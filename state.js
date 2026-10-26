@@ -23,7 +23,7 @@ function createStore() {
       } catch (e) { lastSaveError = 'load ' + e.message; }
     }
     if (raw == null && process.env[KEY]) { raw = process.env[KEY]; loadedFrom = 'process.env'; }
-    if (raw) { try { const j = JSON.parse(raw); data = { v: 1, subs: j.subs || [], alerted: j.alerted || [], picks: j.picks || [] }; } catch { loadedFrom = 'corrupt->empty'; } }
+    if (raw) { try { const j = JSON.parse(raw); data = { v: 1, subs: j.subs || [], alerted: j.alerted || [], picks: j.picks || [], budget: j.budget || null }; } catch { loadedFrom = 'corrupt->empty'; } }
     return data;
   }
   async function flush() {

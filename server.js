@@ -63,7 +63,21 @@ if (process.env.RADAR_ENABLED !== '0') {
     isAlerted: (m) => store.data.alerted.includes(m),
     markAlerted: (m) => { store.data.alerted.push(m); if (store.data.alerted.length > 200) store.data.alerted.splice(0, store.data.alerted.length - 200); store.save(); },
   });
-  store.load().then(() => { console.log('[state]', JSON.stringify(store.status())); radar.start(); });
+  store.load().then(() => {
+    console.log('[state]', JSON.stringify(store.status()));
+    const b = store.data.budget || {};
+    const am = require('./analyzer');
+    const rc = am.restoreCredits(b.credits); const rs = radar.restoreBudget(b.radar);
+    if (rc || rs) console.log(`[state] restored today's budgets: ${rc} Helius credits, radar scans ${rs ? b.radar.today + ' + deep ' + b.radar.deepToday : 'none'}`);
+    radar.start();
+    // persist today's budget counters every 10 min (only when they changed) so a restart can't reset the daily caps
+    let lastBudget = '';
+    setInterval(() => {
+      const snap = { credits: am.creditSnapshot(), radar: radar.budgetSnapshot() };
+      const j = JSON.stringify(snap); if (j === lastBudget) return; lastBudget = j;
+      store.data.budget = snap; store.save();
+    }, 10 * 60e3).unref();
+  });
 }
 
 // ---- keep-alive: ping our own public URL so Render's edge sees inbound traffic (free web services sleep after 15 min idle).
@@ -217,7 +231,7 @@ app.get('/api/rips/status', (_, res) => { res.set('cache-control', 'no-store'); 
 // exception saves state and exits so Render restarts the process cleanly (state is restored on boot).
 process.on('unhandledRejection', (e) => console.error('[process] unhandled rejection (ignored):', e?.stack || e));
 process.once('uncaughtException', async (e) => { console.error('[process] uncaught exception, saving and restarting:', e?.stack || e); try { await Promise.race([agent?.save(), new Promise((r) => setTimeout(r, 8000))]); } catch {} process.exit(1); });
-for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} try { await agent?.save(); } catch {} process.exit(0); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} try { await agent?.save(); } catch {} try { if (radar) { store.data.budget = { credits: require('./analyzer').creditSnapshot(), radar: radar.budgetSnapshot() }; await store.flush(); } } catch {} process.exit(0); });
 app.get('/api/radar/status', (_, res) => {
   res.set('cache-control', 'no-store');
   res.json({ radar: radar ? radar.status() : { running: false, disabled: true }, state: store.status(), keepalive, uptimeSec: Math.round(process.uptime()), now: new Date().toISOString() });
