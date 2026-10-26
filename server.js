@@ -230,8 +230,9 @@ app.get('/api/rips/status', (_, res) => { res.set('cache-control', 'no-store'); 
 // Always-on: a stray async error must not kill the trader. Unhandled rejections are logged and ignored; an uncaught
 // exception saves state and exits so Render restarts the process cleanly (state is restored on boot).
 process.on('unhandledRejection', (e) => console.error('[process] unhandled rejection (ignored):', e?.stack || e));
-process.once('uncaughtException', async (e) => { console.error('[process] uncaught exception, saving and restarting:', e?.stack || e); try { await Promise.race([agent?.save(), new Promise((r) => setTimeout(r, 8000))]); } catch {} process.exit(1); });
-for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await scalper?.save(); } catch {} try { await agent?.save(); } catch {} try { if (radar) { store.data.budget = { credits: require('./analyzer').creditSnapshot(), radar: radar.budgetSnapshot() }; await store.flush(); } } catch {} process.exit(0); });
+process.once('uncaughtException', async (e) => { console.error('[process] uncaught exception, saving and restarting:', e?.stack || e); try { await Promise.race([agent?.saveFinal(), new Promise((r) => setTimeout(r, 8000))]); } catch {} process.exit(1); });
+// agent first: the next instance waits for this final save (handover) before it restores and starts trading
+for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await agent?.saveFinal(); } catch {} try { await scalper?.save(); } catch {} try { if (radar) { store.data.budget = { credits: require('./analyzer').creditSnapshot(), radar: radar.budgetSnapshot() }; await store.flush(); } } catch {} process.exit(0); });
 app.get('/api/radar/status', (_, res) => {
   res.set('cache-control', 'no-store');
   res.json({ radar: radar ? radar.status() : { running: false, disabled: true }, state: store.status(), keepalive, uptimeSec: Math.round(process.uptime()), now: new Date().toISOString() });

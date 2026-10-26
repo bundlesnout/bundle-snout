@@ -76,6 +76,9 @@ const ACFG = () => ({
   limboFloorSol: num('AGENT_LIMBO_FLOOR_SOL', 0.015), liveStartSol: process.env.AGENT_LIVE_START_SOL ? Number(process.env.AGENT_LIVE_START_SOL) : null, // stays in the wallet for trading when a body part is bought
   seed: process.env.AGENT_SEED ? Number(process.env.AGENT_SEED) : null,
   saveMin: num('AGENT_SAVE_MIN', 5),
+  // zero-downtime deploys: the new instance boots while the old one still trades, so on boot I wait (up to this long) for the old
+  // instance's final shutdown save instead of restoring a snapshot up to saveMin old and trading alongside it. Render only.
+  handoverSec: num('AGENT_HANDOVER_SEC', process.env.RENDER ? 90 : 0), handoverPollMs: num('AGENT_HANDOVER_POLL_MS', 5000),
   keep: { trades: 200, decisions: 60, thoughts: 80, equity: 700, weights: 300, diaries: 60, fundings: 60 },
 });
 const r1 = (x) => Math.round(x * 10) / 10, r4 = (x) => Math.round(x * 1e4) / 1e4, r6 = (x) => Math.round(x * 1e6) / 1e6;
@@ -175,7 +178,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     if (!kp) st.halted = 'LIVE mode needs AGENT_SECRET_KEY: trading halted';
     else if (cfg.protectedWallets.has(address)) st.halted = 'agent key is a protected wallet: refusing to trade';
   }
-  let busy = false, dirty = false, lastSave = 0; const timers = [];
+  let busy = false, dirty = false, lastSave = 0, ready = !store; const timers = []; // with a store: no trading until start() restored (or handed over) my state
   const out = (x) => { if (!quiet) log(x); };
   // ---- live activity: what I'm doing right now (for /api/agent "activity" and the page's "Right now" panel)
   const ACT = { log: [], seen: new Map(), devSold: new Map(), evals: new Map(), cands: new Map(), dayKey: madridDay(t0), coinsDay: new Set(), checksToday: 0, coinsTodayCarry: 0,
@@ -373,7 +376,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   }
 
   // ---- stream hook (called by the scalper for every bonding-curve trade)
-  function onTrade(tr, m) { try { onTradeInner(tr, m); } catch (e) { noteError('market', e); } }
+  function onTrade(tr, m) { if (!ready) return; try { onTradeInner(tr, m); } catch (e) { noteError('market', e); } }
   function onTradeInner(tr, m) {
     const t = now();
     M.regimeObserve(st.regime, t, tr.sol || 0, m.trades?.length === 1 && tr.vt > 1060e6);
@@ -814,14 +817,15 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     if (t - st.lastEurAt >= 30 * 60e3) { st.lastEurAt = t; refreshEur(); }
     save();
   }
-  function snapshot() {
+  function snapshot(final = false) {
     const j = { v: 2, mode: cfg.mode, bornAt: st.bornAt, paperCash: st.paperCash, paperStart: st.paperStart, positions: st.positions.map(({ closing, ...p }) => p), trades: st.trades, decisions: st.decisions.slice(0, 30), thoughts: st.thoughts.slice(0, 50), seen: st.seen, day: st.day, dayPnl: st.dayPnl, scansDay: st.scansDay, scansToday: st.scansToday, totals: st.totals,
       bandit: st.bandit, regime: { ...st.regime, buckets: st.regime.buckets.slice(-125) }, peak: st.peak, streak: st.streak, hibernateDay: st.hibernateDay, equityHist: st.equityHist, weightsHist: st.weightsHist, weights: st.weights, dayStats: st.dayStats, diaries: st.diaries, fundings: st.fundings, fundSeen: st.fundSeen.slice(-150), eurPerSol: st.eurPerSol, affect: st.affect, limbo: st.limbo, revivals: st.revivals, life: st.life, vitalKey: st.vitalKey, privilege: st.privilege, liveBaseline: st.liveBaseline, capitalIn: st.capitalIn, payout: st.payout, paperArchive: st.paperArchive, liveStartedAt: st.liveStartedAt, volAccPaid: st.volAccPaid, shadow: st.shadow,
-      activity: { log: ACT.log.slice(0, 30), downtimes: ACT.downtimes.slice(0, 20), dayKey: ACT.dayKey, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday }, savedAt: new Date(now()).toISOString() };
+      activity: { log: ACT.log.slice(0, 30), downtimes: ACT.downtimes.slice(0, 20), dayKey: ACT.dayKey, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday }, savedAt: new Date(now()).toISOString(), final: !!final };
     return 'gz:' + zlib.gzipSync(JSON.stringify(j)).toString('base64');
   }
+  function decode(raw) { try { return raw.startsWith('gz:') ? JSON.parse(zlib.gunzipSync(Buffer.from(raw.slice(3), 'base64')).toString()) : JSON.parse(raw); } catch { return null; } }
   function restore(raw) {
-    let j; try { j = raw.startsWith('gz:') ? JSON.parse(zlib.gunzipSync(Buffer.from(raw.slice(3), 'base64')).toString()) : JSON.parse(raw); } catch { return; }
+    const j = decode(raw);
     if (!j || (j.v !== 1 && j.v !== 2)) return;
     if (j.mode !== cfg.mode) {
       st.restoredFrom = `${j.mode} state ignored (now ${cfg.mode})`;
@@ -875,10 +879,10 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       actLog('wake', `I was not running for about ${min} min (server restart or sleep). Picking up where I left off.`);
     } else actLog('wake', 'Restarted (new version or server restart). State restored, back to research.');
   }
-  async function save(force = false) {
+  async function save(force = false, final = false) {
     if (!store || (!dirty && !force)) return; const t = now(); if (!force && t - lastSave < cfg.saveMin * 60e3) return;
     lastSave = t; dirty = false;
-    try { await store.put(snapshot()); st.saves++; st.lastSaveAt = new Date(t).toISOString(); st.lastSaveError = null; } catch (e) { st.lastSaveError = e.message; dirty = true; }
+    try { await store.put(snapshot(final)); st.saves++; st.lastSaveAt = new Date(t).toISOString(); st.lastSaveError = null; } catch (e) { st.lastSaveError = e.message; dirty = true; }
   }
 
   function execution() {
@@ -925,7 +929,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       execution: execution(), shadow: shadowStatus(),
       payout: payoutStatus(), paperArchive: st.paperArchive ? { ...st.paperArchive, trades: st.paperArchive.trades.slice(0, 30) } : null,
       positions: open, trades: st.trades, decisions: st.decisions,
-      stream: scalper?.streamInfo?.() || null, persistence: store ? { backend: store.name, saves: st.saves, lastSaveAt: st.lastSaveAt, lastSaveError: st.lastSaveError } : { backend: 'memory' },
+      stream: scalper?.streamInfo?.() || null, persistence: store ? { backend: store.name, saves: st.saves, lastSaveAt: st.lastSaveAt, lastSaveError: st.lastSaveError, handover: st.handover || null } : { backend: 'memory' },
       lastDecisionAt: st.lastDecisionAt, activity: activity(),
     };
   }
@@ -986,9 +990,31 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     return { name: 'ALMA', mode: cfg.mode, url: '/agent', limbo: st.limbo, life: st.life, today: today && { ...today, draft: true }, entries: st.diaries };
   }
 
+  // A recent snapshot without final=true means the previous instance may still be running (Render starts the new
+  // instance before it stops the old one). Wait for its final save, so no minutes of trades are lost and two
+  // instances never trade at once; a crash leaves no final save, so the wait just times out and I restore what I have.
+  async function awaitHandover(raw) {
+    const j0 = decode(raw); if (!cfg.handoverSec || !j0 || j0.final || !j0.savedAt) return raw;
+    const age = now() - Date.parse(j0.savedAt); if (!(age >= 0 && age < (cfg.saveMin + 2) * 60e3)) return raw;
+    const t0 = Date.now(), tries = Math.max(1, Math.ceil(cfg.handoverSec * 1000 / cfg.handoverPollMs));
+    for (let i = 0; i < tries; i++) {
+      await new Promise((r) => setTimeout(r, cfg.handoverPollMs));
+      let r2 = null; try { r2 = await store.get(); } catch { continue; }
+      const j = r2 && decode(r2);
+      if (j && j.final && Date.parse(j.savedAt) >= Date.parse(j0.savedAt)) {
+        st.handover = { waitedSec: Math.round((Date.now() - t0) / 1000), gotFinalSave: true, finalSavedAt: j.savedAt, staleSavedAt: j0.savedAt };
+        out(`[agent] handover: got the previous instance's final save (${j.savedAt}) after ${st.handover.waitedSec}s`); return r2;
+      }
+    }
+    st.handover = { waitedSec: Math.round((Date.now() - t0) / 1000), gotFinalSave: false, staleSavedAt: j0.savedAt };
+    out(`[agent] handover: no final save from a previous instance after ${st.handover.waitedSec}s; restoring the ${j0.savedAt} snapshot`);
+    return (await store.get().catch(() => null)) || raw;
+  }
+
   return {
     async start() {
-      if (store) { try { const raw = await store.get(); if (raw) restore(raw); } catch (e) { st.lastSaveError = 'load ' + e.message; } }
+      if (store) { try { let raw = await store.get(); if (raw) raw = await awaitHandover(raw); if (raw) restore(raw); } catch (e) { st.lastSaveError = 'load ' + e.message; } }
+      ready = true;
       st.positions = st.positions.filter((p) => !excluded(p.mint));
       await refreshBalance(); refreshEur();
       if (cfg.mode === 'live' && st.liveBaseline == null && st.liveBalance != null) st.liveBaseline = cfg.liveStartSol ?? st.liveBalance;
@@ -1000,7 +1026,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       if (cfg.mode === 'live') reconcile().catch(() => {}); timers.forEach((x) => x.unref?.());
       out(`[agent] ALMA ${cfg.mode.toUpperCase()} ${cfg.enabled ? 'enabled' : 'DISABLED'} wallet ${address || 'none'}; arms ${M.ARM_KEYS.filter((k) => arms[k].enabled).join(',')}; params ${P?.source || 'defaults'}; excludes ${[...cfg.exclude].join(',') || 'none'}${st.halted ? '; HALTED: ' + st.halted : ''}`);
     },
-    stop() { timers.forEach(clearInterval); }, save: () => save(true), onTrade, status, activity, diary, tick, cfg, st, arms, equity,
+    stop() { timers.forEach(clearInterval); }, save: () => save(true), saveFinal: async () => { ready = false; timers.forEach(clearInterval); await save(true, true); }, onTrade, status, activity, diary, tick, cfg, st, arms, equity,
     isBusy: () => busy,
     _test: { checkVitals, maybeRevive, vit, pol, enterLimbo, sizeFor, blockers, reconcile, signal, gate, buildPortalTx, simulateGuard, openPosition, closePosition, checkExit, scanAndEnter, scanFunding, snapshot, restore, rollDay, safeTick, ACT },
   };
