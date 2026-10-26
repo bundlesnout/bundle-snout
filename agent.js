@@ -147,9 +147,9 @@ function volbotGate(rep, t = Date.now()) {
 }
 const shortFail = (x) => x.replace(/\s*\(.*?\)\s*/g, ' ').trim();
 
-function createAgent({ scalper = null, store = null, log = console.log, now = () => Date.now(), analyze = null, cleanCheck = null, radarCfg = null, rpc = null, setCreditTag = () => 'other', fetchFn = (...a) => fetch(...a), params = undefined, quiet = false, instincts = true, executor = null } = {}) {
+function createAgent({ scalper = null, store = null, log = console.log, now = () => Date.now(), analyze = null, cleanCheck = null, radarCfg = null, rpc = null, setCreditTag = () => 'other', fetchFn = (...a) => fetch(...a), params = undefined, quiet = false, instincts = true, executor = null, creditStats = null } = {}) {
   const cfg = ACFG();
-  if (!analyze) ({ analyze, rpc, setCreditTag } = require('./analyzer'));
+  if (!analyze) ({ analyze, rpc, setCreditTag, creditStats } = require('./analyzer'));
   if (!cleanCheck) { const r = require('./radar'); cleanCheck = r.cleanCheck; radarCfg = radarCfg || r.CFG(); }
   const P = params === undefined ? loadParams() : params;
   const arms = M.armParams(P?.arms || {});
@@ -436,7 +436,12 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     actLog('scan', `Checking ${sym(symbol, mint)} with my scanner: ${armLabel(sg.arm).toLowerCase()} setup at ${r1(sg.f.progress)}% of the curve, edge +${r1(sg.smp.ev)}% vs my bar ${r1(sg.pol?.minEvPct ?? 0)}%.`, { mint, symbol });
     try {
       const prev = setCreditTag('agent'); let rep;
-      try { rep = await analyze(mint); } finally { setCreditTag(prev); }
+      const c0 = creditStats ? (creditStats().byTag?.agent || 0) : null;
+      try { rep = await analyze(mint); } finally {
+        setCreditTag(prev);
+        // measure what one scan really costs in Helius credits, so the daily scan budget can be judged on data (the counter resets at 00:00 UTC: skip that scan)
+        if (c0 != null) { const used = (creditStats().byTag?.agent || 0) - c0; if (used >= 0) { st.totals.scanCredits = (st.totals.scanCredits || 0) + used; st.totals.scansCredited = (st.totals.scansCredited || 0) + 1; st.dayStats.scanCredits = (st.dayStats.scanCredits || 0) + used; } }
+      }
       const s = rep.symbol || rep.metadata?.symbol || symbol;
       const fails = gate(rep, cfg, cleanCheck, radarCfg);
       if (excluded(mint)) fails.unshift('this is the agent\'s own coin');
@@ -923,7 +928,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const watchTxt = watching.length ? `, watching: ${watching.map((c) => `${c.label} (${c.why})`).join('; ')}` : ', nothing worth a closer look yet';
     const headline = ['limbo', 'stopped', 'halted'].includes(key) ? `${label}. ${detail}` : key === 'evaluating' ? `${label}: ${detail}` : `${label} — ${scanTxt}${watchTxt}`;
     return { key, label, headline, detail, now: iso(t), scannedLastMin, activeCoinsLastMin: activeLastMin, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday,
-      lastScanAt: ACT.lastEvalAt ? iso(ACT.lastEvalAt) : null, scanner: { checksToday: st.scansToday, dailyBudget: cfg.maxScansPerDay, allowedSoFarToday: allowance, lastAt: st.lastScanAt ? iso(st.lastScanAt) : null, nextSlotInSec: nextScannerSec, minGapSec: cfg.scanGapSec, missedToday: { budget: st.dayStats?.missed?.budget || 0, gap: st.dayStats?.missed?.gap || 0, note: 'coins that cleared my bar but were not scanned because the scanner budget or min gap was in the way (one count per coin per day)' }, running: ACT.scanning ? { mint: ACT.scanning.mint, symbol: ACT.scanning.symbol } : null },
+      lastScanAt: ACT.lastEvalAt ? iso(ACT.lastEvalAt) : null, scanner: { checksToday: st.scansToday, dailyBudget: cfg.maxScansPerDay, allowedSoFarToday: allowance, lastAt: st.lastScanAt ? iso(st.lastScanAt) : null, nextSlotInSec: nextScannerSec, minGapSec: cfg.scanGapSec, credits: (() => { const n = st.totals.scansCredited || 0, per = n ? r1((st.totals.scanCredits || 0) / n) : null; return { today: st.dayStats?.scanCredits || 0, perScan: per, scansMeasured: n, fullBudgetPerDay: per == null ? null : Math.round(per * cfg.maxScansPerDay), note: 'Helius credits my scanner spends (1 per RPC call, 10 per getProgramAccounts); fullBudgetPerDay = per-scan cost x my daily scan budget' }; })(), missedToday: { budget: st.dayStats?.missed?.budget || 0, gap: st.dayStats?.missed?.gap || 0, note: 'coins that cleared my bar but were not scanned because the scanner budget or min gap was in the way (one count per coin per day)' }, running: ACT.scanning ? { mint: ACT.scanning.mint, symbol: ACT.scanning.symbol } : null },
       candidates: cands, log: ACT.log.slice(0, 30), openPositions: st.positions.length,
       stream: { connected: !!si?.connected, lastTradeAgoSec: streamAgoSec, coinsTracked: si?.mintsTracked ?? null },
       loop: { running: ACT.lastTickAt > 0 && t - ACT.lastTickAt < 20e3, ticks: ACT.ticks, lastTickAt: ACT.lastTickAt ? iso(ACT.lastTickAt) : null, uptimeSec: Math.round((t - t0) / 1000), errorsCaught: ACT.errors, lastError: ACT.lastError, lastErrorAt: ACT.lastErrorAt, downtimes: ACT.downtimes.slice(0, 10) } };

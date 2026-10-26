@@ -19,7 +19,8 @@ function dipMint(t0) {
   const scalper = { mints, symbol: (m) => (m.startsWith('Coin') ? m.slice(4, 7) : null), solUsd: () => 180, streamInfo: () => ({ connected: true, lastAt, mintsTracked: mints.size }) };
   let scans = 0; let saved = null;
   const store = { name: 'mem', get: async () => saved, put: async (v) => { saved = v; } };
-  const mk = (extra = {}) => createAgent({ scalper, now, log: () => {}, analyze: async () => { scans++; return { ...cleanRep(), dev: { wallet: 'Creator111', hasSold: true, holdingPctSupply: 2 } }; }, cleanCheck, radarCfg: CFG(), rpc: null, setCreditTag: () => 'x', params: null, store, fetchFn: async () => ({ json: async () => ({}) }), ...extra });
+  const cs = { byTag: { agent: 0 } };
+  const mk = (extra = {}) => createAgent({ scalper, now, log: () => {}, creditStats: () => cs, analyze: async () => { scans++; cs.byTag.agent += 7; return { ...cleanRep(), dev: { wallet: 'Creator111', hasSold: true, holdingPctSupply: 2 } }; }, cleanCheck, radarCfg: CFG(), rpc: null, setCreditTag: () => 'x', params: null, store, fetchFn: async () => ({ json: async () => ({}) }), ...extra });
   const a = mk(); await a.start();
   let act = a.activity();
   assert.strictEqual(act.key, 'researching', act.key); assert.ok(/^Researching — scanned 0 coins in the last minute/.test(act.headline), act.headline);
@@ -42,6 +43,7 @@ function dipMint(t0) {
   // a coin that clears the bar while the scanner gap is in the way: counted once per coin per day as a missed check, not scanned
   const mE = dipMint(t); mints.set('CoinEEE', mE); a.onTrade({ mint: 'CoinEEE', vs: mE.vs, vt: mE.vt }, mE); a.onTrade({ mint: 'CoinEEE', vs: mE.vs, vt: mE.vt }, mE);
   await new Promise((r) => setTimeout(r, 20)); act = a.activity();
+  assert.deepStrictEqual([act.scanner.credits.today, act.scanner.credits.perScan, act.scanner.credits.scansMeasured, act.scanner.credits.fullBudgetPerDay], [7, 7, 1, 7 * act.scanner.dailyBudget], JSON.stringify(act.scanner.credits));
   assert.strictEqual(scans, 1, 'gap: no second scan'); assert.deepStrictEqual([act.scanner.missedToday.gap, act.scanner.missedToday.budget], [1, 0], JSON.stringify(act.scanner.missedToday));
   assert.strictEqual(act.candidates.find((x) => x.mint === 'CoinEEE')?.verdict, 'watch');
   assert.ok(act.log.length <= 30);
