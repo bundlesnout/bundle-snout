@@ -57,6 +57,7 @@ const ACFG = () => ({
   sitOutMin: num('AGENT_SIT_OUT_MIN', 10),        // per coin, after the bandit declines a setup
   minProg: num('AGENT_MIN_PROGRESS', 2), maxProg: num('AGENT_MAX_PROGRESS', 85),
   maxScansPerDay: num('AGENT_MAX_SCANS_PER_DAY', 150), scanGapSec: num('AGENT_SCAN_GAP_SEC', 60),
+  bonusScansPerDay: num('AGENT_BONUS_SCANS_PER_DAY', 150), bonusCreditShare: num('AGENT_BONUS_CREDIT_SHARE', 0.8), // extra scans only while the shared Helius day projects under this share of the cap
   paperStartSol: num('AGENT_PAPER_START_SOL', 0.1),
   // execution cost model (exec.js): route 'direct' = pump.fun curve / PumpSwap built locally, no aggregator fee
   route: (process.env.AGENT_ROUTE || 'direct') === 'pumpportal' ? 'pumpportal' : 'direct', fallbackRoute: 'pumpportal',
@@ -415,7 +416,9 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     }
     // credit pacing for the scanner (Helius): allowance grows through the Madrid day
     const [hh, mm] = new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Europe/Madrid', hour12: false }).split(':').map(Number);
-    const allowance = Math.min(cfg.maxScansPerDay, 10 + cfg.maxScansPerDay * ((hh * 60 + mm) / 1440));
+    let allowance = Math.min(cfg.maxScansPerDay, 10 + cfg.maxScansPerDay * ((hh * 60 + mm) / 1440));
+    const bonus = st.scansToday >= allowance && spareCredits(t);
+    if (bonus) allowance = st.scansToday + 1;
     if (st.scansToday >= allowance || t - st.lastScanAt < cfg.scanGapSec * 1000) {
       const wait = st.scansToday >= allowance ? 'scanner budget for now is used up' : `scanner free in ${Math.max(1, Math.ceil((st.lastScanAt + cfg.scanGapSec * 1000 - t) / 1000))}s`;
       cand(tr.mint, symNow, { ...cb, verdict: 'watch', why: `${armLabel(best.arm).toLowerCase()} setup, edge +${r1(best.smp.ev)}% clears my bar of ${r1(best.pol.minEvPct)}%; ${wait}` });
@@ -424,8 +427,22 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       if (!ds.missed.mints.includes(tr.mint)) { ds.missed.mints.push(tr.mint); if (ds.missed.mints.length > 400) ds.missed.mints.shift(); ds.missed[st.scansToday >= allowance ? 'budget' : 'gap']++; }
       return;
     }
-    cand(tr.mint, symNow, { ...cb, verdict: 'scanning', why: `${armLabel(best.arm).toLowerCase()} setup, edge +${r1(best.smp.ev)}% vs bar ${r1(best.pol.minEvPct)}%: running my scanner` });
+    if (bonus) { const ds = st.dayStats; ds.bonusScans = (ds.bonusScans || 0) + 1; if (ds.bonusScans === 1) think('Spare Helius credits today: I am running extra scanner checks beyond my paced budget, so fewer coins that clear my bar go unchecked. My entry rules are unchanged.', 'diary'); }
+    cand(tr.mint, symNow, { ...cb, verdict: 'scanning', why: `${armLabel(best.arm).toLowerCase()} setup, edge +${r1(best.smp.ev)}% vs bar ${r1(best.pol.minEvPct)}%: running my scanner${bonus ? ' (extra check on spare credits)' : ''}` });
     scanAndEnter(tr.mint, m, best).catch((e) => { st.totals.scanErrors++; busy = false; ACT.scanning = null; noteError('scanner', e); });
+  }
+
+  // Extra scans beyond the paced budget, only while the shared Helius day (radar + me + others, UTC) projects well
+  // under the daily credit cap. Measured 2026-10-26: ~38 credits/scan, ~200 bar-clearing coins/day skipped by pacing
+  // while the whole service ran at ~18k of a 28k/day cap. Entry rules are untouched; this only checks more coins.
+  function spareCredits(t) {
+    if (!creditStats || !(cfg.bonusScansPerDay > 0)) return false;
+    if ((st.dayStats?.bonusScans || 0) >= cfg.bonusScansPerDay) return false;
+    const cap = radarCfg?.dailyCreditCap; if (!(cap > 0)) return false;
+    const c = creditStats(); const today = c.today || 0;
+    const d = new Date(t); const minUtc = d.getUTCHours() * 60 + d.getUTCMinutes();
+    const projected = today * 1440 / Math.max(120, minUtc); // no projection from the first 2h of noise
+    return today < cfg.bonusCreditShare * cap && projected < cfg.bonusCreditShare * cap;
   }
 
   async function scanAndEnter(mint, m, sg) {
@@ -928,7 +945,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const watchTxt = watching.length ? `, watching: ${watching.map((c) => `${c.label} (${c.why})`).join('; ')}` : ', nothing worth a closer look yet';
     const headline = ['limbo', 'stopped', 'halted'].includes(key) ? `${label}. ${detail}` : key === 'evaluating' ? `${label}: ${detail}` : `${label} — ${scanTxt}${watchTxt}`;
     return { key, label, headline, detail, now: iso(t), scannedLastMin, activeCoinsLastMin: activeLastMin, coinsToday: ACT.coinsDay.size + ACT.coinsTodayCarry, checksToday: ACT.checksToday,
-      lastScanAt: ACT.lastEvalAt ? iso(ACT.lastEvalAt) : null, scanner: { checksToday: st.scansToday, dailyBudget: cfg.maxScansPerDay, allowedSoFarToday: allowance, lastAt: st.lastScanAt ? iso(st.lastScanAt) : null, nextSlotInSec: nextScannerSec, minGapSec: cfg.scanGapSec, credits: (() => { const n = st.totals.scansCredited || 0, per = n ? r1((st.totals.scanCredits || 0) / n) : null; return { today: st.dayStats?.scanCredits || 0, perScan: per, scansMeasured: n, fullBudgetPerDay: per == null ? null : Math.round(per * cfg.maxScansPerDay), note: 'Helius credits my scanner spends (1 per RPC call, 10 per getProgramAccounts); fullBudgetPerDay = per-scan cost x my daily scan budget' }; })(), missedToday: { budget: st.dayStats?.missed?.budget || 0, gap: st.dayStats?.missed?.gap || 0, note: 'coins that cleared my bar but were not scanned because the scanner budget or min gap was in the way (one count per coin per day)' }, running: ACT.scanning ? { mint: ACT.scanning.mint, symbol: ACT.scanning.symbol } : null },
+      lastScanAt: ACT.lastEvalAt ? iso(ACT.lastEvalAt) : null, scanner: { checksToday: st.scansToday, dailyBudget: cfg.maxScansPerDay, allowedSoFarToday: allowance, lastAt: st.lastScanAt ? iso(st.lastScanAt) : null, nextSlotInSec: nextScannerSec, minGapSec: cfg.scanGapSec, credits: (() => { const n = st.totals.scansCredited || 0, per = n ? r1((st.totals.scanCredits || 0) / n) : null; return { today: st.dayStats?.scanCredits || 0, perScan: per, scansMeasured: n, fullBudgetPerDay: per == null ? null : Math.round(per * cfg.maxScansPerDay), note: 'Helius credits my scanner spends (1 per RPC call, 10 per getProgramAccounts); fullBudgetPerDay = per-scan cost x my daily scan budget' }; })(), bonusToday: st.dayStats?.bonusScans || 0, bonusMax: cfg.bonusScansPerDay, missedToday: { budget: st.dayStats?.missed?.budget || 0, gap: st.dayStats?.missed?.gap || 0, note: 'coins that cleared my bar but were not scanned because the scanner budget or min gap was in the way (one count per coin per day)' }, running: ACT.scanning ? { mint: ACT.scanning.mint, symbol: ACT.scanning.symbol } : null },
       candidates: cands, log: ACT.log.slice(0, 30), openPositions: st.positions.length,
       stream: { connected: !!si?.connected, lastTradeAgoSec: streamAgoSec, coinsTracked: si?.mintsTracked ?? null },
       loop: { running: ACT.lastTickAt > 0 && t - ACT.lastTickAt < 20e3, ticks: ACT.ticks, lastTickAt: ACT.lastTickAt ? iso(ACT.lastTickAt) : null, uptimeSec: Math.round((t - t0) / 1000), errorsCaught: ACT.errors, lastError: ACT.lastError, lastErrorAt: ACT.lastErrorAt, downtimes: ACT.downtimes.slice(0, 10) } };

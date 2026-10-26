@@ -46,6 +46,16 @@ function dipMint(t0) {
   assert.deepStrictEqual([act.scanner.credits.today, act.scanner.credits.perScan, act.scanner.credits.scansMeasured, act.scanner.credits.fullBudgetPerDay], [7, 7, 1, 7 * act.scanner.dailyBudget], JSON.stringify(act.scanner.credits));
   assert.strictEqual(scans, 1, 'gap: no second scan'); assert.deepStrictEqual([act.scanner.missedToday.gap, act.scanner.missedToday.budget], [1, 0], JSON.stringify(act.scanner.missedToday));
   assert.strictEqual(act.candidates.find((x) => x.mint === 'CoinEEE')?.verdict, 'watch');
+  // paced budget used up: with the shared Helius day near the cap the coin is missed; with spare credits an extra scan runs (diary note once)
+  const keepScans = a.st.scansToday; a.st.scansToday = 999; cs.today = 27000; t += 61e3; lastAt = new Date(t).toISOString();
+  const mF = dipMint(t); mints.set('CoinFFF', mF); a.onTrade({ mint: 'CoinFFF', vs: mF.vs, vt: mF.vt }, mF);
+  await new Promise((r) => setTimeout(r, 20)); act = a.activity();
+  assert.strictEqual(scans, 1, 'no spare credits: no extra scan'); assert.strictEqual(act.scanner.missedToday.budget, 1); assert.strictEqual(act.scanner.bonusToday, 0);
+  cs.today = 1000; const mG = dipMint(t); mints.set('CoinGGG', mG); a.onTrade({ mint: 'CoinGGG', vs: mG.vs, vt: mG.vt }, mG);
+  await new Promise((r) => setTimeout(r, 20)); act = a.activity();
+  assert.strictEqual(scans, 2, 'spare credits: extra scan'); assert.strictEqual(act.scanner.bonusToday, 1); assert.strictEqual(act.scanner.missedToday.budget, 1);
+  assert.ok(a.st.thoughts.some((e) => e.kind === 'diary' && /Spare Helius credits/.test(e.text)), 'diary note');
+  a.st.scansToday = keepScans; delete cs.today; a.st.lastScanAt = 0;
   assert.ok(act.log.length <= 30);
   // in a trade: state + detail
   await a._test.openPosition({ mint: 'CoinDDD', symbol: 'DDD', size: 0.01, vs: 40, vt: 800e6, reason: 'r' });
