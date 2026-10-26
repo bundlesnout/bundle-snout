@@ -232,7 +232,7 @@ app.get('/api/rips/status', (_, res) => { res.set('cache-control', 'no-store'); 
 process.on('unhandledRejection', (e) => console.error('[process] unhandled rejection (ignored):', e?.stack || e));
 process.once('uncaughtException', async (e) => { console.error('[process] uncaught exception, saving and restarting:', e?.stack || e); try { await Promise.race([agent?.saveFinal(), new Promise((r) => setTimeout(r, 8000))]); } catch {} process.exit(1); });
 // agent first: the next instance waits for this final save (handover) before it restores and starts trading
-for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { try { await agent?.saveFinal(); } catch {} try { await scalper?.save(); } catch {} try { if (radar) { store.data.budget = { credits: require('./analyzer').creditSnapshot(), radar: radar.budgetSnapshot() }; await store.flush(); } } catch {} process.exit(0); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { const t0 = Date.now(); try { await agent?.saveFinal(); console.log(`[process] ${sig}: agent final save done in ${Date.now() - t0} ms`); } catch (e) { console.error(`[process] ${sig}: agent final save failed:`, e?.message || e); } try { await scalper?.save(); } catch {} try { if (radar) { store.data.budget = { credits: require('./analyzer').creditSnapshot(), radar: radar.budgetSnapshot() }; await store.flush(); } } catch {} process.exit(0); });
 app.get('/api/radar/status', (_, res) => {
   res.set('cache-control', 'no-store');
   res.json({ radar: radar ? radar.status() : { running: false, disabled: true }, state: store.status(), keepalive, uptimeSec: Math.round(process.uptime()), now: new Date().toISOString() });

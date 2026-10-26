@@ -6,7 +6,7 @@ services:
     plan: free
     region: frankfurt
     buildCommand: npm install --omit=dev --no-audit --no-fund
-    startCommand: npm start
+    startCommand: node server.js  # not "npm start": npm does not pass SIGTERM on to node, so the shutdown save never ran
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:

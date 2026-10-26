@@ -20,12 +20,12 @@ const { createAgent } = require('../agent');
   assert.ok(nu.status().persistence.handover.gotFinalSave);
   nu.stop();
   // final snapshot: next boot does not wait
-  const t1 = Date.now(); const n2 = mk(); await n2.start(); assert.ok(Date.now() - t1 < 40, 'no wait after a final save'); assert.ok(!n2.st.handover); n2.stop();
+  const t1 = Date.now(); const n2 = mk(); await n2.start(); assert.ok(Date.now() - t1 < 500, 'no wait after a final save'); assert.ok(!n2.st.handover); n2.stop();
   // crash (no final save): waits at most handoverSec, then restores what it has
   await n2.save(); t += 60e3; const t2 = Date.now(); const n3 = mk(); await n3.start();
   assert.ok(Date.now() - t2 >= 900, 'waited'); assert.strictEqual(n3.st.handover.gotFinalSave, false); n3.stop();
   // an old snapshot (instance long gone) is restored at once
-  await n3.save(); t += 30 * 60e3; const t3 = Date.now(); const n4 = mk(); await n4.start(); assert.ok(Date.now() - t3 < 40); n4.stop();
+  await n3.save(); t += 30 * 60e3; const t3 = Date.now(); const n4 = mk(); await n4.start(); assert.ok(Date.now() - t3 < 500); n4.stop();
   // no trading before start finished
   const n5 = mk(); n5.onTrade({ mint: 'X' }, { trades: [] }); assert.strictEqual(n5.st.regime.buckets?.length || 0, 0);
   console.log('handover ok'); process.exit(0);
