@@ -55,6 +55,12 @@ function decodeTrade(b64) {
   return { mint, sol, tok, buy, user, ts, vs, vt, realTok, creator };
 }
 const LOG_RE = /Program data: ([A-Za-z0-9+/=]+)/g;
+// Reconnect delay: a connection that stayed up >= 30 s and then dropped (the public RPC closes with 1006 every minute or two)
+// reconnects after 250 ms instead of 2 s, since each drop is otherwise ~2 s of missed trades; a flapping endpoint still backs off 2 s, 4 s ... 120 s.
+function reconnectPlan(livedMs, backoff) {
+  if (livedMs != null && livedMs >= 30e3) return { delay: 250, next: 2000 };
+  return { delay: backoff, next: Math.min(backoff * 2, 120e3) };
+}
 function tradesFromMessage(str) {
   if (str.indexOf('"err":null') < 0) return [];
   const out = []; LOG_RE.lastIndex = 0; let m;
@@ -275,7 +281,7 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
   // Reconnect accounting: how often the stream drops and how long ALMA is blind each time (st.ws.connects alone hid ~1 drop every 2 min).
   let downSince = null; const recentCloses = [], wsBootAt = now(); // st.startedAt is restored from saved state, so blind % uses this process's boot time
   function wsOpened() {
-    const t = now(); st.ws.connected = true; st.ws.connects++; backoff = 2000;
+    const t = now(); st.ws.connected = true; st.ws.connects++;
     if (downSince != null) { const d = (t - downSince) / 1000; st.ws.downSec = Math.round((st.ws.downSec + d) * 10) / 10; if (d > st.ws.longestDownSec) st.ws.longestDownSec = Math.round(d * 10) / 10; downSince = null; }
   }
   function wsClosed(code) {
@@ -293,12 +299,12 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
     if (stopped) return;
     if (st.ws.pausedUntil && now() < Date.parse(st.ws.pausedUntil)) return void setTimeout(connect, Date.parse(st.ws.pausedUntil) - now());
     ws = new WS(cfg.wsUrl, { handshakeTimeout: 15000, perMessageDeflate: false });
-    let ping = null, lastMsg = now();
-    ws.on('open', () => { wsOpened(); ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'logsSubscribe', params: [{ mentions: [PUMP] }, { commitment: 'confirmed' }] }));
+    let ping = null, lastMsg = now(), openedAt = null;
+    ws.on('open', () => { openedAt = now(); wsOpened(); ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'logsSubscribe', params: [{ mentions: [PUMP] }, { commitment: 'confirmed' }] }));
       ping = setInterval(() => { try { ws.ping(); } catch {} if (now() - lastMsg > 90e3) { st.ws.lastError = 'stalled'; ws.terminate(); } }, 30000); });
     ws.on('message', (b) => { lastMsg = now(); onMessage(b); });
     ws.on('error', (e) => { st.ws.lastError = e.message; });
-    ws.on('close', (c) => { clearInterval(ping); wsClosed(c); st.ws.lastError ||= 'closed ' + c; if (!stopped) setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 120e3); });
+    ws.on('close', (c) => { clearInterval(ping); wsClosed(c); st.ws.lastError ||= 'closed ' + c; const plan = reconnectPlan(openedAt == null ? null : now() - openedAt, backoff); backoff = plan.next; st.ws.lastReconnectMs = plan.delay; if (!stopped) setTimeout(connect, plan.delay); });
   }
   // CPU guard: if the event loop lags (Render free = 0.1 CPU), back the stream off for a minute so the radar's scans can finish.
   let lagSlow = 0, lastTick = now();
@@ -360,4 +366,4 @@ function renderEnvStore(key = process.env.SCALP_STATE_KEY || 'SCALP_STATE') {
     async put(value) { const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ value }), signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error('HTTP ' + r.status); } };
 }
 
-module.exports = { createScalper, renderEnvStore, decodeTrade, tradesFromMessage, buyFill, sellValue, features, scalpLevels, rideOk, buildVariants, SCFG, DISC };
+module.exports = { reconnectPlan, createScalper, renderEnvStore, decodeTrade, tradesFromMessage, buyFill, sellValue, features, scalpLevels, rideOk, buildVariants, SCFG, DISC };

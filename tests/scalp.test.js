@@ -70,5 +70,8 @@ assert.strictEqual(S.rideOk({ uniqueBuyers: 30, buySol: 10, sellSol: 2, net: 8, 
   assert.strictEqual(h.closesLastHour, 0, 'old drops age out'); assert.strictEqual(h.downSec, 13); assert.ok(h.downPct > 0 && h.downPct < 1, 'downPct ' + h.downPct);
   assert.strictEqual(sc3.status().stream.closesLastHour, 0); sc3.stop();
 }
+{ const a = S.reconnectPlan(95e3, 8000); assert.deepStrictEqual(a, { delay: 250, next: 2000 }, 'healthy drop -> fast reconnect, backoff reset');
+  const b = S.reconnectPlan(3e3, 2000); assert.deepStrictEqual(b, { delay: 2000, next: 4000 }, 'flapping -> backoff grows');
+  assert.deepStrictEqual(S.reconnectPlan(null, 64000), { delay: 64000, next: 120000 }, 'never opened -> backoff, capped'); }
 console.log('scalp tests passed:', JSON.stringify({ signals: st.signals, entries: st.entries, closes: st.closes, tpVariant: { n: tp.n, net: Math.round(tp.net * 1e4) / 1e4, exits: tp.reasons } }));
 process.exit(0);
