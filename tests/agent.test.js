@@ -207,6 +207,10 @@ function dipMint(t0) {
     t = t1 + 6e3; push(t, 0.5, true, 'BOT0'); sa.onTrade({ mint: vmint, vs: vm.vs, vt: vm.vt }, vm); assert.ok(!sa.st.shadow.open[0].pending && sa.st.shadow.open[0].cost > 0.02, 'filled on the first trade >= 5 s later');
     t = t1 + 120e3; sa._test.safeTick(); assert.strictEqual(sa.st.shadow.closed.length, 1, 'shadow closed by bot-stop'); assert.ok(/stopped/.test(sa.st.shadow.closed[0].why));
     assert.strictEqual(sa.st.bandit.volbot.all.n, 0, 'shadow does not teach the bandit'); const vv = sa.status().shadow.variants.find((x) => x.id === 'volbot'); assert.ok(vv && vv.closed === 1 && vv.maxDDSol >= 0);
+    assert.strictEqual(vv.byDay.length, 1); assert.strictEqual(vv.byDay[0].n, 1); assert.strictEqual(vv.consistency, 'too few days');
+    sa.st.shadow.byVar.volbot.days = { '2026-01-01': [12, 60], '2026-01-02': [15, -30], '2026-01-03': [3, 90], '2026-01-04': [20, 40], '2026-01-05': [11, 22] };
+    { const c = sa.status().shadow.variants.find((x) => x.id === 'volbot'); assert.strictEqual(c.byDay.length, 5); assert.strictEqual(c.consistency, 'positive on 3 of 4 days', 'days under 10 trades are ignored'); }
+    sa.st.shadow.byVar.volbot.days = { '2026-01-04': [20, 40], '2026-01-05': [11, 22] }; assert.strictEqual(sa.status().shadow.variants.find((x) => x.id === 'volbot').consistency, 'positive every day');
     assert.strictEqual(vv.edge, 'too few trades'); assert.ok(/No variant has a proven positive edge/.test(sa.status().shadow.verdict));
     Object.assign(sa.st.shadow.byVar.volbot, { vN: 100, vSum: -500, vSq: 100 * (25 + 16) }); // mean -5%, sd ~4%: clearly negative
     const vn = sa.status().shadow.variants.find((x) => x.id === 'volbot'); assert.strictEqual(vn.edge, 'negative'); assert.ok(vn.ci95Pct[1] < 0 && vn.ci95Pct[0] < -5); assert.ok(vn.ciFamilyPct[0] <= vn.ci95Pct[0] && vn.ciFamilyPct[1] >= vn.ci95Pct[1]); assert.ok(['positive','negative','unproven'].includes(vn.edgeFamily)); assert.ok(sa.status().shadow.familyZ >= 1.96);

@@ -267,6 +267,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const a = sh.byVar[p.v] || (sh.byVar[p.v] = { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0, eq: 0, peak: 0, maxDD: 0, firstAt: p.openedAt });
     a.n++; if (pnl > 0) a.wins++; if (/^take profit/.test(why)) a.tpHits++; a.netSol = r6(a.netSol + pnl); a.sumPct = r1(a.sumPct + pct);
     a.vN = (a.vN || 0) + 1; a.vSum = (a.vSum || 0) + pct; a.vSq = (a.vSq || 0) + pct * pct; // per-trade % moments for a confidence interval
+    { const day = iso(t).slice(0, 10), D = a.days || (a.days = {}); const b = D[day] || (D[day] = [0, 0]); b[0]++; b[1] = r1(b[1] + pct); // per-UTC-day [n, sum%] to see if an edge holds day after day
+      const ks = Object.keys(D).sort(); while (ks.length > 4) delete D[ks.shift()]; }
     a.eq = r6(a.eq + pnl); a.peak = Math.max(a.peak, a.eq); a.maxDD = r6(Math.max(a.maxDD, a.peak - a.eq)); a.lastAt = iso(t); dirty = true;
   }
   function shadowTick(t) { for (const p of [...st.shadow.open]) shadowExit(p, scalper?.mints?.get(p.mint), t); }
@@ -276,6 +278,12 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const hs = zFamily(VARIANTS.length) * sd / Math.sqrt(n); // same 5% error budget shared across every variant I test (Bonferroni)
     return { ci95Pct: [r1(mean - h), r1(mean + h)], edge: mean - h > 0 ? 'positive' : mean + h < 0 ? 'negative' : 'unproven', edgeN: n,
       ciFamilyPct: [r1(mean - hs), r1(mean + hs)], edgeFamily: mean - hs > 0 ? 'positive' : mean + hs < 0 ? 'negative' : 'unproven' };
+  }
+  function shadowDays(a) { // does the average hold on each UTC day, or is it one lucky stretch? (last 4 days kept)
+    const byDay = Object.keys(a.days || {}).sort().map((d) => ({ day: d, n: a.days[d][0], avgPct: r1(a.days[d][1] / a.days[d][0]) }));
+    const full = byDay.filter((x) => x.n >= 10); const pos = full.filter((x) => x.avgPct > 0).length;
+    const consistency = full.length < 2 ? 'too few days' : pos === full.length ? 'positive every day' : pos === 0 ? 'negative every day' : `positive on ${pos} of ${full.length} days`;
+    return { byDay, consistency };
   }
   const r2z = (x) => Math.round(x * 100) / 100;
   function zFamily(k) { // two-sided normal quantile for alpha 0.05/k, by bisection on erfc (Abramowitz-Stegun 7.1.26)
@@ -287,12 +295,12 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const variants = VARIANTS.map((v) => { const a = sh.byVar[v.id] || { n: 0, wins: 0, netSol: 0, sumPct: 0, tpHits: 0, maxDD: 0 };
       return { id: v.id, arm: v.arm, label: armLabel(v.arm), exits: `+${v.tp}% / -${v.sl}% / ${v.hold} min`, sizeSol: v.size, filter: v.filter || null, note: v.note || null, myLiveExits: !!v.live,
         closed: a.n, wins: a.wins, winRate: a.n ? r1((a.wins / a.n) * 100) : null, tpHitRatePct: a.n ? r1((a.tpHits / a.n) * 100) : null, avgPct: a.n ? r1(a.sumPct / a.n) : null, netSol: a.netSol, maxDDSol: a.maxDD || 0,
-        firstAt: a.firstAt || null, lastAt: a.lastAt || null, open: sh.open.filter((p) => p.v === v.id && !p.pending).length, ...shadowEdge(a) }; });
+        firstAt: a.firstAt || null, lastAt: a.lastAt || null, ...shadowDays(a), open: sh.open.filter((p) => p.v === v.id && !p.pending).length, ...shadowEdge(a) }; });
     const proven = variants.filter((v) => v.edge === 'positive'), neg = variants.filter((v) => v.edge === 'negative').length;
     const strict = variants.filter((v) => v.edgeFamily === 'positive');
     const verdict = (proven.length ? `${proven.length} variant(s) show a positive edge with 95% confidence: ${proven.map((v) => v.id).join(', ')}` : `No variant has a proven positive edge yet (${neg} of ${variants.length} are negative with 95% confidence)`)
       + (proven.length ? (strict.length ? `; still positive after correcting for testing ${variants.length} variants at once: ${strict.map((v) => v.id).join(', ')}` : `; none survives the correction for testing ${variants.length} variants at once (one lucky variant in ${variants.length} is expected by chance), so I keep watching`) : '');
-    return { note: `Forward paper test: candidate strategies run side by side on the live stream. Each signal gets a paper fill on the first trade ≥${FILL_DELAY_MS / 1000} s later, with my real direct-route costs and that variant's exits. No money moves, my beliefs do not learn from it, and my scanner (rug filters) is not run on these coins. ciFamilyPct is the stricter interval that shares the 5% error budget across all ${variants.length} variants; a variant must clear it before I would consider trading it for real.`,
+    return { note: `Forward paper test: candidate strategies run side by side on the live stream. Each signal gets a paper fill on the first trade ≥${FILL_DELAY_MS / 1000} s later, with my real direct-route costs and that variant's exits. No money moves, my beliefs do not learn from it, and my scanner (rug filters) is not run on these coins. ciFamilyPct is the stricter interval that shares the 5% error budget across all ${variants.length} variants; a variant must clear it, and stay positive day after day (byDay, days with at least 10 trades), before I would consider trading it for real.`,
       familyZ: r2z(zFamily(variants.length)), since: sh.since, signals: sh.signals, verdict, variants, open: sh.open.filter((p) => !p.pending).slice(0, 40).map((p) => ({ v: p.v, mint: p.mint, symbol: p.symbol, openedAt: p.openedAt })), closed: sh.closed.slice(0, 40) };
   }
   const curMood = () => moodNow();
