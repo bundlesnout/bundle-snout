@@ -26,7 +26,10 @@ const DEV_WALLET = '9piBCsKoxYEs3MaE1eV6ZAEfGbyWDqEv23mRYo71X7ys'; // the dev's 
 const PAYOUT_PIN = '76FHD3T6iu1GMJNyUqShKxHepu85kD3tkg1s6QXq4HLm';
 const PUMP_PROGRAMS = ['6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P', 'pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ', 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA'];
 // forward-test variants (agent-variants.json or AGENT_VARIANTS_FILE): [{ id, arm, tp, sl, hold, size, filter }]; default = shadow arms
-function loadVariants(arms) {
+const passF = (f, F = {}) => (F.minBuyers == null || f.uniqueBuyers >= F.minBuyers) && (F.maxChgPct == null || f.chgPct <= F.maxChgPct) && (F.minChgPct == null || f.chgPct >= F.minChgPct)
+    && (F.minProg == null || f.progress >= F.minProg) && (F.maxProg == null || f.progress <= F.maxProg) && (F.minNet == null || f.net >= F.minNet) && (F.maxBot == null || f.botTxShare <= F.maxBot) && (F.minVol == null || f.vol >= F.minVol);
+const sameFilter = (a, b) => JSON.stringify(a || null) === JSON.stringify(b && Object.keys(b).length ? b : null);
+function loadVariants(arms, liveFilter = {}) {
   let list = null; try { list = JSON.parse(fs.readFileSync(process.env.AGENT_VARIANTS_FILE || path.join(__dirname, 'agent-variants.json'), 'utf8')).variants; } catch {}
   const fromFile = Array.isArray(list);
   if (!fromFile) list = Object.keys(arms).filter((k) => arms[k].shadow).map((k) => ({ id: k, arm: k }));
@@ -34,10 +37,10 @@ function loadVariants(arms) {
   // always forward-test the exact exits I trade with, so the shadow judges my real strategy and not only neighbours of it
   for (const k of Object.keys(arms)) {
     const a = arms[k]; if (!fromFile || !a.enabled) continue;
-    if (out.some((v) => v.arm === k && v.tp === a.tp && v.sl === a.sl && v.hold === a.hold && !v.filter && v.size === 0.02)) continue;
-    out.push({ id: `live_${k}_${a.tp}_${a.sl}_${a.hold}`, arm: k, tp: a.tp, sl: a.sl, hold: a.hold, size: 0.02, live: true, note: 'mirrors the exits I trade with right now (added automatically)' });
+    if (out.some((v) => v.arm === k && v.tp === a.tp && v.sl === a.sl && v.hold === a.hold && sameFilter(v.filter, liveFilter[k]) && v.size === 0.02)) continue;
+    out.push({ id: `live_${k}_${a.tp}_${a.sl}_${a.hold}`, arm: k, tp: a.tp, sl: a.sl, hold: a.hold, size: 0.02, live: true, ...(liveFilter[k] && Object.keys(liveFilter[k]).length ? { filter: liveFilter[k] } : {}), note: 'mirrors the exits I trade with right now (added automatically)' });
   }
-  for (const v of out) v.live = !!arms[v.arm].enabled && v.tp === arms[v.arm].tp && v.sl === arms[v.arm].sl && v.hold === arms[v.arm].hold && !v.filter;
+  for (const v of out) v.live = !!arms[v.arm].enabled && v.tp === arms[v.arm].tp && v.sl === arms[v.arm].sl && v.hold === arms[v.arm].hold && sameFilter(v.filter, liveFilter[v.arm]);
   return out;
 }
 function loadParams() { try { return JSON.parse(fs.readFileSync(process.env.AGENT_PARAMS_FILE || path.join(__dirname, 'agent-params.json'), 'utf8')); } catch { return null; } }
@@ -73,6 +76,9 @@ const ACFG = () => ({
   priorityFeeSol: num('AGENT_PRIORITY_FEE_SOL', 0.00002), // PumpPortal fallback only
   payout: { address: process.env.AGENT_PAYOUT_ADDRESS || null, sol: num('AGENT_PAYOUT_SOL', 0), mult: num('AGENT_PAYOUT_GOAL_MULT', 2) },
   startFundTx: process.env.AGENT_START_FUND_TX || null, payoutPollMs: num('AGENT_PAYOUT_POLL_MS', 2000),
+  // live-only entry filters per arm (the shadow test still sees every signal). Momentum >=20 unique buyers: over 2448 forward
+  // paper trades (2026-10-24..27) the >=20-buyer subset lost -2.1%/trade (n=1084) vs about -5.0%/trade below 20 (n=1364)
+  liveFilter: { momentum: { minBuyers: num('AGENT_MOMENTUM_MIN_BUYERS', 20) } },
   ride: { minBuyers: num('AGENT_RIDE_MIN_BUYERS', 12), minBuySol: num('AGENT_RIDE_MIN_BUY_SOL', 3), minNet: num('AGENT_RIDE_MIN_NET_SOL', 1.5), maxLoop: 0.25, maxSame: 0.3, maxBot: 0.2 },
   kellyFraction: num('AGENT_KELLY_FRACTION', 0.25), ddSoftPct: num('AGENT_DD_SOFT_PCT', 10), ddHibernatePct: num('AGENT_DD_HIBERNATE_PCT', 35),
   workingCapitalSol: num('AGENT_WORKING_CAPITAL_SOL', 0.1),
@@ -225,16 +231,14 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   }
 
   // signals of arms allowed to trade (shadow arms only log paper signals, see shadowObserve)
-  const liveSigs = (m, t) => M.armSignals(m, t, cfg.ride, arms).filter((s) => arms[s.arm]?.enabled && s.f.progress >= cfg.minProg && s.f.progress <= cfg.maxProg);
+  const liveSigs = (m, t) => M.armSignals(m, t, cfg.ride, arms).filter((s) => arms[s.arm]?.enabled && s.f.progress >= cfg.minProg && s.f.progress <= cfg.maxProg && passF(s.f, cfg.liveFilter[s.arm]));
   // ---- forward paper test ("shadow"): candidate strategy variants run side by side on the live stream, paper only.
   // Each variant = an arm's entry signal (+ optional filters) and its own exits and size. Fill = the first trade of that
   // coin >= FILL_DELAY_MS after the signal (like my scanner latency), at that trade's reserves, with my real direct-route
   // costs. Never touches the treasury, never feeds the bandit, no scanner call (rug filters are NOT applied here).
   const FILL_DELAY_MS = 5000;
-  const VARIANTS = loadVariants(arms);
+  const VARIANTS = loadVariants(arms, cfg.liveFilter);
   const allArms = Object.fromEntries(M.ARM_KEYS.map((k) => [k, { ...arms[k], enabled: true }]));
-  const passF = (f, F = {}) => (F.minBuyers == null || f.uniqueBuyers >= F.minBuyers) && (F.maxChgPct == null || f.chgPct <= F.maxChgPct) && (F.minChgPct == null || f.chgPct >= F.minChgPct)
-    && (F.minProg == null || f.progress >= F.minProg) && (F.maxProg == null || f.progress <= F.maxProg) && (F.minNet == null || f.net >= F.minNet) && (F.maxBot == null || f.botTxShare <= F.maxBot) && (F.minVol == null || f.vol >= F.minVol);
   function shadowObserve(tr, m, t) {
     const sh = st.shadow; if (!VARIANTS.length) return;
     for (const p of [...sh.open]) if (p.mint === tr.mint) { if (p.pending) { if (t >= p.fillAfter && !m.complete) shadowFill(p, tr, t); else if (m.complete) sh.open = sh.open.filter((x) => x !== p); } else shadowExit(p, m, t, tr); }
@@ -989,7 +993,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       bodyFund: { ...fund(), basis: cfg.mode === 'live' ? 'on-chain wallet balance + open positions' : 'real on-chain wallet balance only (paper P&L never counts)', workingCapitalSol: cfg.workingCapitalSol, purchases, paperEquitySol: cfg.mode === 'paper' ? eq : null },
       feeSplit: FEE_SPLIT(), diaryDays: st.diaries.length,
       rules: { maxTradeSol: cfg.maxTradeSol, sizePctOfBalance: cfg.sizePct, minTradeSol: cfg.minTradeSol, reserveSol: cfg.reserveSol, maxOpen: cfg.maxOpen, takeProfitPct: cfg.tpPct, stopLossPct: cfg.slPct, maxHoldMin: cfg.maxHoldMin, dailyLossLimitSol: cfg.dailyLossSol, coinCooldownMin: cfg.cooldownMin, curveProgressPct: [cfg.minProg, cfg.maxProg], feesPerSidePct: cfg.feePct, txFeeSol: cfg.txFeeSol, maxCostShareOfEdge: cfg.maxCostShare, maxImpactPct: cfg.maxImpactPct,
-        signals: Object.fromEntries(M.ARM_KEYS.map((k) => [k, `${arms[k].idea} (exits +${arms[k].tp}% / -${arms[k].sl}% / ${arms[k].hold} min${arms[k].enabled ? '' : arms[k].shadow ? ', SHADOW: paper signals only' : ', disabled'})`])),
+        signals: Object.fromEntries(M.ARM_KEYS.map((k) => [k, `${arms[k].idea} (exits +${arms[k].tp}% / -${arms[k].sl}% / ${arms[k].hold} min${cfg.liveFilter[k]?.minBuyers ? `, only with >=${cfg.liveFilter[k].minBuyers} different buyers` : ''}${arms[k].enabled ? '' : arms[k].shadow ? ', SHADOW: paper signals only' : ', disabled'})`])),
         scannerGate: 'no multi-wallet bundle txs, no dev-paid creation-block buys, creation block <10% supply, early wallets <10%, dev holds <10% and has not sold, top-10 <30%, risk not HIGH, not Mayhem Mode, SOL-quoted curve, not created by the dev wallet',
         neverTrades: [...cfg.exclude], protectedWallets: [...cfg.protectedWallets] },
       execution: execution(), shadow: shadowStatus(),
@@ -1082,6 +1086,8 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       if (store) { try { let raw = await store.get(); if (raw) raw = await awaitHandover(raw); if (raw) restore(raw); } catch (e) { st.lastSaveError = 'load ' + e.message; } }
       ready = true;
       st.positions = st.positions.filter((p) => !excluded(p.mint));
+      const mb = cfg.liveFilter.momentum?.minBuyers || 0; // public changelog, once per rule value
+      if (mb && st.totals.momFilterNoted !== mb) { st.totals.momFilterNoted = mb; think(`Rule change: I now ride a crowd only when at least ${mb} different wallets are buying (was 12). In my forward paper test (2,448 crowd-rider trades since Oct 24) the coins with ${mb}+ buyers lost -2.1% per trade on average, the ones below lost about -5.0%. Still negative, so this cuts losses, it is not an edge yet.`, 'diary'); }
       await refreshBalance(); refreshEur();
       if (cfg.mode === 'live' && st.liveBaseline == null && st.liveBalance != null) st.liveBaseline = cfg.liveStartSol ?? st.liveBalance;
       maybeRevive(); checkVitals();
@@ -1127,4 +1133,4 @@ function decodeCurve(b, slot = null) {
   return { vs, vt, realTok, complete: b[48] === 1 || realTok === 0, slot };
 }
 
-module.exports = { decodeCurve, createAgent, ACFG, parseSecret, signal, gate, volbotGate, DEV_WALLET, IDENTITY, FEE_SPLIT, exitSlippage };
+module.exports = { decodeCurve, createAgent, ACFG, parseSecret, signal, gate, volbotGate, DEV_WALLET, IDENTITY, FEE_SPLIT, exitSlippage, passF };

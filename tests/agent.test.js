@@ -223,7 +223,12 @@ function dipMint(t0) {
     // the pre-registered variant file loads and every variant names a real arm
     const vf = require('../agent-variants.json').variants; assert.ok(vf.length >= 10 && vf.every((x) => M2.ARMS[x.arm] && x.tp > 0 && x.sl > 0 && x.hold > 0 && x.size <= 0.02));
     const sb = mk(); const sv = sb.status().shadow.variants; assert.ok(sv.length >= vf.length && vf.every((x) => sv.some((y) => y.id === x.id)));
-    const liveV = sv.filter((y) => y.myLiveExits); assert.ok(liveV.length >= 1, 'my live exits are always in the shadow test'); assert.ok(sv.filter((y) => /^live_/.test(y.id)).every((y) => y.myLiveExits && y.sizeSol === 0.02 && !y.filter));
+    const liveV = sv.filter((y) => y.myLiveExits); assert.ok(liveV.length >= 1, 'my live exits are always in the shadow test'); assert.ok(sv.filter((y) => /^live_/.test(y.id)).every((y) => y.myLiveExits && y.sizeSol === 0.02 && JSON.stringify(y.filter) === JSON.stringify(sb.cfg.liveFilter[y.arm] || null)));
+    // live momentum only rides >=20 buyers, and its shadow twin carries the same filter (the unfiltered variant is no longer 'my live exits')
+    assert.strictEqual(sb.cfg.liveFilter.momentum.minBuyers, 20);
+    const momLive = sv.filter((y) => y.arm === 'momentum' && y.myLiveExits); assert.ok(momLive.length >= 1 && momLive.every((y) => y.filter && y.filter.minBuyers === 20), 'momentum live twin is the >=20-buyer variant');
+    assert.ok(sb.status().rules.signals.momentum.includes('>=20 different buyers'));
+    { const { passF } = require('../agent'); const F = sb.cfg.liveFilter; assert.ok(!passF({ uniqueBuyers: 19 }, F.momentum)); assert.ok(passF({ uniqueBuyers: 20 }, F.momentum)); assert.ok(passF({ uniqueBuyers: 3 }, F.dip)); }
     t = tSave; mints.delete(vmint); }
   { const { exitSlippage } = require('../agent');
     const es = exitSlippage([{ side: 'SELL', pnlPct: -13.8, reason: 'stop loss: -13.8% ≤ -8%' }, { side: 'SELL', pnlPct: -9, reason: 'stop loss: -9% ≤ -8%' }, { side: 'SELL', pnlPct: 65.6, reason: 'take profit: +65.6% ≥ +50%' }, { side: 'SELL', pnlPct: 2, reason: 'time stop: 10 min held, +2%' }, { side: 'BUY', reason: 'x' }]);
