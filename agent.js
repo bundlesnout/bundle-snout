@@ -17,6 +17,7 @@ const bs58m = require('bs58'); const bs58 = bs58m.default || bs58m;
 const { features, scalpLevels, buyFill, sellValue } = require('./scalp');
 const M = require('./mind');
 const VT = require('./vitals');
+const { createFeatured } = require('./featured');
 const E = require('./exec');
 
 const num = (k, d) => (process.env[k] != null && process.env[k] !== '' ? Number(process.env[k]) : d);
@@ -161,7 +162,7 @@ function volbotGate(rep, t = Date.now()) {
 }
 const shortFail = (x) => x.replace(/\s*\(.*?\)\s*/g, ' ').trim();
 
-function createAgent({ scalper = null, store = null, log = console.log, now = () => Date.now(), analyze = null, cleanCheck = null, radarCfg = null, rpc = null, setCreditTag = () => 'other', fetchFn = (...a) => fetch(...a), params = undefined, quiet = false, instincts = true, executor = null, creditStats = null } = {}) {
+function createAgent({ scalper = null, store = null, log = console.log, now = () => Date.now(), analyze = null, cleanCheck = null, radarCfg = null, rpc = null, setCreditTag = () => 'other', fetchFn = (...a) => fetch(...a), params = undefined, quiet = false, instincts = true, executor = null, creditStats = null, featured = false } = {}) {
   const cfg = ACFG();
   if (!analyze) ({ analyze, rpc, setCreditTag, creditStats } = require('./analyzer'));
   if (!cleanCheck) { const r = require('./radar'); cleanCheck = r.cleanCheck; radarCfg = radarCfg || r.CFG(); }
@@ -275,6 +276,10 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       const ks = Object.keys(D).sort(); while (ks.length > 4) delete D[ks.shift()]; }
     a.eq = r6(a.eq + pnl); a.peak = Math.max(a.peak, a.eq); a.maxDD = r6(Math.max(a.maxDD, a.peak - a.eq)); a.lastAt = iso(t); dirty = true;
   }
+  // random entries on pump.fun featured-board coins vs a random non-featured baseline (featured.js; paper only, state in st.shadow.featured)
+  const FT = createFeatured({ getState: () => { const sh = st.shadow; if (!sh) return null; if (!sh.featured) sh.featured = {}; return sh.featured; }, fetchFn, now,
+    streamMints: () => scalper?.mints || null, solUsd: () => scalper?.solUsd?.() || null, excluded: (m) => excluded(m), isProtected: (w) => !!w && cfg.protectedWallets.has(w),
+    devSold: (m) => !!ACT.devSold?.has(m), costs: () => ({ curveFeePct: cfg.curveFeePct, routeFeePct: routeFee(), txFeeSol: cfg.txFeeSol }), familyExtra: () => VARIANTS.length, onDirty: () => { dirty = true; }, log: out });
   function shadowTick(t) { for (const p of [...st.shadow.open]) shadowExit(p, scalper?.mints?.get(p.mint), t); }
   function shadowEdge(a) { // 95% interval of the average net % per trade, from trades closed since tracking started
     const n = a.vN || 0; if (n < 30) return { ci95Pct: null, edge: 'too few trades', edgeN: n };
@@ -883,6 +888,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     const steps = [
       ['missed-mints', () => { if (j.dayStats?.missed?.mints) j.dayStats.missed = { ...j.dayStats.missed, mints: j.dayStats.missed.mints.slice(-40) }; }],
       ['shadow-closed', () => { j.shadow = { ...j.shadow, closed: (j.shadow.closed || []).slice(0, 120) }; }],
+      ['featured-closed', () => { if (j.shadow?.featured) j.shadow = { ...j.shadow, featured: { ...j.shadow.featured, closed: [] } }; }],
       ['logs', () => { j.decisions = j.decisions.slice(0, 15); j.thoughts = j.thoughts.slice(0, 25); j.activity = { ...j.activity, log: j.activity.log.slice(0, 10) }; }],
       ['archive', () => { if (j.paperArchive) j.paperArchive = { ...j.paperArchive, trades: (j.paperArchive.trades || []).slice(0, 20), diaries: (j.paperArchive.diaries || []).slice(0, 3) }; }],
       ['history', () => { j.equityHist = j.equityHist.slice(-300); j.weightsHist = j.weightsHist.slice(-120); j.diaries = j.diaries.slice(0, 30); }],
@@ -996,7 +1002,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
         signals: Object.fromEntries(M.ARM_KEYS.map((k) => [k, `${arms[k].idea} (exits +${arms[k].tp}% / -${arms[k].sl}% / ${arms[k].hold} min${cfg.liveFilter[k]?.minBuyers ? `, only with >=${cfg.liveFilter[k].minBuyers} different buyers` : ''}${arms[k].enabled ? '' : arms[k].shadow ? ', SHADOW: paper signals only' : ', disabled'})`])),
         scannerGate: 'no multi-wallet bundle txs, no dev-paid creation-block buys, creation block <10% supply, early wallets <10%, dev holds <10% and has not sold, top-10 <30%, risk not HIGH, not Mayhem Mode, SOL-quoted curve, not created by the dev wallet',
         neverTrades: [...cfg.exclude], protectedWallets: [...cfg.protectedWallets] },
-      execution: execution(), shadow: shadowStatus(),
+      execution: execution(), shadow: shadowStatus(), shadowFeatured: FT.status(),
       payout: payoutStatus(), paperArchive: st.paperArchive ? { ...st.paperArchive, trades: st.paperArchive.trades.slice(0, 30) } : null,
       positions: open, trades: st.trades, decisions: st.decisions,
       stream: scalper?.streamInfo?.() || null, persistence: store ? { backend: store.name, saves: st.saves, lastSaveAt: st.lastSaveAt, lastSaveError: st.lastSaveError, handover: st.handover || null, stateBytes: st.stateBytes ?? null, maxStateBytes: cfg.maxStateB64, stateTrimmed: st.stateTrimmed || null } : { backend: 'memory' },
@@ -1096,11 +1102,12 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       updateWeights(true);
       timers.push(setInterval(() => pollPositions().catch((e) => noteError('curve poll', e)), cfg.posPollMs), setInterval(safeTick, 5000), setInterval(refreshBalance, 120e3), setInterval(() => reconcile().catch(() => {}), 600e3));
       if (cfg.mode === 'live') reconcile().catch(() => {}); timers.forEach((x) => x.unref?.());
+      if (featured) FT.start(); // the server turns it on; tests drive FT by hand
       out(`[agent] ALMA ${cfg.mode.toUpperCase()} ${cfg.enabled ? 'enabled' : 'DISABLED'} wallet ${address || 'none'}; arms ${M.ARM_KEYS.filter((k) => arms[k].enabled).join(',')}; params ${P?.source || 'defaults'}; excludes ${[...cfg.exclude].join(',') || 'none'}${st.halted ? '; HALTED: ' + st.halted : ''}`);
     },
-    stop() { timers.forEach(clearInterval); }, save: () => save(true), saveFinal: async () => { ready = false; timers.forEach(clearInterval); await save(true, true); }, onTrade, status, activity, diary, tick, cfg, st, arms, equity,
+    stop() { timers.forEach(clearInterval); FT.stop(); }, save: () => save(true), saveFinal: async () => { ready = false; timers.forEach(clearInterval); FT.stop(); await save(true, true); }, onTrade, status, activity, diary, tick, cfg, st, arms, equity,
     isBusy: () => busy,
-    _test: { pollPositions, curveState, FEED, checkVitals, maybeRevive, vit, pol, enterLimbo, sizeFor, blockers, reconcile, signal, gate, buildPortalTx, simulateGuard, openPosition, closePosition, checkExit, scanAndEnter, scanFunding, snapshot, restore, rollDay, safeTick, ACT },
+    _test: { FT, pollPositions, curveState, FEED, checkVitals, maybeRevive, vit, pol, enterLimbo, sizeFor, blockers, reconcile, signal, gate, buildPortalTx, simulateGuard, openPosition, closePosition, checkExit, scanAndEnter, scanFunding, snapshot, restore, rollDay, safeTick, ACT },
   };
 }
 

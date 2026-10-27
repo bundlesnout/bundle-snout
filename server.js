@@ -109,7 +109,7 @@ app.get('/api/scalp/variant/:key', (req, res) => { const v = scalper?.variant(re
 var agent = null;
 if (process.env.AGENT_BOOT !== '0' && scalper) {
   const { createAgent } = require('./agent'); const { renderEnvStore: envStore } = require('./scalp');
-  agent = createAgent({ scalper, store: envStore('AGENT_STATE') });
+  agent = createAgent({ scalper, store: envStore('AGENT_STATE'), featured: true });
   agent.start().catch((e) => console.error('[agent] start failed', e.message));
 }
 // ALMA post-migration SHADOW arm (pre-registered forward test, alma-research/C/PREREG.md): paper-only by construction (no keys, no executor).
