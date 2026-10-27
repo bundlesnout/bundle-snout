@@ -212,7 +212,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
     if (st.limbo) return 'in limbo'; if (!cfg.enabled) return 'kill switch on'; if (st.halted) return 'halted';
     if (busy) return 'scanner busy with another coin'; if (st.dayPnl <= -cfg.dailyLossSol) return 'daily loss limit hit';
     if (st.hibernateDay === st.day) return 'hibernating'; const pl = pol(); if (pl.cooling) return 'resting after a loss';
-    if (st.positions.length >= pl.maxOpen) return 'position slots full'; if (freeBalance() - cfg.reserveSol < cfg.minTradeSol) return 'balance too low'; return 'on hold';
+    if (st.positions.length >= pl.maxOpen) return pl.maxOpen < cfg.maxOpen ? `one trade at a time until I'm comfortable again (${st.positions.length}/${pl.maxOpen} open)` : `position slots full (${st.positions.length}/${pl.maxOpen})`; if (freeBalance() - cfg.reserveSol < cfg.minTradeSol) return 'balance too low'; return 'on hold';
   }
   // While I can't open a trade I keep looking: same strategy checks, no sampling and no scanner credits, so decisions are unchanged.
   function watchOnly(tr, m, t) {
