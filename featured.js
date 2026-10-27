@@ -11,10 +11,10 @@ const { buyQuote } = require('./exec');
 const { sellValue } = require('./scalp');
 
 const PUMP = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
-const TOTAL_SUPPLY = 1e9;
+const GRAD_HAIRCUT = 0.8;
 const r1 = (x) => Math.round(x * 10) / 10, r6 = (x) => Math.round(x * 1e6) / 1e6;
 const num = (k, d) => (process.env[k] != null && process.env[k] !== '' ? Number(process.env[k]) : d);
-const BUCKETS = [{ id: 'lt8k', min: 0, max: 8000, label: 'under $8k' }, { id: '8to20k', min: 8000, max: 20000, label: '$8k-$20k' }, { id: '20to60k', min: 20000, max: 60000, label: '$20k-$60k (still on the curve)' }];
+const BUCKETS = [{ id: 'lt8k', min: 2000, max: 8000, label: '$2k-$8k' }, { id: '8to20k', min: 8000, max: 20000, label: '$8k-$20k' }, { id: '20to60k', min: 20000, max: 60000, label: '$20k-$60k (still on the curve)' }];
 const EXITS = [{ tp: 20, sl: 15, hold: 15 }, { tp: 50, sl: 8, hold: 5 }, { tp: 30, sl: 10, hold: 10 }];
 const SOURCES = { feat: 'random coin from pump.fun featured board', rand: 'random coin from my stream that is NOT featured (baseline)' };
 const VARIANTS = []; for (const src of Object.keys(SOURCES)) for (const b of BUCKETS) for (const e of EXITS) VARIANTS.push({ id: `${src}_${b.id}_${e.tp}_${e.sl}_${e.hold}`, src, bucket: b.id, ...e });
@@ -123,9 +123,10 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
           Object.assign(p, { pending: 0, at: t, solIn: bq.solIn, tok: bq.tok, cost: r6(cfg.size + C.txFeeSol), vs: c.vs, vt: c.vt }); delete p.pending; s.fills++; onDirty(); continue;
         }
         if (c && !c.complete) { p.vs = c.vs; p.vt = c.vt; }
-        const val = Math.max(0, sellValue(p.vs, p.vt, p, sv)); const pct = ((val - p.cost) / p.cost) * 100; const age = (t - p.at) / 60e3;
+        // graduated: the curve is closed and I could only sell in the new pool, which opened near 0.80x the final curve price in my research
+        const val = Math.max(0, sellValue(p.vs, p.vt, p, sv) * (c?.complete ? GRAD_HAIRCUT : 1)); const pct = ((val - p.cost) / p.cost) * 100; const age = (t - p.at) / 60e3;
         let why = null;
-        if (c?.complete) why = 'graduated (closed at the last curve price)'; else if (pct >= p.tp) why = `take profit +${r1(pct)}%`; else if (pct <= -p.sl) why = `stop loss ${r1(pct)}%`; else if (age >= p.hold) why = `time stop ${r1(age)} min`;
+        if (c?.complete) why = `graduated (sold in the pool at ${GRAD_HAIRCUT}x the last curve price)`; else if (pct >= p.tp) why = `take profit +${r1(pct)}%`; else if (pct <= -p.sl) why = `stop loss ${r1(pct)}%`; else if (age >= p.hold) why = `time stop ${r1(age)} min`;
         if (why) close(s, p, val, pct, age, why, t);
       }
     } finally { busyPoll = false; }
