@@ -50,11 +50,18 @@ function curveBuf(vs, vt, complete = false, creator = null) {
   set(R, 56.5, 1000e6 * 50 / 56.5); t += 3000; await F.poll();
   const tp = state.closed.find((c) => c.v === 'rand_lt8k_20_15_15'); assert.ok(tp && /^take profit/.test(tp.why), 'took profit at +20');
   assert.ok(state.open.some((p) => p.v === 'rand_lt8k_50_8_5'), '+50 exit still open');
-  t += 5 * 60e3; await F.poll(); assert.ok(state.closed.some((c) => c.v === 'rand_lt8k_50_8_5' && /^time stop/.test(c.why)), '5 min time stop');
+  for (let i = 0; i < 10; i++) { t += 30e3; await F.poll(); } assert.ok(state.closed.some((c) => c.v === 'rand_lt8k_50_8_5' && /^time stop/.test(c.why)), '5 min time stop');
   set(R, 30, 1000e6 * 50 / 30); t += 3000; await F.poll(); assert.ok(state.closed.some((c) => c.v === 'rand_lt8k_30_10_10' && /^stop loss/.test(c.why)), 'stop loss on a dump');
   assert.strictEqual(state.open.length, 0);
   const st = F.status(); const v = st.variants.find((x) => x.id === 'rand_lt8k_20_15_15'); assert.ok(v.closed === 1 && v.wins === 1 && v.avgPct >= 20 && v.edge.startsWith('too few'));
   assert.ok(st.compare.length === 9 && st.board.entries === 4 && st.familyZ > 2.9);
+  // box paused / restarted: a position nobody watched for > 60 s is voided, not closed at a price I could never have got
+  { const st2 = {}; const F2 = createFeatured({ getState: () => st2, fetchFn, now, rng: () => 0, streamMints: () => mints, solUsd: () => 100, excluded: () => false, isProtected: (w) => w === DEV, devSold: () => false });
+    mints.get(R).lastAt = t; set(R, 50, 1000e6); await F2.refreshBoard(); t += 6000; await F2.poll(); assert.ok(st2.open.length === 3 && st2.open.every((p) => !p.pending));
+    t += 3000; await F2.poll(); assert.strictEqual(st2.open.length, 3, 'normal 3 s polls keep it open');
+    set(R, 20, 1000e6 * 50 / 20); t += 77 * 60e3; await F2.poll();
+    assert.ok(st2.open.length === 0 && st2.closed.length === 0 && st2.voided === 3, 'unwatched for 77 min: voided, no -60% stop counted');
+    assert.strictEqual(F2.status().voidedUnwatched, 3); set(R, 30, 1000e6 * 50 / 30); }
   // graduated before the fill -> dropped
   mints.get(R).lastAt = t; await F.refreshBoard(); assert.strictEqual(state.open.length, 3); set(R, 85, 280e6, true); t += 6000; await F.poll(); assert.ok(state.dropped >= 3 && state.open.length === 0, 'graduated before the fill: dropped');
 

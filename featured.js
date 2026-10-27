@@ -41,7 +41,7 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
     refreshMs: num('AGENT_FEATURED_REFRESH_SEC', 60) * 1000,
     enterProb: num('AGENT_FEATURED_ENTER_PROB', 0.5), // per bucket per refresh: random entry times, not every refresh
     rpcUrl: process.env.AGENT_CURVE_RPC_URL || 'https://api.mainnet-beta.solana.com', pollMs: num('AGENT_FEATURED_POLL_MS', 3000),
-    size: num('AGENT_FEATURED_SIZE_SOL', 0.005), fillDelayMs: 5000, maxOpenPerVar: num('AGENT_FEATURED_MAX_OPEN', 8), maxOpen: 150, keepClosed: 30,
+    size: num('AGENT_FEATURED_SIZE_SOL', 0.005), fillDelayMs: 5000, maxBlindMs: num('AGENT_FEATURED_MAX_BLIND_MS', 60000), maxOpenPerVar: num('AGENT_FEATURED_MAX_OPEN', 8), maxOpen: 150, keepClosed: 30,
   };
   const RT = { blockedUntil: 0, blocked403: 0, lastBoardAt: null, lastBoardN: 0, lastBoardError: null, lastFeatured: 0, featuredSet: new Set(), boardSet: new Set(), polls: 0, pollErrors: 0, lastPollError: null, backoffUntil: 0, lastPollAt: null };
   const pda = new Map();
@@ -114,6 +114,10 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
       const t = now(); const C = costs(); const sv = { feePct: C.curveFeePct + C.routeFeePct, txFeeSol: C.txFeeSol };
       for (const p of [...s.open]) {
         const c = curves.get(p.mint);
+        // if nobody watched the price for a while (box paused, process restarted, RPC down), the stop/target could have been
+        // crossed unseen and the exit would be filled at a price I never could have got: void the trade instead of counting it
+        const seen = p.pending ? p.pickAt + cfg.fillDelayMs : (p.seen || p.at);
+        if (t - seen > cfg.maxBlindMs) { RT.voidedBlind = (RT.voidedBlind || 0) + 1; s.voided = (s.voided || 0) + 1; drop(s, p, `price unwatched > ${cfg.maxBlindMs / 1000} s (result void)`); continue; }
         if (p.pending) {
           if (t < p.pickAt + cfg.fillDelayMs) continue;
           if (!c || c.complete || (c.creator && isProtected(c.creator))) { drop(s, p, !c ? 'no curve account' : c.complete ? 'graduated before fill' : 'protected creator'); continue; }
@@ -122,6 +126,7 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
           const bq = buyQuote(c.vs, c.vt, cfg.size, { curveFeePct: C.curveFeePct, routeFeePct: C.routeFeePct, netSol: C.txFeeSol });
           Object.assign(p, { pending: 0, at: t, solIn: bq.solIn, tok: bq.tok, cost: r6(cfg.size + C.txFeeSol), vs: c.vs, vt: c.vt }); delete p.pending; s.fills++; onDirty(); continue;
         }
+        if (c) p.seen = t;
         if (c && !c.complete) { p.vs = c.vs; p.vt = c.vt; }
         // graduated: the curve is closed and I could only sell in the new pool, which opened near 0.80x the final curve price in my research
         const val = Math.max(0, sellValue(p.vs, p.vt, p, sv) * (c?.complete ? GRAD_HAIRCUT : 1)); const pct = ((val - p.cost) / p.cost) * 100; const age = (t - p.at) / 60e3;
@@ -156,10 +161,10 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
     for (const b of BUCKETS) for (const e of EXITS) { const f = vs[`feat_${b.id}_${e.tp}_${e.sl}_${e.hold}`], r = vs[`rand_${b.id}_${e.tp}_${e.sl}_${e.hold}`];
       compare.push({ bucket: b.label, exits: f.exits, featuredAvgPct: f.avgPct, featuredN: f.closed, baselineAvgPct: r.avgPct, baselineN: r.closed, diffPct: f.avgPct != null && r.avgPct != null ? r1(f.avgPct - r.avgPct) : null }); }
     const pos = variants.filter((v) => v.edgeFamily === 'positive').map((v) => v.id), pos95 = variants.filter((v) => v.edge === 'positive').map((v) => v.id);
-    return { note: `Paper only. Random entries on pump.fun featured-board coins (top ${cfg.shown} of the movers board, still on the bonding curve) by market-cap bucket, vs random non-featured coins from my stream in the same bucket. Entry = the curve price read ${cfg.fillDelayMs / 1000}+ s after the pick, ${cfg.size} SOL, ${costs().curveFeePct}%/side pump.fun fee + network fee each way; exits checked on the curve account every ~${cfg.pollMs / 1000} s, so a fast dump can close past the stop (filled at the price I actually saw). My scanner / rug filters are NOT run here. Needs 30+ trades per variant and several days (byDay) before it means anything; ciFamilyPct corrects for testing ${K} variants at once.`,
+    return { note: `Paper only. Random entries on pump.fun featured-board coins (top ${cfg.shown} of the movers board, still on the bonding curve) by market-cap bucket, vs random non-featured coins from my stream in the same bucket. Entry = the curve price read ${cfg.fillDelayMs / 1000}+ s after the pick, ${cfg.size} SOL, ${costs().curveFeePct}%/side pump.fun fee + network fee each way; exits checked on the curve account every ~${cfg.pollMs / 1000} s, so a fast dump can close past the stop (filled at the price I actually saw). A trade whose price went unwatched for more than ${cfg.maxBlindMs / 1000} s (machine paused, restart, RPC down) is voided instead of counted, since its stop or target could have been crossed unseen. My scanner / rug filters are NOT run here. Needs 30+ trades per variant and several days (byDay) before it means anything; ciFamilyPct corrects for testing ${K} variants at once.`,
       enabled: cfg.enabled, board: { url: cfg.boardUrl, refreshSec: cfg.refreshMs / 1000, lastAt: RT.lastBoardAt ? iso(RT.lastBoardAt) : null, entries: RT.lastBoardN, featuredOnCurve: RT.lastFeatured, lastError: RT.lastBoardError, refreshes: s.refreshes, errors: s.boardErrors, blocked403: RT.blocked403, nextTryAt: RT.blockedUntil > now() ? iso(RT.blockedUntil) : null }, baselineSource: baseline ? 'pump.fun recently-traded coins list (not on the movers board)' : 'my trade stream (not on the movers board)', lastBaselineError: RT.lastBaselineError || null,
       priceFeed: { polls: RT.polls, errors: RT.pollErrors, lastError: RT.lastPollError, lastAt: RT.lastPollAt ? iso(RT.lastPollAt) : null },
-      since: s.since, picks: s.picks, fills: s.fills, dropped: s.dropped, skips: s.skips, openNow: s.open.filter((p) => !p.pending).length, pendingNow: s.open.filter((p) => p.pending).length, familyZ: Math.round(zf * 100) / 100,
+      since: s.since, picks: s.picks, fills: s.fills, dropped: s.dropped, voidedUnwatched: s.voided || 0, skips: s.skips, openNow: s.open.filter((p) => !p.pending).length, pendingNow: s.open.filter((p) => p.pending).length, familyZ: Math.round(zf * 100) / 100,
       verdict: pos.length ? `positive after the multiple-testing correction: ${pos.join(', ')} (still needs several positive days)` : pos95.length ? `${pos95.join(', ')} look positive at 95% but not after correcting for ${K} variants: likely luck so far` : 'no variant shows a positive edge yet',
       compare, variants, closed: s.closed.slice(0, 20) };
   }
