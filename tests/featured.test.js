@@ -65,6 +65,14 @@ function curveBuf(vs, vt, complete = false, creator = null) {
 
   { const s3 = {}; const F3 = createFeatured({ getState: () => s3, fetchFn, now, rng: () => 0, streamMints: () => new Map([[R, { complete: false, lastAt: t, mcSol: 50 }]]), solUsd: () => 100 });
     set(R, 1327, 710e6); await F3.refreshBoard(); t += 6000; await F3.poll(); assert.ok(s3.open.length === 0 && s3.skips['dropped: not a SOL-quoted curve'] === 3, 'token-quoted curve dropped'); }
+  { // 403 from pump.fun's Cloudflare: back off 30 min instead of knocking every minute
+    let calls = 0; const s4 = {}; const F4 = createFeatured({ getState: () => s4, fetchFn: async () => { calls++; return { ok: false, status: 403 }; }, now });
+    await F4.refreshBoard(); await F4.refreshBoard(); assert.strictEqual(calls, 1); assert.ok(/403/.test(F4.status().board.lastError) && F4.status().board.nextTryAt);
+    t += 31 * 60e3; await F4.refreshBoard(); assert.strictEqual(calls, 2); }
+  { // baseline from a list provider (box runner: pump.fun recently-traded coins), never a board coin
+    const s5 = {}; const F5 = createFeatured({ getState: () => s5, fetchFn: async () => ({ ok: true, json: async () => ({ entries: [{ m: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', c: 'solana:mainnet', pg: 'pump', pa: 'SOL', p: 20, mc: 6000 }] }) }), now, rng: () => 0,
+      baseline: async () => [{ mint: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', mcUsd: 5000, lastAt: t, complete: false }, { mint: R, mcUsd: 5000, lastAt: t, complete: false }, { mint: X, mcUsd: 5000, lastAt: t - 600e3, complete: false }] });
+    await F5.refreshBoard(); const rb = s5.open.filter((p) => p.v.startsWith('rand_')); assert.ok(rb.length === 3 && rb.every((p) => p.mint === R), 'baseline = recent non-board coin'); }
   // wired into ALMA: status exposes it, the snapshot carries it and stays under the cap with a full book
   const ag = createAgent({ scalper: { mints: new Map(), symbol: () => 'T', solUsd: () => 100, streamInfo: () => ({}) }, now, log: () => {}, analyze: async () => ({}), cleanCheck: () => ({ ok: false, reasons: ['x'] }), rpc: null, params: null, fetchFn: async () => ({ json: async () => ({}) }), quiet: true });
   assert.ok(ag.status().shadowFeatured && ag.status().shadowFeatured.variants.length === 18);

@@ -33,7 +33,7 @@ function zFor(k) { // two-sided normal quantile for alpha 0.05/k (Bonferroni)
 const newState = (t) => ({ since: new Date(t).toISOString(), refreshes: 0, boardErrors: 0, picks: 0, fills: 0, dropped: 0, skips: {}, open: [], closed: [], byVar: {} });
 
 function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () => Date.now(), rng = Math.random, streamMints = () => null, solUsd = () => null,
-  excluded = () => false, isProtected = () => false, devSold = () => false, costs = () => ({ curveFeePct: 1.25, routeFeePct: 0, txFeeSol: 0.000024 }), familyExtra = () => 0, onDirty = () => {}, log = () => {} } = {}) {
+  excluded = () => false, isProtected = () => false, devSold = () => false, costs = () => ({ curveFeePct: 1.25, routeFeePct: 0, txFeeSol: 0.000024 }), familyExtra = () => 0, baseline = null, onDirty = () => {}, log = () => {} } = {}) {
   const cfg = {
     enabled: process.env.AGENT_FEATURED_TEST !== '0',
     boardUrl: process.env.AGENT_FEATURED_URL || 'https://advanced-indexer.pump.fun/boards/movers?chains=solana&limit=100',
@@ -43,7 +43,7 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
     rpcUrl: process.env.AGENT_CURVE_RPC_URL || 'https://api.mainnet-beta.solana.com', pollMs: num('AGENT_FEATURED_POLL_MS', 3000),
     size: num('AGENT_FEATURED_SIZE_SOL', 0.005), fillDelayMs: 5000, maxOpenPerVar: num('AGENT_FEATURED_MAX_OPEN', 8), maxOpen: 150, keepClosed: 30,
   };
-  const RT = { lastBoardAt: null, lastBoardN: 0, lastBoardError: null, lastFeatured: 0, featuredSet: new Set(), boardSet: new Set(), polls: 0, pollErrors: 0, lastPollError: null, backoffUntil: 0, lastPollAt: null };
+  const RT = { blockedUntil: 0, blocked403: 0, lastBoardAt: null, lastBoardN: 0, lastBoardError: null, lastFeatured: 0, featuredSet: new Set(), boardSet: new Set(), polls: 0, pollErrors: 0, lastPollError: null, backoffUntil: 0, lastPollAt: null };
   const pda = new Map();
   const bcPda = (mint) => { let k = pda.get(mint); if (!k) { k = PublicKey.findProgramAddressSync([Buffer.from('bonding-curve'), new PublicKey(mint).toBuffer()], PUMP)[0].toBase58(); pda.set(mint, k); if (pda.size > 2000) pda.delete(pda.keys().next().value); } return k; };
   const S = () => { const s = getState(); if (!s) return null; if (!s.open || !s.byVar) Object.assign(s, newState(now())); return s; };
@@ -61,9 +61,11 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
     s.picks++; onDirty();
   }
   async function refreshBoard() {
-    const s = S(); if (!s || !cfg.enabled) return; const t = now();
+    const s = S(); if (!s || !cfg.enabled) return; const t = now(); if (t < RT.blockedUntil) return;
     let entries;
-    try { const r = await fetchFn(cfg.boardUrl, { headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (ALMA paper test)' }, signal: AbortSignal.timeout(10000) });
+    try { const r = await fetchFn(cfg.boardUrl, { headers: { accept: 'application/json', origin: 'https://pump.fun', referer: 'https://pump.fun/', 'user-agent': 'Mozilla/5.0 (ALMA paper test)' }, signal: AbortSignal.timeout(10000) });
+      // pump.fun's Cloudflare refuses some datacenter IPs (Render's): do not keep knocking, retry every 30 min
+      if (r.status === 403) { RT.blocked403++; RT.blockedUntil = t + 30 * 60e3; throw new Error('board HTTP 403 (pump.fun Cloudflare refuses this server; retrying every 30 min)'); }
       if (!r.ok) throw new Error('board HTTP ' + r.status); const j = await r.json(); entries = Array.isArray(j?.entries) ? j.entries : null; if (!entries) throw new Error('board: no entries');
     } catch (e) { s.boardErrors++; RT.lastBoardError = String(e.message).slice(0, 100); onDirty(); return; }
     s.refreshes++; RT.lastBoardAt = t; RT.lastBoardN = entries.length; RT.lastBoardError = null;
@@ -81,13 +83,17 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
       }
       // baseline pick: active coins my stream sees (traded in the last 2 min), on the curve, not on the board at all
       if (rng() < cfg.enterProb) {
-        const mints = streamMints(); if (!mints || !usd) { skip(s, 'baseline: no stream/SOL price'); continue; }
-        const c = []; for (const [mint, m] of mints) { if (!m || m.complete || !(m.lastAt > t - 120e3) || !m.mcSol) continue; const mc = m.mcSol * usd;
-          if (mc >= b.min && mc < b.max && !RT.boardSet.has(mint) && !excluded(mint) && !m.devSoldSeen && !devSold(mint) && !busy('rand', b.id, mint)) c.push([mint, mc]); }
+        let c = [];
+        if (baseline) { const L = await baselineList(); c = L.filter((x) => !x.complete && x.lastAt > t - 120e3 && x.mcUsd >= b.min && x.mcUsd < b.max && !RT.boardSet.has(x.mint) && !excluded(x.mint) && !isProtected(x.creator) && !devSold(x.mint) && !busy('rand', b.id, x.mint)).map((x) => [x.mint, x.mcUsd]); }
+        else { const mints = streamMints(); if (!mints || !usd) { skip(s, 'baseline: no stream/SOL price'); continue; }
+        for (const [mint, m] of mints) { if (!m || m.complete || !(m.lastAt > t - 120e3) || !m.mcSol) continue; const mc = m.mcSol * usd;
+          if (mc >= b.min && mc < b.max && !RT.boardSet.has(mint) && !excluded(mint) && !m.devSoldSeen && !devSold(mint) && !busy('rand', b.id, mint)) c.push([mint, mc]); } }
         if (c.length) { const [mint, mc] = pick(c); openFor(s, mint, 'rand', b.id, null, mc, null, t); } else skip(s, `no baseline coin ${b.id}`);
       }
     }
   }
+  let blCache = null; // one baseline list per board refresh
+  async function baselineList() { if (blCache && blCache.at === RT.lastBoardAt) return blCache.list; let list = []; try { list = await baseline(); } catch (e) { RT.lastBaselineError = String(e.message).slice(0, 80); } blCache = { at: RT.lastBoardAt, list }; return list; }
   async function readCurves(mints) {
     const out = new Map();
     for (let i = 0; i < mints.length; i += 100) {
@@ -150,7 +156,7 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
       compare.push({ bucket: b.label, exits: f.exits, featuredAvgPct: f.avgPct, featuredN: f.closed, baselineAvgPct: r.avgPct, baselineN: r.closed, diffPct: f.avgPct != null && r.avgPct != null ? r1(f.avgPct - r.avgPct) : null }); }
     const pos = variants.filter((v) => v.edgeFamily === 'positive').map((v) => v.id), pos95 = variants.filter((v) => v.edge === 'positive').map((v) => v.id);
     return { note: `Paper only. Random entries on pump.fun featured-board coins (top ${cfg.shown} of the movers board, still on the bonding curve) by market-cap bucket, vs random non-featured coins from my stream in the same bucket. Entry = the curve price read ${cfg.fillDelayMs / 1000}+ s after the pick, ${cfg.size} SOL, ${costs().curveFeePct}%/side pump.fun fee + network fee each way; exits checked on the curve account every ~${cfg.pollMs / 1000} s, so a fast dump can close past the stop (filled at the price I actually saw). My scanner / rug filters are NOT run here. Needs 30+ trades per variant and several days (byDay) before it means anything; ciFamilyPct corrects for testing ${K} variants at once.`,
-      enabled: cfg.enabled, board: { url: cfg.boardUrl, refreshSec: cfg.refreshMs / 1000, lastAt: RT.lastBoardAt ? iso(RT.lastBoardAt) : null, entries: RT.lastBoardN, featuredOnCurve: RT.lastFeatured, lastError: RT.lastBoardError, refreshes: s.refreshes, errors: s.boardErrors },
+      enabled: cfg.enabled, board: { url: cfg.boardUrl, refreshSec: cfg.refreshMs / 1000, lastAt: RT.lastBoardAt ? iso(RT.lastBoardAt) : null, entries: RT.lastBoardN, featuredOnCurve: RT.lastFeatured, lastError: RT.lastBoardError, refreshes: s.refreshes, errors: s.boardErrors, blocked403: RT.blocked403, nextTryAt: RT.blockedUntil > now() ? iso(RT.blockedUntil) : null }, baselineSource: baseline ? 'pump.fun recently-traded coins list (not on the movers board)' : 'my trade stream (not on the movers board)', lastBaselineError: RT.lastBaselineError || null,
       priceFeed: { polls: RT.polls, errors: RT.pollErrors, lastError: RT.lastPollError, lastAt: RT.lastPollAt ? iso(RT.lastPollAt) : null },
       since: s.since, picks: s.picks, fills: s.fills, dropped: s.dropped, skips: s.skips, openNow: s.open.filter((p) => !p.pending).length, pendingNow: s.open.filter((p) => p.pending).length, familyZ: Math.round(zf * 100) / 100,
       verdict: pos.length ? `positive after the multiple-testing correction: ${pos.join(', ')} (still needs several positive days)` : pos95.length ? `${pos95.join(', ')} look positive at 95% but not after correcting for ${K} variants: likely luck so far` : 'no variant shows a positive edge yet',
