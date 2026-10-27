@@ -133,7 +133,7 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
   const positions = new Map();  // mint -> [pos]
   const pendingEntries = [];    // { mint, kind, rule, level, at, signalAt, feat, vlist }
   const logs = { primary: [], ride: [], signals: [] };
-  const st = { startedAt: new Date(now()).toISOString(), ws: { connected: false, connects: 0, msgs: 0, trades: 0, bytes: 0, lastAt: null, lastError: null, pausedUntil: null, pauses: 0 },
+  const st = { startedAt: new Date(now()).toISOString(), ws: { connected: false, connects: 0, msgs: 0, trades: 0, bytes: 0, lastAt: null, lastError: null, pausedUntil: null, pauses: 0, closes: 0, lastCloseAt: null, lastCloseCode: null, closeCodes: {}, downSec: 0, longestDownSec: 0 },
     signals: { R1: [0, 0, 0], R2: [0, 0, 0], RIDE: 0 }, entries: 0, skippedFull: 0, closes: 0, solUsd: null, solUsdAt: null, solUsdSrc: null, lagMs: 0, saves: 0, lastSaveAt: null, lastSaveError: null, restoredFrom: null };
   let ws = null, backoff = 2000, timers = [], stopped = false, lastSave = 0;
   // symbols: from the caller (radar's PumpPortal create stream) or resolved later on DexScreener (free) for logged trades only
@@ -272,16 +272,33 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
   }
   function onMessage(buf) { st.ws.msgs++; st.ws.bytes += buf.length; const s = buf.toString(); const tr = tradesFromMessage(s); if (tr.length) st.ws.lastAt = new Date(now()).toISOString(); tr.forEach(onTrade); }
 
+  // Reconnect accounting: how often the stream drops and how long ALMA is blind each time (st.ws.connects alone hid ~1 drop every 2 min).
+  let downSince = null; const recentCloses = [], wsBootAt = now(); // st.startedAt is restored from saved state, so blind % uses this process's boot time
+  function wsOpened() {
+    const t = now(); st.ws.connected = true; st.ws.connects++; backoff = 2000;
+    if (downSince != null) { const d = (t - downSince) / 1000; st.ws.downSec = Math.round((st.ws.downSec + d) * 10) / 10; if (d > st.ws.longestDownSec) st.ws.longestDownSec = Math.round(d * 10) / 10; downSince = null; }
+  }
+  function wsClosed(code) {
+    const t = now(); st.ws.connected = false; st.ws.closes++; st.ws.lastCloseAt = new Date(t).toISOString(); st.ws.lastCloseCode = code ?? null;
+    const k = String(code ?? 'none'); if (st.ws.closeCodes[k] != null || Object.keys(st.ws.closeCodes).length < 12) st.ws.closeCodes[k] = (st.ws.closeCodes[k] || 0) + 1;
+    if (downSince == null) downSince = t; recentCloses.push(t);
+  }
+  function wsHealth() {
+    const t = now(); while (recentCloses.length && t - recentCloses[0] > 3600e3) recentCloses.shift();
+    const curDown = downSince != null ? (t - downSince) / 1000 : 0, span = Math.max(1, (t - wsBootAt) / 1000);
+    return { connects: st.ws.connects, closes: st.ws.closes, closesLastHour: recentCloses.length, lastCloseAt: st.ws.lastCloseAt, lastCloseCode: st.ws.lastCloseCode, closeCodes: st.ws.closeCodes,
+      downSec: Math.round((st.ws.downSec + curDown) * 10) / 10, longestDownSec: Math.max(st.ws.longestDownSec, Math.round(curDown * 10) / 10), downPct: Math.round(((st.ws.downSec + curDown) / span) * 1000) / 10, lastError: st.ws.lastError };
+  }
   function connect() {
     if (stopped) return;
     if (st.ws.pausedUntil && now() < Date.parse(st.ws.pausedUntil)) return void setTimeout(connect, Date.parse(st.ws.pausedUntil) - now());
     ws = new WS(cfg.wsUrl, { handshakeTimeout: 15000, perMessageDeflate: false });
     let ping = null, lastMsg = now();
-    ws.on('open', () => { st.ws.connected = true; st.ws.connects++; backoff = 2000; ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'logsSubscribe', params: [{ mentions: [PUMP] }, { commitment: 'confirmed' }] }));
+    ws.on('open', () => { wsOpened(); ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'logsSubscribe', params: [{ mentions: [PUMP] }, { commitment: 'confirmed' }] }));
       ping = setInterval(() => { try { ws.ping(); } catch {} if (now() - lastMsg > 90e3) { st.ws.lastError = 'stalled'; ws.terminate(); } }, 30000); });
     ws.on('message', (b) => { lastMsg = now(); onMessage(b); });
     ws.on('error', (e) => { st.ws.lastError = e.message; });
-    ws.on('close', (c) => { clearInterval(ping); st.ws.connected = false; st.ws.lastError ||= 'closed ' + c; if (!stopped) setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 120e3); });
+    ws.on('close', (c) => { clearInterval(ping); wsClosed(c); st.ws.lastError ||= 'closed ' + c; if (!stopped) setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 120e3); });
   }
   // CPU guard: if the event loop lags (Render free = 0.1 CPU), back the stream off for a minute so the radar's scans can finish.
   let lagSlow = 0, lastTick = now();
@@ -310,7 +327,8 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
       connect(); log(`[scalp] paper trader on ${cfg.wsUrl}: ${variants.size} variants, fee ${cfg.feePct}%/side + ${cfg.txFeeSol} SOL/tx, latency ${cfg.latencyMs} ms, SOL $${st.solUsd}`);
     },
     stop() { stopped = true; timers.forEach(clearInterval); try { ws?.close(); } catch {} },
-    solUsd: () => st.solUsd, symbol: (m) => symOf(m), streamInfo: () => ({ connected: st.ws.connected, lastAt: st.ws.lastAt, pausedUntil: st.ws.pausedUntil, mintsTracked: mints.size }),
+    solUsd: () => st.solUsd, symbol: (m) => symOf(m), streamInfo: () => ({ connected: st.ws.connected, lastAt: st.ws.lastAt, pausedUntil: st.ws.pausedUntil, mintsTracked: mints.size, health: wsHealth() }),
+    _wsOpened: wsOpened, _wsClosed: wsClosed,
     save: () => save(true), resolveSymbols, onTrade, onMessage, tick, lagCheck, variants, logs,
     _setConnected: (v) => { st.ws.connected = v; },
     status() {
@@ -320,7 +338,7 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
         assumptions: { feePctPerSide: cfg.feePct, txFeeSol: cfg.txFeeSol, latencyMs: cfg.latencyMs, maxOpenPerVariant: cfg.maxOpen, cooldownMin: cfg.cooldownMin, solUsd: st.solUsd, solUsdSrc: st.solUsdSrc, solUsdAt: st.solUsdAt,
           roundTripCostPctAt: Object.fromEntries(cfg.sizes.map((s) => [s, r1((1 - (1 - cfg.feePct / 100) / (1 + cfg.feePct / 100)) * 100 + (2 * cfg.txFeeSol / s) * 100)])) },
         rules: { scalp: { windowSec: 60, levels: LV, R1: 'bot volume + price up (momentum) + net SOL in', R2: 'bot volume (looping wallets) + price dip (mean reversion)' }, ride: { windowSec: 180, ...RIDE } },
-        stream: { ...st.ws, mintsTracked: mints.size, lagMs: st.lagMs }, signals: st.signals, entries: st.entries, closes: st.closes, openPositions: openNow, pendingEntries: pendingEntries.length,
+        stream: { ...st.ws, ...wsHealth(), mintsTracked: mints.size, lagMs: st.lagMs }, signals: st.signals, entries: st.entries, closes: st.closes, openPositions: openNow, pendingEntries: pendingEntries.length,
         primary: prim ? vSummary(prim) : null, ridePrimary: rp ? vSummary(rp) : null,
         scalp: { totals: totals('scalp'), top10: ranking('scalp'), worst3: [...variants.values()].filter((v) => v.kind === 'scalp' && v.n >= 3).sort((a, b) => a.net - b.net).slice(0, 3).map(vSummary) },
         ride: { totals: totals('ride'), top10: ranking('ride', 10, 1) },

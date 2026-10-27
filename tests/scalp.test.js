@@ -59,5 +59,16 @@ assert.strictEqual(S.rideOk({ uniqueBuyers: 30, buySol: 10, sellSol: 2, net: 8, 
   assert.ok(s2.pauses >= 1 && s2.pausedUntil && /event-loop lag/.test(s2.lastError), 'stream paused on lag: ' + JSON.stringify(s2));
   sc2.stop();
 }
+// 5) reconnect accounting: drops, blind time, longest gap, last-hour count
+{
+  let c = 1_900_000_000_000; const sc3 = S.createScalper({ now: () => c, log: () => {} });
+  sc3._wsOpened(); c += 60e3; sc3._wsClosed(1006); c += 3000; sc3._wsOpened(); c += 60e3; sc3._wsClosed(1006); c += 10000;
+  let h = sc3.streamInfo().health;
+  assert.strictEqual(h.closes, 2); assert.strictEqual(h.closesLastHour, 2); assert.strictEqual(h.downSec, 13, 'counts current gap: ' + JSON.stringify(h)); assert.strictEqual(h.longestDownSec, 10);
+  assert.strictEqual(h.closeCodes['1006'], 2); assert.strictEqual(sc3.streamInfo().connected, false);
+  sc3._wsOpened(); c += 3700e3; h = sc3.streamInfo().health;
+  assert.strictEqual(h.closesLastHour, 0, 'old drops age out'); assert.strictEqual(h.downSec, 13); assert.ok(h.downPct > 0 && h.downPct < 1, 'downPct ' + h.downPct);
+  assert.strictEqual(sc3.status().stream.closesLastHour, 0); sc3.stop();
+}
 console.log('scalp tests passed:', JSON.stringify({ signals: st.signals, entries: st.entries, closes: st.closes, tpVariant: { n: tp.n, net: Math.round(tp.net * 1e4) / 1e4, exits: tp.reasons } }));
 process.exit(0);
