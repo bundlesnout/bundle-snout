@@ -135,14 +135,16 @@ function createRips(opts = {}) {
   let stopped = false;
   let timer = null; let running = false;
 
-  async function j(url, init) { const r = await f(url, { ...init, signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error(`HTTP ${r.status} ${url.split('?')[0]}`); return r.json(); }
+  async function j(url, init, ms = 15000) { const r = await f(url, { ...init, signal: AbortSignal.timeout(ms) }); if (!r.ok) throw new Error(`HTTP ${r.status} ${url.split('?')[0]}`); return r.json(); }
   // The public RPC throttles shared hosts (HTTP 429, sometimes 413 or 5xx): retry a couple of times with a growing pause before failing the step.
   const retryMs = Number(env.RIPS_RETRY_MS ?? 1500);
+  // getSignaturesForAddress on the public RPC can take 7-20 s when it is busy (seen 2026-10-28: every refresh timed out at 15 s), so it gets a longer timeout.
+  const sigsTimeoutMs = Number(env.RIPS_SIGS_TIMEOUT_MS ?? 40000);
   async function rpc(method, params) {
     for (let attempt = 0; ; attempt++) {
       st.rpcCalls++;
       try {
-        const r = await j(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+        const r = await j(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) }, method === 'getSignaturesForAddress' ? sigsTimeoutMs : 15000);
         if (r.error) throw new Error(`${method}: ${r.error.message}`); return r.result;
       } catch (e) {
         if (attempt >= 2 || !/HTTP (429|413|5\d\d)/.test(e.message)) throw e;
@@ -359,9 +361,9 @@ function createRips(opts = {}) {
       let throttled = false;
       if (configured) for (const step of [listCoinSigs, readVaults, scanDev, manualExtras, resolvePacks, market]) {
         if (throttled && step !== market && step !== resolvePacks) { st.throttleSkips = (st.throttleSkips || 0) + 1; continue; }
-        try { await step(); } catch (e) { errs.push(`${step.name}: ${e.message}`); if (/HTTP (429|413|5\d\d)/.test(e.message)) throttled = true; }
+        try { await step(); } catch (e) { errs.push(`${step.name}: ${e.message}`); if (/HTTP (429|413|5\d\d)|aborted due to timeout/.test(e.message)) throttled = true; }
       }
-      if (throttled) errs.push('later RPC steps skipped this round (RPC throttled)');
+      if (throttled) errs.push('later RPC steps skipped this round (RPC throttled or timing out)');
       st.lastRefreshAt = new Date(now()).toISOString(); st.lastError = errs.length ? errs.join(' | ') : null; st.refreshes++;
       if (errs.length) log('refresh errors', st.lastError);
     } catch (e) { st.lastError = e.message; log('refresh error', e.message); }
