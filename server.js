@@ -245,7 +245,7 @@ let memTick = 0;
 function memCheck() {
   const u = process.memoryUsage(); Object.assign(mem, { rssMB: Math.round(u.rss / 1048576), heapMB: Math.round(u.heapUsed / 1048576), checkedAt: new Date().toISOString() }); mem.peakRssMB = Math.max(mem.peakRssMB, mem.rssMB);
   for (const [k, c] of cache) if (Date.now() - c.at > TTL) cache.delete(k);
-  if (memTick++ % 60 === 0) console.log(`[mem] rss=${mem.rssMB}MB heap=${mem.heapMB}MB ext=${Math.round(u.external / 1048576)}MB sizes=${JSON.stringify(memSizes())}`);
+  if (memTick++ % 60 === 0) console.log(`[mem] rss=${mem.rssMB}MB heap=${mem.heapMB}MB heapTotal=${Math.round(u.heapTotal / 1048576)}MB ext=${Math.round(u.external / 1048576)}MB ab=${Math.round(u.arrayBuffers / 1048576)}MB malloc_arena_max=${process.env.MALLOC_ARENA_MAX || '-'} sizes=${JSON.stringify(memSizes())}`);
   if (mem.rssMB >= MEM_RESTART_MB) { console.error(`[mem] rss ${mem.rssMB}MB >= ${MEM_RESTART_MB}MB: saving and restarting before the 512 MiB OOM kill`); gracefulExit('memory watchdog', 1); }
 }
 setInterval(memCheck, 60e3).unref(); setTimeout(memCheck, 3000).unref();
