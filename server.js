@@ -26,7 +26,7 @@ app.get('/api/analyze/:mint', async (req, res) => {
   finally { busy--; }
 });
 app.get('/healthz', (_, res) => res.send('ok'));
-app.get('/health', (_, res) => { res.set('cache-control', 'no-store'); const a = agent?.activity?.(); res.json({ ok: true, uptimeSec: Math.round(process.uptime()), agent: a ? { activity: a.key, loopRunning: a.loop.running, scannedLastMin: a.scannedLastMin, streamConnected: a.stream.connected } : null }); });
+app.get('/health', (_, res) => { res.set('cache-control', 'no-store'); const a = agent?.activity?.(); res.json({ ok: true, uptimeSec: Math.round(process.uptime()), mem: { rssMB: mem.rssMB, heapMB: mem.heapMB, peakRssMB: mem.peakRssMB, restartAtMB: mem.restartAtMB }, agent: a ? { activity: a.key, loopRunning: a.loop.running, scannedLastMin: a.scannedLastMin, streamConnected: a.stream.connected } : null }); });
 
 // ---- Bond Radar (watcher) + persistence
 const { createRadar } = require('./radar');
@@ -232,7 +232,23 @@ app.get('/api/rips/status', (_, res) => { res.set('cache-control', 'no-store'); 
 process.on('unhandledRejection', (e) => console.error('[process] unhandled rejection (ignored):', e?.stack || e));
 process.once('uncaughtException', async (e) => { console.error('[process] uncaught exception, saving and restarting:', e?.stack || e); try { await Promise.race([agent?.saveFinal(), new Promise((r) => setTimeout(r, 8000))]); } catch {} process.exit(1); });
 // agent first: the next instance waits for this final save (handover) before it restores and starts trading
-for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, async () => { const t0 = Date.now(); try { await agent?.saveFinal(); console.log(`[process] ${sig}: agent final save done in ${Date.now() - t0} ms`); } catch (e) { console.error(`[process] ${sig}: agent final save failed:`, e?.message || e); } try { await scalper?.save(); } catch {} try { if (radar) { store.data.budget = { credits: require('./analyzer').creditSnapshot(), radar: radar.budgetSnapshot() }; await store.flush(); } } catch {} process.exit(0); });
+let exiting = false;
+async function gracefulExit(why, code) { if (exiting) return; exiting = true; const t0 = Date.now(); try { await agent?.saveFinal(); console.log(`[process] ${why}: agent final save done in ${Date.now() - t0} ms`); } catch (e) { console.error(`[process] ${why}: agent final save failed:`, e?.message || e); } try { await scalper?.save(); } catch {} try { if (radar) { store.data.budget = { credits: require('./analyzer').creditSnapshot(), radar: radar.budgetSnapshot() }; await store.flush(); } } catch {} process.exit(code); }
+for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, () => gracefulExit(sig, 0));
+// Memory watchdog: Render kills the instance at 512 MiB (OOM on 2026-11-02 after ~26 h of slow heap growth) without a
+// final save. Track RSS, log the big in-memory maps hourly to find growth, and restart cleanly (final save, exit 1 so
+// Render restarts us) before the limit is reached.
+const MEM_RESTART_MB = Number(process.env.MEM_RESTART_MB || 450);
+const mem = { rssMB: 0, heapMB: 0, peakRssMB: 0, restartAtMB: MEM_RESTART_MB, checkedAt: null };
+const memSizes = () => ({ createdSyms: createdSyms.size, mref: mref.size, cache: cache.size, walletDeltas: walletTx.deltas.size, scalpMints: scalper?.mints?.size ?? null });
+let memTick = 0;
+function memCheck() {
+  const u = process.memoryUsage(); Object.assign(mem, { rssMB: Math.round(u.rss / 1048576), heapMB: Math.round(u.heapUsed / 1048576), checkedAt: new Date().toISOString() }); mem.peakRssMB = Math.max(mem.peakRssMB, mem.rssMB);
+  for (const [k, c] of cache) if (Date.now() - c.at > TTL) cache.delete(k);
+  if (memTick++ % 60 === 0) console.log(`[mem] rss=${mem.rssMB}MB heap=${mem.heapMB}MB ext=${Math.round(u.external / 1048576)}MB sizes=${JSON.stringify(memSizes())}`);
+  if (mem.rssMB >= MEM_RESTART_MB) { console.error(`[mem] rss ${mem.rssMB}MB >= ${MEM_RESTART_MB}MB: saving and restarting before the 512 MiB OOM kill`); gracefulExit('memory watchdog', 1); }
+}
+setInterval(memCheck, 60e3).unref(); setTimeout(memCheck, 3000).unref();
 app.get('/api/radar/status', (_, res) => {
   res.set('cache-control', 'no-store');
   res.json({ radar: radar ? radar.status() : { running: false, disabled: true }, state: store.status(), keepalive, uptimeSec: Math.round(process.uptime()), now: new Date().toISOString() });
