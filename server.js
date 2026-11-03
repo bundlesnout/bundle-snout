@@ -26,7 +26,7 @@ app.get('/api/analyze/:mint', async (req, res) => {
   finally { busy--; }
 });
 app.get('/healthz', (_, res) => res.send('ok'));
-app.get('/health', (_, res) => { res.set('cache-control', 'no-store'); const a = agent?.activity?.(); res.json({ ok: true, uptimeSec: Math.round(process.uptime()), mem: { rssMB: mem.rssMB, heapMB: mem.heapMB, peakRssMB: mem.peakRssMB, restartAtMB: mem.restartAtMB }, agent: a ? { activity: a.key, loopRunning: a.loop.running, scannedLastMin: a.scannedLastMin, streamConnected: a.stream.connected } : null }); });
+app.get('/health', (_, res) => { res.set('cache-control', 'no-store'); const a = agent?.activity?.(); res.json({ ok: true, uptimeSec: Math.round(process.uptime()), mem: { rssMB: mem.rssMB, heapMB: mem.heapMB, peakRssMB: mem.peakRssMB, restartAtMB: mem.restartAtMB, heapLimitMB: mem.heapLimitMB, heapRestartAtMB: mem.heapRestartAtMB }, agent: a ? { activity: a.key, loopRunning: a.loop.running, scannedLastMin: a.scannedLastMin, streamConnected: a.stream.connected } : null }); });
 
 // ---- Bond Radar (watcher) + persistence
 const { createRadar } = require('./radar');
@@ -239,14 +239,20 @@ for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, () => gracefulExit(si
 // final save. Track RSS, log the big in-memory maps hourly to find growth, and restart cleanly (final save, exit 1 so
 // Render restarts us) before the limit is reached.
 const MEM_RESTART_MB = Number(process.env.MEM_RESTART_MB || 450);
-const mem = { rssMB: 0, heapMB: 0, peakRssMB: 0, restartAtMB: MEM_RESTART_MB, checkedAt: null };
+// V8 heap limit: on 2026-11-03 the JS heap hit V8's own limit (FATAL "heap out of memory", exit 134, no final save)
+// while RSS was still ~310 MB, so the RSS check alone never fired. Also restart cleanly at MEM_HEAP_RESTART_PCT of it.
+const HEAP_LIMIT_MB = Math.round(require('v8').getHeapStatistics().heap_size_limit / 1048576);
+const MEM_HEAP_RESTART_PCT = Number(process.env.MEM_HEAP_RESTART_PCT || 85);
+const HEAP_RESTART_MB = Math.round(HEAP_LIMIT_MB * MEM_HEAP_RESTART_PCT / 100);
+const mem = { rssMB: 0, heapMB: 0, peakRssMB: 0, restartAtMB: MEM_RESTART_MB, heapLimitMB: HEAP_LIMIT_MB, heapRestartAtMB: HEAP_RESTART_MB, checkedAt: null };
 const memSizes = () => ({ createdSyms: createdSyms.size, mref: mref.size, cache: cache.size, walletDeltas: walletTx.deltas.size, scalpMints: scalper?.mints?.size ?? null });
 let memTick = 0;
 function memCheck() {
   const u = process.memoryUsage(); Object.assign(mem, { rssMB: Math.round(u.rss / 1048576), heapMB: Math.round(u.heapUsed / 1048576), checkedAt: new Date().toISOString() }); mem.peakRssMB = Math.max(mem.peakRssMB, mem.rssMB);
   for (const [k, c] of cache) if (Date.now() - c.at > TTL) cache.delete(k);
-  if (memTick++ % 60 === 0) console.log(`[mem] rss=${mem.rssMB}MB heap=${mem.heapMB}MB heapTotal=${Math.round(u.heapTotal / 1048576)}MB ext=${Math.round(u.external / 1048576)}MB ab=${Math.round(u.arrayBuffers / 1048576)}MB malloc_arena_max=${process.env.MALLOC_ARENA_MAX || '-'} sizes=${JSON.stringify(memSizes())}`);
+  if (memTick++ % 60 === 0) console.log(`[mem] rss=${mem.rssMB}MB heap=${mem.heapMB}MB heapTotal=${Math.round(u.heapTotal / 1048576)}MB ext=${Math.round(u.external / 1048576)}MB ab=${Math.round(u.arrayBuffers / 1048576)}MB heapLimit=${HEAP_LIMIT_MB}MB malloc_arena_max=${process.env.MALLOC_ARENA_MAX || '-'} sizes=${JSON.stringify(memSizes())}`);
   if (mem.rssMB >= MEM_RESTART_MB) { console.error(`[mem] rss ${mem.rssMB}MB >= ${MEM_RESTART_MB}MB: saving and restarting before the 512 MiB OOM kill`); gracefulExit('memory watchdog', 1); }
+  else if (mem.heapMB >= HEAP_RESTART_MB) { console.error(`[mem] heap ${mem.heapMB}MB >= ${HEAP_RESTART_MB}MB (${MEM_HEAP_RESTART_PCT}% of V8 limit ${HEAP_LIMIT_MB}MB): saving and restarting before a V8 heap OOM`); gracefulExit('heap watchdog', 1); }
 }
 setInterval(memCheck, 60e3).unref(); setTimeout(memCheck, 3000).unref();
 app.get('/api/radar/status', (_, res) => {
