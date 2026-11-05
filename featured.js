@@ -72,8 +72,12 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
     let entries = null; RT.boardFromCache = false;
     if (t < RT.blockedUntil) {
       entries = await loadCache();
-      if (entries) RT.boardFromCache = true;
-      else {
+      if (entries) {
+        RT.boardFromCache = true;
+        // Cache arrived mid-backoff (Vigilancia browser fetch): do not keep the
+        // earlier "cache missing/stale" note — status must match fromCache.
+        RT.lastBoardError = 'board blocked (403 backoff); using browser board cache';
+      } else {
         // Cache missing/stale during the 30 min CF backoff: keep collecting baseline picks
         // against an empty board set (same as a live 403 with no cache). An early return here
         // froze the box runner for ~1.5 h on 2026-11-05 after the browser cache aged out.
