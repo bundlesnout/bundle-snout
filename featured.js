@@ -72,8 +72,14 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
     let entries = null; RT.boardFromCache = false;
     if (t < RT.blockedUntil) {
       entries = await loadCache();
-      if (!entries) return;
-      RT.boardFromCache = true;
+      if (entries) RT.boardFromCache = true;
+      else {
+        // Cache missing/stale during the 30 min CF backoff: keep collecting baseline picks
+        // against an empty board set (same as a live 403 with no cache). An early return here
+        // froze the box runner for ~1.5 h on 2026-11-05 after the browser cache aged out.
+        entries = [];
+        RT.lastBoardError = 'board blocked (403 backoff) and browser cache missing/stale';
+      }
     } else {
       try { const r = await fetchFn(cfg.boardUrl, { headers: { accept: 'application/json', origin: 'https://pump.fun', referer: 'https://pump.fun/', 'user-agent': 'Mozilla/5.0 (ALMA paper test)' }, signal: AbortSignal.timeout(10000) });
         // pump.fun's Cloudflare refuses some datacenter IPs (Render's): do not keep knocking, retry every 30 min

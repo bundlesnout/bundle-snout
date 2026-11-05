@@ -81,6 +81,14 @@ function curveBuf(vs, vt, complete = false, creator = null) {
     const FC = createFeatured({ getState: () => sC, fetchFn: async () => { calls++; return { ok: false, status: 403 }; }, now, rng: () => 0, readBoardCache: () => cacheEntries });
     await FC.refreshBoard(); assert.strictEqual(calls, 1); assert.ok(FC.status().board.fromCache); assert.ok(sC.open.some((p) => p.v.startsWith('feat_lt8k_')));
     await FC.refreshBoard(); assert.strictEqual(calls, 1, 'still in 403 backoff: use cache, do not re-hit the board'); assert.ok(FC.status().board.fromCache); }
+  { // 403 backoff + expired/missing cache: do not freeze — still refresh so baseline picks run
+    let calls = 0; const sM = {}; const FM = createFeatured({ getState: () => sM, fetchFn: async () => { calls++; return { ok: false, status: 403 }; }, now, rng: () => 0, readBoardCache: () => null,
+      baseline: async () => [{ mint: R, mcUsd: 5000, lastAt: t, complete: false }] });
+    await FM.refreshBoard(); await FM.refreshBoard();
+    assert.strictEqual(calls, 1, 'still backed off: do not re-hit the board');
+    assert.strictEqual(FM.status().board.refreshes, 2, 'refresh heartbeat continues without cache');
+    assert.ok(/cache missing\/stale/.test(FM.status().board.lastError || ''));
+    assert.ok(sM.open.some((p) => p.v.startsWith('rand_lt8k_')), 'baseline picks still open against empty board'); }
   { // baseline from a list provider (box runner: pump.fun recently-traded coins), never a board coin
     const s5 = {}; const F5 = createFeatured({ getState: () => s5, fetchFn: async () => ({ ok: true, json: async () => ({ entries: [{ m: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', c: 'solana:mainnet', pg: 'pump', pa: 'SOL', p: 20, mc: 6000 }] }) }), now, rng: () => 0,
       baseline: async () => [{ mint: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', mcUsd: 5000, lastAt: t, complete: false }, { mint: R, mcUsd: 5000, lastAt: t, complete: false }, { mint: X, mcUsd: 5000, lastAt: t - 600e3, complete: false }] });
