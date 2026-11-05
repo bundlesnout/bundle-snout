@@ -17,12 +17,33 @@ async function syncAlma() { // ALMA's own excluded coins (its coin, RIPS) so the
   try { const r = await fetch(ALMA, { signal: AbortSignal.timeout(20000) }); const j = await r.json(); const ex = j?.rules?.neverTrades || j?.rules?.hard?.neverTrades; if (Array.isArray(ex)) almaEx = new Set(ex); const pw = j?.rules?.protectedWallets || j?.rules?.hard?.protectedWallets; if (Array.isArray(pw)) pw.forEach((w) => PROTECTED.add(w)); } catch {}
 }
 async function baseline() {
-  const r = await fetch('https://frontend-api-v3.pump.fun/coins?offset=0&limit=100&sort=last_trade_timestamp&order=DESC&includeNsfw=false', { headers: UA, signal: AbortSignal.timeout(10000) });
-  if (!r.ok) throw new Error('recent coins HTTP ' + r.status); const L = await r.json();
-  return (Array.isArray(L) ? L : []).filter((c) => c && c.mint && /pump$/.test(c.mint) && (c.quote_mint == null || c.quote_mint === '11111111111111111111111111111111') && (c.program == null || c.program === 'pump'))
-    .map((c) => ({ mint: c.mint, mcUsd: Number(c.usd_market_cap) || 0, lastAt: Number(c.last_trade_timestamp) || 0, complete: !!c.complete, creator: c.creator || null }));
+  // pump.fun's HTTP APIs are often Cloudflare-403 from this box; DexScreener stays reachable for a weaker but usable baseline.
+  try {
+    const r = await fetch('https://frontend-api-v3.pump.fun/coins?offset=0&limit=100&sort=last_trade_timestamp&order=DESC&includeNsfw=false', { headers: UA, signal: AbortSignal.timeout(10000) });
+    if (r.ok) {
+      const L = await r.json();
+      const out = (Array.isArray(L) ? L : []).filter((c) => c && c.mint && /pump$/.test(c.mint) && (c.quote_mint == null || c.quote_mint === '11111111111111111111111111111111') && (c.program == null || c.program === 'pump'))
+        .map((c) => ({ mint: c.mint, mcUsd: Number(c.usd_market_cap) || 0, lastAt: Number(c.last_trade_timestamp) || 0, complete: !!c.complete, creator: c.creator || null }));
+      if (out.length) return out;
+    }
+  } catch {}
+  const r2 = await fetch('https://api.dexscreener.com/latest/dex/search?q=pump.fun', { signal: AbortSignal.timeout(10000) });
+  if (!r2.ok) throw new Error('baseline HTTP ' + r2.status);
+  const j = await r2.json(); const pairs = Array.isArray(j?.pairs) ? j.pairs : [];
+  const now = Date.now();
+  return pairs.filter((p) => p && p.chainId === 'solana' && p.dexId === 'pumpfun' && p.baseToken?.address && /pump$/i.test(p.baseToken.address))
+    .map((p) => ({ mint: p.baseToken.address, mcUsd: Number(p.marketCap || p.fdv) || 0, lastAt: now, complete: false, creator: null }));
 }
-const F = createFeatured({ getState: () => state, baseline, excluded: (m) => EXCLUDE.has(m) || almaEx.has(m), isProtected: (w) => !!w && PROTECTED.has(w), devSold: (m) => devSold.has(m),
+function readBoardCache() {
+  const p = process.env.FEATURED_BOARD_CACHE || '/workspace/agentdata/featured-board.json';
+  const maxMs = Number(process.env.FEATURED_BOARD_CACHE_MAX_MS || 45 * 60e3);
+  try {
+    const st = fs.statSync(p); if (Date.now() - st.mtimeMs > maxMs) return null;
+    const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(j?.entries) ? j.entries : null;
+  } catch { return null; }
+}
+const F = createFeatured({ getState: () => state, baseline, readBoardCache, excluded: (m) => EXCLUDE.has(m) || almaEx.has(m), isProtected: (w) => !!w && PROTECTED.has(w), devSold: (m) => devSold.has(m),
   familyExtra: () => Number(process.env.FAMILY_EXTRA || 24), log: console.log });
 function save() {
   try { const tmp = STATE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(state)); fs.renameSync(tmp, STATE);
@@ -31,5 +52,7 @@ function save() {
 (async () => {
   await syncAlma(); setInterval(syncAlma, 30 * 60e3);
   F.start(); setInterval(save, 60e3); save();
+  // First board refresh is async inside start(); persist once it has had time to apply cache/live result.
+  setTimeout(save, 15000);
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { F.stop(); save(); process.exit(0); });
 })();

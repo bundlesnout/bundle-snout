@@ -76,6 +76,11 @@ function curveBuf(vs, vt, complete = false, creator = null) {
     let calls = 0; const s4 = {}; const F4 = createFeatured({ getState: () => s4, fetchFn: async () => { calls++; return { ok: false, status: 403 }; }, now });
     await F4.refreshBoard(); await F4.refreshBoard(); assert.strictEqual(calls, 1); assert.ok(/403/.test(F4.status().board.lastError) && F4.status().board.nextTryAt);
     t += 31 * 60e3; await F4.refreshBoard(); assert.strictEqual(calls, 2); }
+  { // 403 + fresh browser board cache: keep picking while live board is blocked
+    let calls = 0; const sC = {}; const cacheEntries = [{ m: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', c: 'solana:mainnet', pg: 'pump', pa: 'SOL', p: 20, mc: 6000, t: 'CACH' }];
+    const FC = createFeatured({ getState: () => sC, fetchFn: async () => { calls++; return { ok: false, status: 403 }; }, now, rng: () => 0, readBoardCache: () => cacheEntries });
+    await FC.refreshBoard(); assert.strictEqual(calls, 1); assert.ok(FC.status().board.fromCache); assert.ok(sC.open.some((p) => p.v.startsWith('feat_lt8k_')));
+    await FC.refreshBoard(); assert.strictEqual(calls, 1, 'still in 403 backoff: use cache, do not re-hit the board'); assert.ok(FC.status().board.fromCache); }
   { // baseline from a list provider (box runner: pump.fun recently-traded coins), never a board coin
     const s5 = {}; const F5 = createFeatured({ getState: () => s5, fetchFn: async () => ({ ok: true, json: async () => ({ entries: [{ m: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', c: 'solana:mainnet', pg: 'pump', pa: 'SOL', p: 20, mc: 6000 }] }) }), now, rng: () => 0,
       baseline: async () => [{ mint: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', mcUsd: 5000, lastAt: t, complete: false }, { mint: R, mcUsd: 5000, lastAt: t, complete: false }, { mint: X, mcUsd: 5000, lastAt: t - 600e3, complete: false }] });
