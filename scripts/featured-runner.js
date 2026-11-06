@@ -157,6 +157,46 @@ function enrichBoardCacheStatus(st) {
   return st;
 }
 
+
+// Ops evidence 2026-11-07 vigilancia: box-ensure restarts featured after a box pause
+// (board.lastAt frozen >10 min). In-memory RT.blockedUntil was wiped so the new process
+// immediately re-hit Cloudflare (blocked403++) even when status.board.nextTryAt was still
+// in the future — same class of bug early-runner fixed with listNextTryAt persistence.
+// Restore board 403 backoff from featured-status.json before start() so the first
+// refreshBoard uses the browser cache and skips the live movers fetch.
+function readPersistedBoardBlockedUntil(statusPath = STATUS, nowMs = Date.now()) {
+  try {
+    const j = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
+    const iso = j?.board?.nextTryAt;
+    if (!iso) return { until: 0 };
+    const until = Date.parse(iso);
+    if (!Number.isFinite(until) || until <= nowMs) return { until: 0 };
+    return {
+      until,
+      iso,
+      blocked403: Number(j.board.blocked403) || 0,
+      lastError: j.board.lastError || null,
+      fromCache: !!j.board.fromCache,
+    };
+  } catch {
+    return { until: 0 };
+  }
+}
+function restoreBoard403Backoff(F, statusPath = STATUS, nowMs = Date.now(), logFn = console.log) {
+  if (!F || !F.RT) return false;
+  const r = readPersistedBoardBlockedUntil(statusPath, nowMs);
+  if (!(r.until > nowMs)) return false;
+  F.RT.blockedUntil = r.until;
+  if (r.blocked403 > 0) F.RT.blocked403 = Math.max(F.RT.blocked403 || 0, r.blocked403);
+  F.RT.boardFromCache = true;
+  const note = r.lastError && /403|backoff|cache/i.test(String(r.lastError))
+    ? String(r.lastError).slice(0, 160)
+    : 'board blocked (403 backoff); using browser board cache';
+  F.RT.lastBoardError = note;
+  logFn('[featured] board 403 backoff restored until', r.iso, `(${Math.round((r.until - nowMs) / 60000)} min left; skip live board fetch)`);
+  return true;
+}
+
 function startFeaturedRunner() {
   const F = createFeatured({ getState: () => state, baseline, readBoardCache, excluded: (m) => EXCLUDE.has(m) || almaEx.has(m), isProtected: (w) => !!w && PROTECTED.has(w), devSold: (m) => devSold.has(m),
     familyExtra: () => Number(process.env.FAMILY_EXTRA || 24), log: console.log });
@@ -168,12 +208,16 @@ function startFeaturedRunner() {
   }
   (async () => {
     await syncAlma(); setInterval(syncAlma, 30 * 60e3);
+    // Restore CF backoff before start() so the first refreshBoard does not re-hit movers.
+    restoreBoard403Backoff(F);
     F.start(); setInterval(save, 60e3); save();
     // First board refresh is async inside start(); persist once it has had time to apply cache/live result.
+    // Also save at 2s so a fresh 403 backoff (if restore missed / expired) lands in status before a quick restart.
+    setTimeout(save, 2000);
     setTimeout(save, 15000);
     for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { F.stop(); save(); process.exit(0); });
   })();
   return F;
 }
 if (require.main === module) startFeaturedRunner();
-module.exports = { readBoardCache, _resetBoardCacheStaleObs, enrichBoardCacheStatus, startFeaturedRunner };
+module.exports = { readBoardCache, _resetBoardCacheStaleObs, enrichBoardCacheStatus, readPersistedBoardBlockedUntil, restoreBoard403Backoff, startFeaturedRunner };

@@ -114,3 +114,50 @@ assert.strictEqual(keep.board.entries, 5);
 assert.strictEqual(keep.board.fromCache, false);
 fs.rmSync(dir3, { recursive: true, force: true });
 console.log('featured-runner-cache hydrate empty board from cache ok');
+
+// Board 403 backoff must persist across box-ensure restarts (ops 2026-11-07:
+// restart after pause re-hit Cloudflare even while status.board.nextTryAt was future).
+const {
+  readPersistedBoardBlockedUntil,
+  restoreBoard403Backoff,
+} = require('../scripts/featured-runner');
+const dir4 = fs.mkdtempSync(path.join(os.tmpdir(), 'feat-403-'));
+const status4 = path.join(dir4, 'featured-status.json');
+const now4 = Date.now();
+const future4 = new Date(now4 + 20 * 60e3).toISOString();
+fs.writeFileSync(status4, JSON.stringify({
+  board: {
+    nextTryAt: future4,
+    blocked403: 7,
+    lastError: 'board HTTP 403 (pump.fun Cloudflare refuses this server; retrying every 30 min) (using browser board cache)',
+    fromCache: true,
+  },
+}));
+const r4 = readPersistedBoardBlockedUntil(status4, now4);
+assert.ok(r4.until > now4, 'until in future');
+assert.strictEqual(r4.iso, future4);
+assert.strictEqual(r4.blocked403, 7);
+
+const expired4 = new Date(now4 - 60e3).toISOString();
+fs.writeFileSync(status4, JSON.stringify({ board: { nextTryAt: expired4, blocked403: 1 } }));
+assert.strictEqual(readPersistedBoardBlockedUntil(status4, now4).until, 0, 'expired backoff ignored');
+assert.strictEqual(readPersistedBoardBlockedUntil(path.join(dir4, 'missing.json'), now4).until, 0);
+
+fs.writeFileSync(status4, JSON.stringify({
+  board: { nextTryAt: future4, blocked403: 4, lastError: 'board blocked (403 backoff); using browser board cache', fromCache: true },
+}));
+const logs4 = [];
+const fakeF = { RT: { blockedUntil: 0, blocked403: 0, boardFromCache: false, lastBoardError: null } };
+assert.strictEqual(restoreBoard403Backoff(fakeF, status4, now4, (...a) => logs4.push(a.join(' '))), true);
+assert.strictEqual(fakeF.RT.blockedUntil, Date.parse(future4));
+assert.strictEqual(fakeF.RT.blocked403, 4);
+assert.strictEqual(fakeF.RT.boardFromCache, true);
+assert.ok(/403 backoff restored/.test(logs4[0] || ''), logs4[0]);
+assert.ok(/using browser board cache/.test(fakeF.RT.lastBoardError || ''));
+// expired → no restore
+fakeF.RT.blockedUntil = 0;
+fs.writeFileSync(status4, JSON.stringify({ board: { nextTryAt: expired4 } }));
+assert.strictEqual(restoreBoard403Backoff(fakeF, status4, now4, () => {}), false);
+assert.strictEqual(fakeF.RT.blockedUntil, 0);
+fs.rmSync(dir4, { recursive: true, force: true });
+console.log('featured-runner-cache board 403 backoff restore ok');
