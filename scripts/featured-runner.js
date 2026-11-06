@@ -38,6 +38,10 @@ async function baseline() {
 // drops under maxMs; log that transition once so Vigilancia does not keep reading a stale-only
 // tail (ops evidence 2026-11-06: log still said "stale 120 min" after NEED_BROWSER_FETCH clear).
 let lastStaleBoardMtime = 0;
+// Ops evidence 2026-11-06 vigilancia: stale log fired every ~60s refresh while waiting for
+// browser board fetch, flooding featured-runner.log so the tail looked "stuck" on stale.
+// Log once per 15 min age bucket (and on first stale observation) until fresh again.
+let lastStaleLogKey = '';
 function readBoardCache() {
   // Fresh target ~45 min (FEATURED_BOARD_CACHE_MAX_MS). During long Cloudflare 403s + box pauses,
   // Vigilancia often cannot refresh within 45 min; prefer a browser snapshot up to 3 h old over an
@@ -54,11 +58,17 @@ function readBoardCache() {
     if (!entries || !entries.length) return null;
     if (age > maxMs) {
       lastStaleBoardMtime = st.mtimeMs;
-      console.log('[featured] board cache stale', Math.round(age / 60000), 'min (still under staleMax); using until browser refresh');
+      const bucket = Math.floor(age / (15 * 60e3));
+      const key = st.mtimeMs + ':' + bucket;
+      if (key !== lastStaleLogKey) {
+        lastStaleLogKey = key;
+        console.log('[featured] board cache stale', Math.round(age / 60000), 'min (still under staleMax); using until browser refresh');
+      }
     } else {
       if (lastStaleBoardMtime && st.mtimeMs > lastStaleBoardMtime) {
         console.log('[featured] board cache fresh again', Math.round(age / 60000), 'min age (browser refresh applied)');
         lastStaleBoardMtime = 0;
+        lastStaleLogKey = '';
       }
       // Sibling browser fetch writes the cache while box-ensure left NEED_BROWSER_FETCH set.
       // Clear only when the board file is at least as new as the flag: otherwise a 35–45 min
@@ -76,7 +86,7 @@ function readBoardCache() {
     return entries;
   } catch { return null; }
 }
-function _resetBoardCacheStaleObs() { lastStaleBoardMtime = 0; }
+function _resetBoardCacheStaleObs() { lastStaleBoardMtime = 0; lastStaleLogKey = ''; }
 function startFeaturedRunner() {
   const F = createFeatured({ getState: () => state, baseline, readBoardCache, excluded: (m) => EXCLUDE.has(m) || almaEx.has(m), isProtected: (w) => !!w && PROTECTED.has(w), devSold: (m) => devSold.has(m),
     familyExtra: () => Number(process.env.FAMILY_EXTRA || 24), log: console.log });

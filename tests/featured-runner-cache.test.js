@@ -1,5 +1,6 @@
 // Box-only: readBoardCache must log once when a previously-stale browser board
-// cache becomes fresh again (mtime newer than last stale observation).
+// cache becomes fresh again (mtime newer than last stale observation), and must
+// throttle "board cache stale" to once per 15 min age bucket (ops 2026-11-06).
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -25,9 +26,13 @@ console.log = (...a) => { logs.push(a.map(String).join(' ')); };
 
 _resetBoardCacheStaleObs();
 const now = Date.now();
-writeBoard(now - 90 * 60e3); // 90 min old → stale (>1 min max)
+const staleMtime = now - 90 * 60e3;
+writeBoard(staleMtime); // 90 min old → stale (>1 min max)
 assert.ok(readBoardCache());
 assert.ok(logs.some((l) => /board cache stale/.test(l)), 'expected stale log');
+logs.length = 0;
+assert.ok(readBoardCache());
+assert.ok(!logs.some((l) => /board cache stale/.test(l)), 'stale must not re-log same 15min bucket');
 
 logs.length = 0;
 writeBoard(now - 10e3); // fresh rewrite (browser refresh)
