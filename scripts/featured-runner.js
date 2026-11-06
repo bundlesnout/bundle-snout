@@ -51,11 +51,16 @@ function readBoardCache() {
     if (age > maxMs) console.log('[featured] board cache stale', Math.round(age / 60000), 'min (still under staleMax); using until browser refresh');
     else {
       // Sibling browser fetch writes the cache while box-ensure left NEED_BROWSER_FETCH set.
-      // Clear it as soon as we actually consume a fresh snapshot so Vigilancia does not keep
-      // treating a completed fetch as still pending (ops evidence 2026-11-06).
+      // Clear only when the board file is at least as new as the flag: otherwise a 35–45 min
+      // cache is "fresh" to FEATURED_BOARD_CACHE_MAX_MS but box-ensure still requested a refresh
+      // (threshold 35 min), and wiping the flag cancelled the pending browser fetch
+      // (ops evidence 2026-11-06 vigilancia: ensure→NEED_BROWSER_FETCH vs runner age<45m clear).
       try {
         const flag = path.join(path.dirname(p), 'NEED_BROWSER_FETCH');
-        if (fs.existsSync(flag)) { fs.unlinkSync(flag); console.log('[featured] cleared NEED_BROWSER_FETCH (fresh board cache)'); }
+        if (fs.existsSync(flag) && st.mtimeMs >= fs.statSync(flag).mtimeMs) {
+          fs.unlinkSync(flag);
+          console.log('[featured] cleared NEED_BROWSER_FETCH (fresh board cache)');
+        }
       } catch {}
     }
     return entries;
