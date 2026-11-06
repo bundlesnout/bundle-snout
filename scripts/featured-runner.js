@@ -35,12 +35,21 @@ async function baseline() {
     .map((p) => ({ mint: p.baseToken.address, mcUsd: Number(p.marketCap || p.fdv) || 0, lastAt: now, complete: false, creator: null }));
 }
 function readBoardCache() {
+  // Fresh target ~45 min (FEATURED_BOARD_CACHE_MAX_MS). During long Cloudflare 403s + box pauses,
+  // Vigilancia often cannot refresh within 45 min; prefer a browser snapshot up to 3 h old over an
+  // empty board so the featured side of the A/B test keeps collecting (ops evidence 2026-11-05/06).
   const p = process.env.FEATURED_BOARD_CACHE || '/workspace/agentdata/featured-board.json';
   const maxMs = Number(process.env.FEATURED_BOARD_CACHE_MAX_MS || 45 * 60e3);
+  const staleMaxMs = Number(process.env.FEATURED_BOARD_CACHE_STALE_MAX_MS || 3 * 60 * 60e3);
   try {
-    const st = fs.statSync(p); if (Date.now() - st.mtimeMs > maxMs) return null;
+    const st = fs.statSync(p);
+    const age = Date.now() - st.mtimeMs;
+    if (age > staleMaxMs) return null;
     const j = JSON.parse(fs.readFileSync(p, 'utf8'));
-    return Array.isArray(j?.entries) ? j.entries : null;
+    const entries = Array.isArray(j?.entries) ? j.entries : null;
+    if (!entries || !entries.length) return null;
+    if (age > maxMs) console.log('[featured] board cache stale', Math.round(age / 60000), 'min (still under staleMax); using until browser refresh');
+    return entries;
   } catch { return null; }
 }
 const F = createFeatured({ getState: () => state, baseline, readBoardCache, excluded: (m) => EXCLUDE.has(m) || almaEx.has(m), isProtected: (w) => !!w && PROTECTED.has(w), devSold: (m) => devSold.has(m),

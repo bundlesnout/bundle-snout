@@ -35,7 +35,7 @@ const newState = (t) => ({ since: new Date(t).toISOString(), refreshes: 0, board
 function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () => Date.now(), rng = Math.random, streamMints = () => null, solUsd = () => null,
   excluded = () => false, isProtected = () => false, devSold = () => false, costs = () => ({ curveFeePct: 1.25, routeFeePct: 0, txFeeSol: 0.000024 }), familyExtra = () => 0, baseline = null, onDirty = () => {}, log = () => {},
   // Box-only: when Cloudflare 403s the movers board from a datacenter IP, Vigilancia refreshes a browser-fetched
-  // JSON cache and we keep picking from that for up to ~45 min instead of sitting idle. Render has no cache file.
+  // JSON cache and we keep picking from that (runner: fresh ~45 min, stale grace up to ~3 h) instead of sitting idle. Render has no cache file.
   readBoardCache = null } = {}) {
   const cfg = {
     enabled: process.env.AGENT_FEATURED_TEST !== '0',
