@@ -87,12 +87,57 @@ function readBoardCache() {
   } catch { return null; }
 }
 function _resetBoardCacheStaleObs() { lastStaleBoardMtime = 0; lastStaleLogKey = ''; }
+
+// Ops evidence 2026-11-06 vigilancia: board sat ~113 min stale between 2h routine browser
+// fetches; status only had fromCache/lastError so ops had to stat files separately.
+// Surface cache age + NEED_BROWSER_FETCH on every status save for monitoring.
+function enrichBoardCacheStatus(st) {
+  if (!st || typeof st !== 'object') return st;
+  const p = process.env.FEATURED_BOARD_CACHE || '/workspace/agentdata/featured-board.json';
+  const maxMs = Number(process.env.FEATURED_BOARD_CACHE_MAX_MS || 45 * 60e3);
+  const staleMaxMs = Number(process.env.FEATURED_BOARD_CACHE_STALE_MAX_MS || 3 * 60 * 60e3);
+  const flag = path.join(path.dirname(p), 'NEED_BROWSER_FETCH');
+  const metaPath = path.join(path.dirname(p), 'featured-board.meta.json');
+  const info = { path: p, maxSec: Math.round(maxMs / 1000), staleMaxSec: Math.round(staleMaxMs / 1000), needBrowserFetch: false };
+  try { info.needBrowserFetch = fs.existsSync(flag); } catch {}
+  try {
+    const stt = fs.statSync(p);
+    const ageSec = Math.max(0, Math.round((Date.now() - stt.mtimeMs) / 1000));
+    info.ageSec = ageSec;
+    info.mtime = new Date(stt.mtimeMs).toISOString();
+    info.stale = ageSec > Math.round(maxMs / 1000);
+    info.usable = ageSec <= Math.round(staleMaxMs / 1000);
+    try {
+      const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+      if (meta && typeof meta === 'object') {
+        if (meta.savedAt) info.metaSavedAt = meta.savedAt;
+        if (meta.entries != null) info.metaEntries = meta.entries;
+        if (meta.source) info.source = meta.source;
+      }
+    } catch {}
+  } catch {
+    info.ageSec = null;
+    info.mtime = null;
+    info.stale = true;
+    info.usable = false;
+  }
+  st.boardCache = info;
+  if (st.board && typeof st.board === 'object') {
+    st.board.cacheAgeSec = info.ageSec;
+    st.board.cacheStale = !!info.stale;
+    st.board.needBrowserFetch = !!info.needBrowserFetch;
+  }
+  return st;
+}
+
 function startFeaturedRunner() {
   const F = createFeatured({ getState: () => state, baseline, readBoardCache, excluded: (m) => EXCLUDE.has(m) || almaEx.has(m), isProtected: (w) => !!w && PROTECTED.has(w), devSold: (m) => devSold.has(m),
     familyExtra: () => Number(process.env.FAMILY_EXTRA || 24), log: console.log });
   function save() {
     try { const tmp = STATE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(state)); fs.renameSync(tmp, STATE);
-      const st = F.status(); st.runner = { host: 'box', savedAt: new Date().toISOString(), pid: process.pid }; fs.writeFileSync(STATUS, JSON.stringify(st, null, 1)); } catch (e) { console.error('[featured] save', e.message); }
+      const st = F.status(); st.runner = { host: 'box', savedAt: new Date().toISOString(), pid: process.pid };
+      enrichBoardCacheStatus(st);
+      fs.writeFileSync(STATUS, JSON.stringify(st, null, 1)); } catch (e) { console.error('[featured] save', e.message); }
   }
   (async () => {
     await syncAlma(); setInterval(syncAlma, 30 * 60e3);
@@ -104,4 +149,4 @@ function startFeaturedRunner() {
   return F;
 }
 if (require.main === module) startFeaturedRunner();
-module.exports = { readBoardCache, _resetBoardCacheStaleObs, startFeaturedRunner };
+module.exports = { readBoardCache, _resetBoardCacheStaleObs, enrichBoardCacheStatus, startFeaturedRunner };
