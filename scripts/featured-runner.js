@@ -49,6 +49,15 @@ function readBoardCache() {
     const entries = Array.isArray(j?.entries) ? j.entries : null;
     if (!entries || !entries.length) return null;
     if (age > maxMs) console.log('[featured] board cache stale', Math.round(age / 60000), 'min (still under staleMax); using until browser refresh');
+    else {
+      // Sibling browser fetch writes the cache while box-ensure left NEED_BROWSER_FETCH set.
+      // Clear it as soon as we actually consume a fresh snapshot so Vigilancia does not keep
+      // treating a completed fetch as still pending (ops evidence 2026-11-06).
+      try {
+        const flag = path.join(path.dirname(p), 'NEED_BROWSER_FETCH');
+        if (fs.existsSync(flag)) { fs.unlinkSync(flag); console.log('[featured] cleared NEED_BROWSER_FETCH (fresh board cache)'); }
+      } catch {}
+    }
     return entries;
   } catch { return null; }
 }
