@@ -34,6 +34,10 @@ async function baseline() {
   return pairs.filter((p) => p && p.chainId === 'solana' && p.dexId === 'pumpfun' && p.baseToken?.address && /pump$/i.test(p.baseToken.address))
     .map((p) => ({ mint: p.baseToken.address, mcUsd: Number(p.marketCap || p.fdv) || 0, lastAt: now, complete: false, creator: null }));
 }
+// Last mtime observed while age>maxMs. After a browser refresh the file mtime jumps and age
+// drops under maxMs; log that transition once so Vigilancia does not keep reading a stale-only
+// tail (ops evidence 2026-11-06: log still said "stale 120 min" after NEED_BROWSER_FETCH clear).
+let lastStaleBoardMtime = 0;
 function readBoardCache() {
   // Fresh target ~45 min (FEATURED_BOARD_CACHE_MAX_MS). During long Cloudflare 403s + box pauses,
   // Vigilancia often cannot refresh within 45 min; prefer a browser snapshot up to 3 h old over an
@@ -48,8 +52,14 @@ function readBoardCache() {
     const j = JSON.parse(fs.readFileSync(p, 'utf8'));
     const entries = Array.isArray(j?.entries) ? j.entries : null;
     if (!entries || !entries.length) return null;
-    if (age > maxMs) console.log('[featured] board cache stale', Math.round(age / 60000), 'min (still under staleMax); using until browser refresh');
-    else {
+    if (age > maxMs) {
+      lastStaleBoardMtime = st.mtimeMs;
+      console.log('[featured] board cache stale', Math.round(age / 60000), 'min (still under staleMax); using until browser refresh');
+    } else {
+      if (lastStaleBoardMtime && st.mtimeMs > lastStaleBoardMtime) {
+        console.log('[featured] board cache fresh again', Math.round(age / 60000), 'min age (browser refresh applied)');
+        lastStaleBoardMtime = 0;
+      }
       // Sibling browser fetch writes the cache while box-ensure left NEED_BROWSER_FETCH set.
       // Clear only when the board file is at least as new as the flag: otherwise a 35–45 min
       // cache is "fresh" to FEATURED_BOARD_CACHE_MAX_MS but box-ensure still requested a refresh
@@ -66,16 +76,22 @@ function readBoardCache() {
     return entries;
   } catch { return null; }
 }
-const F = createFeatured({ getState: () => state, baseline, readBoardCache, excluded: (m) => EXCLUDE.has(m) || almaEx.has(m), isProtected: (w) => !!w && PROTECTED.has(w), devSold: (m) => devSold.has(m),
-  familyExtra: () => Number(process.env.FAMILY_EXTRA || 24), log: console.log });
-function save() {
-  try { const tmp = STATE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(state)); fs.renameSync(tmp, STATE);
-    const st = F.status(); st.runner = { host: 'box', savedAt: new Date().toISOString(), pid: process.pid }; fs.writeFileSync(STATUS, JSON.stringify(st, null, 1)); } catch (e) { console.error('[featured] save', e.message); }
+function _resetBoardCacheStaleObs() { lastStaleBoardMtime = 0; }
+function startFeaturedRunner() {
+  const F = createFeatured({ getState: () => state, baseline, readBoardCache, excluded: (m) => EXCLUDE.has(m) || almaEx.has(m), isProtected: (w) => !!w && PROTECTED.has(w), devSold: (m) => devSold.has(m),
+    familyExtra: () => Number(process.env.FAMILY_EXTRA || 24), log: console.log });
+  function save() {
+    try { const tmp = STATE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(state)); fs.renameSync(tmp, STATE);
+      const st = F.status(); st.runner = { host: 'box', savedAt: new Date().toISOString(), pid: process.pid }; fs.writeFileSync(STATUS, JSON.stringify(st, null, 1)); } catch (e) { console.error('[featured] save', e.message); }
+  }
+  (async () => {
+    await syncAlma(); setInterval(syncAlma, 30 * 60e3);
+    F.start(); setInterval(save, 60e3); save();
+    // First board refresh is async inside start(); persist once it has had time to apply cache/live result.
+    setTimeout(save, 15000);
+    for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { F.stop(); save(); process.exit(0); });
+  })();
+  return F;
 }
-(async () => {
-  await syncAlma(); setInterval(syncAlma, 30 * 60e3);
-  F.start(); setInterval(save, 60e3); save();
-  // First board refresh is async inside start(); persist once it has had time to apply cache/live result.
-  setTimeout(save, 15000);
-  for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { F.stop(); save(); process.exit(0); });
-})();
+if (require.main === module) startFeaturedRunner();
+module.exports = { readBoardCache, _resetBoardCacheStaleObs, startFeaturedRunner };
