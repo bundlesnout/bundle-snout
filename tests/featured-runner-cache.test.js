@@ -73,7 +73,44 @@ assert.strictEqual(st.board.cacheStale, true);
 assert.strictEqual(st.board.needBrowserFetch, true);
 fs.unlinkSync(flag2);
 const st2 = enrichBoardCacheStatus({ board: {} });
-assert.strictEqual(st2.boardCache.needBrowserFetch, false);
-assert.strictEqual(st2.board.needBrowserFetch, false);
+// Flag gone but cache still stale → still needBrowserFetch (ops: status before ensure writes flag)
+assert.strictEqual(st2.boardCache.needBrowserFetch, true, 'stale age implies needBrowserFetch');
+assert.strictEqual(st2.board.needBrowserFetch, true);
+assert.strictEqual(st2.boardCache.cacheEntries, 1);
 fs.rmSync(dir2, { recursive: true, force: true });
 console.log('featured-runner-cache enrichBoardCacheStatus ok');
+
+// Startup flash: empty board + usable stale cache → hydrate entries/fromCache (ops 2026-11-06).
+const dir3 = fs.mkdtempSync(path.join(os.tmpdir(), 'feat-hydrate-'));
+const board3 = path.join(dir3, 'featured-board.json');
+const meta3 = path.join(dir3, 'featured-board.meta.json');
+process.env.FEATURED_BOARD_CACHE = board3;
+process.env.FEATURED_BOARD_CACHE_MAX_MS = String(60e3);
+process.env.FEATURED_BOARD_CACHE_STALE_MAX_MS = String(3 * 60 * 60e3);
+const entries3 = Array.from({ length: 92 }, (_, i) => ({ m: 'M' + i + 'pump', n: 'T' + i }));
+fs.writeFileSync(board3, JSON.stringify({ entries: entries3 }));
+const age3 = (Date.now() - 120 * 60e3) / 1000;
+fs.utimesSync(board3, age3, age3);
+fs.writeFileSync(meta3, JSON.stringify({ savedAt: '2026-11-06T18:00:00.000Z', entries: 92, source: 'browser' }));
+const flash = enrichBoardCacheStatus({ board: { entries: 0, fromCache: false, lastError: null } });
+assert.strictEqual(flash.board.entries, 92, 'hydrated entries');
+assert.strictEqual(flash.board.fromCache, true);
+assert.ok(/using browser board cache/.test(flash.board.lastError || ''), flash.board.lastError);
+assert.strictEqual(flash.board.cacheStale, true);
+assert.strictEqual(flash.board.needBrowserFetch, true);
+assert.ok(flash.board.cacheAgeSec >= 119 * 60, 'cacheAgeSec ~120min got ' + flash.board.cacheAgeSec);
+// Fresh cache + empty board, no flag: hydrate but needBrowserFetch false
+const freshAt = Date.now() / 1000;
+fs.utimesSync(board3, freshAt, freshAt);
+fs.writeFileSync(meta3, JSON.stringify({ savedAt: new Date().toISOString(), entries: 92, source: 'browser' }));
+const fresh = enrichBoardCacheStatus({ board: { entries: 0, fromCache: false } });
+assert.strictEqual(fresh.board.entries, 92);
+assert.strictEqual(fresh.board.fromCache, true);
+assert.strictEqual(fresh.board.cacheStale, false);
+assert.strictEqual(fresh.board.needBrowserFetch, false);
+// Already-populated board must not be overwritten downward
+const keep = enrichBoardCacheStatus({ board: { entries: 5, fromCache: false, lastError: null } });
+assert.strictEqual(keep.board.entries, 5);
+assert.strictEqual(keep.board.fromCache, false);
+fs.rmSync(dir3, { recursive: true, force: true });
+console.log('featured-runner-cache hydrate empty board from cache ok');

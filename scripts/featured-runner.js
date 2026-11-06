@@ -121,11 +121,38 @@ function enrichBoardCacheStatus(st) {
     info.stale = true;
     info.usable = false;
   }
+  // Ops evidence 2026-11-06 vigilancia: after box-ensure restart, first save()
+  // (before refreshBoard resolves) wrote board.entries=0 fromCache=false while
+  // featured-board.json still had ~92 usable entries / age ~2h — misleading ops.
+  // Hydrate empty board status from the usable cache file and treat stale age as
+  // needBrowserFetch even before NEED_BROWSER_FETCH is written.
+  if (info.usable && info.ageSec != null) {
+    let n = Number(info.metaEntries) || 0;
+    if (!(n > 0)) {
+      try {
+        const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+        n = Array.isArray(j?.entries) ? j.entries.length : 0;
+        if (n > 0) info.metaEntries = n;
+      } catch {}
+    }
+    info.cacheEntries = n > 0 ? n : 0;
+  } else {
+    info.cacheEntries = 0;
+  }
+  const needsFetch = !!(info.needBrowserFetch || info.stale);
+  info.needBrowserFetch = needsFetch;
   st.boardCache = info;
   if (st.board && typeof st.board === 'object') {
     st.board.cacheAgeSec = info.ageSec;
     st.board.cacheStale = !!info.stale;
-    st.board.needBrowserFetch = !!info.needBrowserFetch;
+    st.board.needBrowserFetch = needsFetch;
+    if (!(st.board.entries > 0) && info.cacheEntries > 0) {
+      st.board.entries = info.cacheEntries;
+      st.board.fromCache = true;
+      if (!/using browser board cache/.test(String(st.board.lastError || ''))) {
+        st.board.lastError = 'using browser board cache';
+      }
+    }
   }
   return st;
 }
