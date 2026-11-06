@@ -87,6 +87,18 @@ function curveBuf(vs, vt, complete = false, creator = null) {
     await FF.refreshBoard(); assert.strictEqual(flipCalls, 1); assert.ok(/403/.test(FF.status().board.lastError || ''));
     await FF.refreshBoard(); assert.strictEqual(flipCalls, 1); assert.ok(/cache missing\/stale/.test(FF.status().board.lastError || ''), FF.status().board.lastError);
     cacheOn = true; await FF.refreshBoard(); assert.strictEqual(flipCalls, 1); assert.ok(FF.status().board.fromCache); assert.ok(/using browser board cache/.test(FF.status().board.lastError || ''), FF.status().board.lastError); assert.ok(!/missing\/stale/.test(FF.status().board.lastError || '')); }
+  { // Mid-await status must keep fromCache true (ops 2026-11-06: save() raced with refreshBoard clearing the flag)
+    const cacheEntries = [{ m: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', c: 'solana:mainnet', pg: 'pump', pa: 'SOL', p: 20, mc: 6000, t: 'RACE' }];
+    let release; const gate = new Promise((r) => { release = r; }); let n = 0;
+    const sR = {};
+    const FR = createFeatured({ getState: () => sR, fetchFn: async () => ({ ok: false, status: 403 }), now, rng: () => 0,
+      readBoardCache: async () => { n++; if (n === 1) return cacheEntries; await gate; return cacheEntries; } });
+    await FR.refreshBoard(); assert.ok(FR.status().board.fromCache, 'seed fromCache after 403+cache');
+    const pending = FR.refreshBoard();
+    await new Promise((r) => setImmediate(r));
+    assert.ok(FR.status().board.fromCache, 'fromCache stays true while awaiting cache mid-refresh');
+    assert.ok(/using browser board cache/.test(FR.status().board.lastError || ''), FR.status().board.lastError);
+    release(); await pending; assert.ok(FR.status().board.fromCache); }
 
   { // baseline from a list provider (box runner: pump.fun recently-traded coins), never a board coin
     const s5 = {}; const F5 = createFeatured({ getState: () => s5, fetchFn: async () => ({ ok: true, json: async () => ({ entries: [{ m: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', c: 'solana:mainnet', pg: 'pump', pa: 'SOL', p: 20, mc: 6000 }] }) }), now, rng: () => 0,

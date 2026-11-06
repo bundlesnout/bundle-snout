@@ -69,11 +69,14 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
   }
   async function refreshBoard() {
     const s = S(); if (!s || !cfg.enabled) return; const t = now();
-    let entries = null; RT.boardFromCache = false;
+    // Keep RT.boardFromCache unchanged across awaits so a concurrent status()/save()
+    // cannot report fromCache:false while lastError still says "using browser board cache"
+    // (ops evidence 2026-11-06: box featured-status showed that mismatch mid-refresh).
+    let entries = null; let fromCache = false;
     if (t < RT.blockedUntil) {
       entries = await loadCache();
       if (entries) {
-        RT.boardFromCache = true;
+        fromCache = true;
         // Cache arrived mid-backoff (Vigilancia browser fetch): do not keep the
         // earlier "cache missing/stale" note — status must match fromCache.
         RT.lastBoardError = 'board blocked (403 backoff); using browser board cache';
@@ -91,7 +94,7 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
         if (!r.ok) throw new Error('board HTTP ' + r.status); const j = await r.json(); entries = Array.isArray(j?.entries) ? j.entries : null; if (!entries) throw new Error('board: no entries');
       } catch (e) {
         entries = await loadCache();
-        if (entries) { RT.boardFromCache = true; RT.lastBoardError = String(e.message).slice(0, 100) + ' (using browser board cache)'; }
+        if (entries) { fromCache = true; RT.lastBoardError = String(e.message).slice(0, 100) + ' (using browser board cache)'; }
         else {
           // Board unreachable and no cache: still take baseline picks against an empty board set so the
           // rand side of the test keeps collecting instead of freezing for every CF outage.
@@ -100,6 +103,7 @@ function createFeatured({ getState, fetchFn = (...a) => fetch(...a), now = () =>
         }
       }
     }
+    RT.boardFromCache = fromCache;
     s.refreshes++; RT.lastBoardAt = t; RT.lastBoardN = entries.length; if (entries.length && !RT.boardFromCache) RT.lastBoardError = null;
     else if (entries.length && RT.boardFromCache) { /* keep the 403+cache note */ }
     else onDirty();
