@@ -78,11 +78,29 @@ fi
 if pgrep -f early-runner.sh >/dev/null; then
   # If chain feed has been silent >3 min while the process lives, force a restart
   # (belt-and-suspenders; early-runner.js also has a 90s stale WS heartbeat).
+  # Ops evidence 2026-11-07 vigilancia: lastMsgAgoS is null for the first seconds after
+  # boot (WS not open yet). Treating null as 99999 made box-ensure kill a fresh early
+  # right after we restarted it ("chain stale 99999s"). Grace: if status savedAt is
+  # younger than 120s, null means "still connecting", not stale.
   chain_ago=$(python3 -c 'import json,sys
+from datetime import datetime,timezone
 try:
  d=json.load(open("/workspace/agentdata/early-status.json"))
- a=d.get("runner",{}).get("chain",{}).get("lastMsgAgoS")
- print(99999 if a is None else int(a))
+ ch=d.get("runner",{}).get("chain",{})
+ a=ch.get("lastMsgAgoS")
+ if a is None:
+  iso=(d.get("runner") or {}).get("savedAt")
+  age=99999
+  if iso:
+   try:
+    t=datetime.fromisoformat(iso.replace("Z","+00:00"))
+    age=int((datetime.now(timezone.utc)-t).total_seconds())
+   except Exception:
+    age=99999
+  # Young process still connecting → report 0 so we do not restart.
+  print(0 if age < 120 else 99999)
+ else:
+  print(int(a))
 except Exception:
  print(99999)' 2>/dev/null || echo 99999)
   if [ "$chain_ago" -gt 180 ]; then
