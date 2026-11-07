@@ -11,6 +11,16 @@ const EXITS = [
   { id: 'time15', holdMin: 15 }, { id: 'time60', holdMin: 60 },
 ];
 const SIZE = 0.1, FEE = 1.25, TXFEE = 0.000024, AMM_FEE = 1.0, AMM_QUOTE = 85, GRAD_HAIRCUT = 0.8, MAX_HOLD_MIN = 60, MAX_BLIND_MS = 60000;
+// Graduated coin with no fresh AMM price: wait GRAD_WAIT_MS (< MAX_BLIND_MS) for one, then close
+// at the last curve value minus GRAD_HAIRCUT ('grad_exit'). Before 2026-11-07 the fallback waited
+// 60 s = MAX_BLIND_MS, so every such position was VOIDED instead; graduations are the best
+// performers, so time15/time60 lost exactly their winners (GEO: peak 4.6x, time60 voided).
+const GRAD_WAIT_MS = 15000;
+function graduationMark({ graduatedAt, last, amm, now }) {
+  if (amm && now - amm.at < 60e3) return { kind: 'amm', priceSol: amm.priceSol };
+  if (last && now - graduatedAt > GRAD_WAIT_MS) return { kind: 'grad_fallback', vs: last.vs, vt: last.vt, final: true };
+  return null;
+}
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
 
 // Pure: features of a coin's trades [{at(ms), user, buy, sol, priceSol, priceUsd}] as of `now`, created at `cr`.
@@ -54,4 +64,4 @@ function stats(closed) {
   const mean = a.reduce((x, y) => x + y, 0) / n, sd = n > 1 ? Math.sqrt(a.reduce((x, y) => x + (y - mean) ** 2, 0) / (n - 1)) : 0, h = n > 1 ? 1.96 * sd / Math.sqrt(n) : null;
   return { n, wins: a.filter((x) => x > 0).length, meanPct: r4(mean), ci95: h == null ? null : [r4(mean - h), r4(mean + h)], netSol: r4(closed.reduce((x, p) => x + p.pnlSol, 0)) };
 }
-module.exports = { RULE, EXITS, SIZE, FEE, LAUNCH_PRICE, MAX_BLIND_MS, GRAD_HAIRCUT, evalRule, buyFill, curveSell, ammSell, markValue, exitCheck, stats };
+module.exports = { GRAD_WAIT_MS, graduationMark, RULE, EXITS, SIZE, FEE, LAUNCH_PRICE, MAX_BLIND_MS, GRAD_HAIRCUT, evalRule, buyFill, curveSell, ammSell, markValue, exitCheck, stats };

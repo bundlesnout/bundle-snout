@@ -261,8 +261,8 @@ async function monitor() {
     else if (c && c.complete) {
       T.graduated = T.graduated || now; const a = ammPx.get(mint);
       if (!a || now - a.at > 15e3) { pf(`https://swap-api.pump.fun/v2/coins/${mint}/trades?limit=5`).then((j) => { const x = j?.trades?.map(normT).find((t) => t.prog === 'pump_amm'); if (x) ammPx.set(mint, { priceSol: x.priceSol, at: Date.now(), tradeAt: x.at }); }); }
-      if (a && now - a.at < 60e3) { mark = { kind: 'amm', priceSol: a.priceSol }; spot = a.priceSol; }
-      else if (now - T.graduated > 60e3 && T.last) { mark = { kind: 'grad_fallback', vs: T.last.vs, vt: T.last.vt }; spot = (T.last.vs / T.last.vt) * E.GRAD_HAIRCUT; }
+      mark = E.graduationMark({ graduatedAt: T.graduated, last: T.last, amm: a, now });
+      if (mark) spot = mark.kind === 'amm' ? mark.priceSol : (T.last.vs / T.last.vt) * E.GRAD_HAIRCUT;
     }
     if (!mark) continue;
     if (T) { const age = now - T.at; const mult = spot / T.entrySpot; if (now - T.lastPriceAt > E.MAX_BLIND_MS) T.gap = true; T.lastPriceAt = now;
@@ -272,7 +272,7 @@ async function monitor() {
       if (p.done) continue;
       if (now - p.lastPriceAt > E.MAX_BLIND_MS) { p.done = 'void'; continue; }
       const val = E.markValue(p, mark); p.lastPriceAt = now; p.lastVal = val; p.markKind = mark.kind;
-      const why = E.exitCheck(p, E.EXITS.find((e) => e.id === p.v), val, now);
+      const why = E.exitCheck(p, E.EXITS.find((e) => e.id === p.v), val, now) || (mark.final ? 'grad_exit' : null);
       if (why) { p.done = why; p.exitAt = now; p.pnlSol = val - p.cost; p.pnlPct = Math.round((val / p.cost - 1) * 10000) / 100; }
     }
   }
