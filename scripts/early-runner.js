@@ -264,18 +264,55 @@ async function monitor() {
       mark = E.graduationMark({ graduatedAt: T.graduated, last: T.last, amm: a, now });
       if (mark) spot = mark.kind === 'amm' ? mark.priceSol : (T.last.vs / T.last.vt) * E.GRAD_HAIRCUT;
     }
-    if (!mark) continue;
+    if (!mark) {
+      // Complete curve but still inside GRAD_WAIT (no AMM yet): heartbeat lastPriceAt so
+      // sweep does not void before graduationMark returns grad_fallback.
+      if (c && c.complete) {
+        heartbeatGradWait(S.open, mint, now);
+        if (T) T.lastPriceAt = now;
+      }
+      continue;
+    }
     if (T) { const age = now - T.at; const mult = spot / T.entrySpot; if (now - T.lastPriceAt > E.MAX_BLIND_MS) T.gap = true; T.lastPriceAt = now;
       if (age <= PEAK_WIN_MS) T.peakMult = Math.max(T.peakMult, Math.round(mult * 1000) / 1000);
       if (T.m5 == null && age >= 5 * 60e3) T.m5 = Math.round(mult * 1000) / 1000; if (T.m15 == null && age >= 15 * 60e3) T.m15 = Math.round(mult * 1000) / 1000; if (T.m60 == null && age >= PEAK_WIN_MS) T.m60 = Math.round(mult * 1000) / 1000; }
-    for (const p of S.open.filter((x) => x.mint === mint)) {
-      if (p.done) continue;
-      if (now - p.lastPriceAt > E.MAX_BLIND_MS) { p.done = 'void'; continue; }
-      const val = E.markValue(p, mark); p.lastPriceAt = now; p.lastVal = val; p.markKind = mark.kind;
-      const why = E.exitCheck(p, E.EXITS.find((e) => e.id === p.v), val, now) || (mark.final ? 'grad_exit' : null);
-      if (why) { p.done = why; p.exitAt = now; p.pnlSol = val - p.cost; p.pnlPct = Math.round((val / p.cost - 1) * 10000) / 100; }
+    applyOpenMark(S.open, mint, mark, now);
+  }
+}
+
+// Apply a usable mark to open paper legs. Never blind-void when we have a mark: a stale
+// lastPriceAt with grad_fallback/amm ready used to discard graduated winners before
+// grad_exit (ops 2026-11-07: GEO peak 4.6x, time60 voided; time60 0 exits / many voids).
+function applyOpenMark(open, mint, mark, now, exits = E.EXITS) {
+  if (!mark || !Array.isArray(open)) return [];
+  const hit = [];
+  for (const p of open) {
+    if (p.mint !== mint || p.done) continue;
+    const val = E.markValue(p, mark);
+    p.lastPriceAt = now;
+    p.lastVal = val;
+    p.markKind = mark.kind;
+    const ex = exits.find((e) => e.id === p.v);
+    const why = E.exitCheck(p, ex, val, now) || (mark.final ? 'grad_exit' : null);
+    if (why) {
+      p.done = why;
+      p.exitAt = now;
+      p.pnlSol = val - p.cost;
+      p.pnlPct = Math.round((val / p.cost - 1) * 10000) / 100;
+      hit.push(p);
     }
   }
+  return hit;
+}
+function heartbeatGradWait(open, mint, now) {
+  if (!Array.isArray(open)) return 0;
+  let n = 0;
+  for (const p of open) {
+    if (p.mint !== mint || p.done) continue;
+    p.lastPriceAt = now;
+    n++;
+  }
+  return n;
 }
 
 // Ops evidence 2026-11-07 vigilancia: after a ~6304s box pause, sweep voided time15/time60
@@ -361,4 +398,4 @@ function startEarlyRunner() {
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { save(); process.exit(0); });
 }
 if (require.main === module) startEarlyRunner();
-module.exports = { readPersistedListBlockedUntil, applyList403, LIST_403_BACKOFF_MS, restoreList403Backoff, voidOpenAfterBoxPause, formatPauseVoidLog, wsLastMsgAgoS, portalWsShouldReconnect, startEarlyRunner };
+module.exports = { readPersistedListBlockedUntil, applyList403, LIST_403_BACKOFF_MS, restoreList403Backoff, voidOpenAfterBoxPause, formatPauseVoidLog, wsLastMsgAgoS, portalWsShouldReconnect, applyOpenMark, heartbeatGradWait, startEarlyRunner };
