@@ -260,11 +260,14 @@ elif live_id:
         "scripts/featured-runner",
         "scripts/box-ensure",
         "scripts/early-runner",
+        "scripts/box-coverage",
         "tests/featured-runner",
         "tests/early",
+        "tests/box-coverage",
         # early.js is the Frongus early-volume rule module, required only by
         # scripts/early-runner.js + tests (not server.js); .gitignore never ships
         # behaviour (ops 2026-11-07: false renderFiles=2 for live=5952b8b origin=6de4d14).
+        # box-coverage is box awake measurement only (ops 2026-11-07: false renderFiles=2).
         "early.js",
         ".gitignore",
     )

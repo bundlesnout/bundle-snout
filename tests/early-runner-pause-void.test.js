@@ -35,3 +35,25 @@ assert.deepStrictEqual(voidOpenAfterBoxPause(null, { now, gapMs }), []);
 assert.deepStrictEqual(voidOpenAfterBoxPause(open, { now, gapMs: 0 }), []);
 
 console.log('early-runner-pause-void.test.js ok');
+
+// Boot path: box-ensure restart after pause (fresh lastTick) must still void as void_pause
+// per position lastPriceAt, not as generic unwatched (ops 2026-11-07: 206 generic vs 7 pause).
+const { voidBlindOpensOnBoot } = require('../scripts/early-runner');
+const bootNow = Date.now();
+const bootOpen = [
+  { v: 'time60', sym: 'OLD', lastPriceAt: bootNow - 4200e3 },
+  { v: 'time15', sym: 'FRESH', lastPriceAt: bootNow - 5e3 },
+  { v: 'trail25', sym: 'DONE', done: 'trail', lastPriceAt: bootNow - 4200e3 },
+];
+const bootMarked = voidBlindOpensOnBoot(bootOpen, { now: bootNow, blindMs: MAX_BLIND_MS });
+assert.strictEqual(bootMarked.length, 1, 'only OLD is blind');
+assert.strictEqual(bootMarked[0].sym, 'OLD');
+assert.strictEqual(bootMarked[0].done, 'void_pause');
+assert.strictEqual(bootMarked[0].voidFrom, 'boot');
+assert.ok(bootMarked[0].pauseGapSec >= 4200);
+assert.strictEqual(bootOpen.find((p) => p.sym === 'FRESH').done, undefined, 'fresh untouched');
+assert.strictEqual(bootOpen.find((p) => p.sym === 'DONE').done, 'trail', 'already-done untouched');
+assert.deepStrictEqual(voidBlindOpensOnBoot(null, { now: bootNow }), []);
+assert.deepStrictEqual(voidBlindOpensOnBoot([], { now: bootNow }), []);
+assert.deepStrictEqual(voidBlindOpensOnBoot([{ v: 'x', lastPriceAt: bootNow }], { now: bootNow, blindMs: MAX_BLIND_MS }), []);
+console.log('early-runner-pause-void boot path ok');

@@ -332,6 +332,25 @@ function voidOpenAfterBoxPause(open, { now = Date.now(), gapMs, blindMs = E.MAX_
   }
   return marked;
 }
+// Ops evidence 2026-11-07 vigilancia: box-ensure kills/restarts early after a VM pause, so
+// lastTick is fresh and the in-process pause detector never runs. startEarlyRunner()'s
+// sweep() then marked leftover opens as generic "price unwatched >60s" (log: 206 generic
+// vs 7 pause storms). Attribute individually-blind opens as void_pause on boot.
+function voidBlindOpensOnBoot(open, { now = Date.now(), blindMs = E.MAX_BLIND_MS } = {}) {
+  if (!Array.isArray(open)) return [];
+  const marked = [];
+  for (const p of open) {
+    if (p.done) continue;
+    const gapMs = now - (p.lastPriceAt || 0);
+    if (!(gapMs > blindMs)) continue;
+    p.done = 'void_pause';
+    p.pauseGapSec = Math.round(gapMs / 1000);
+    p.voidAt = now;
+    p.voidFrom = 'boot';
+    marked.push(p);
+  }
+  return marked;
+}
 function formatPauseVoidLog(marked, gapSec) {
   const parts = marked.map((p) => `${p.v} ${p.sym || '?'}`);
   return `[early] VOID box pause ${gapSec}s: ${parts.join(', ')} (${marked.length})`;
@@ -393,9 +412,15 @@ async function tick() {
 function startEarlyRunner() {
   restoreList403Backoff();
   log('[early] PAPER test start; rule', JSON.stringify(E.RULE), 'exits', E.EXITS.map((e) => e.id).join(','));
-  sweep(); // positions from before a restart are voided here if their price went unwatched > 60 s
+  // Prefer void_pause over generic unwatched when opens survived a box-ensure restart.
+  const bootVoids = voidBlindOpensOnBoot(S.open);
+  if (bootVoids.length) {
+    const gapSec = Math.max(...bootVoids.map((p) => p.pauseGapSec || 0));
+    log(formatPauseVoidLog(bootVoids, gapSec), '[boot]');
+  }
+  sweep(); // remaining blind opens (should be none) still void as unwatched
   syncAlma(); setInterval(syncAlma, 30 * 60e3); connect(); connectChain(); setInterval(tick, 3000); listings(); setInterval(() => listings().catch(() => {}), 8000); setInterval(save, 30e3); save();
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { save(); process.exit(0); });
 }
 if (require.main === module) startEarlyRunner();
-module.exports = { readPersistedListBlockedUntil, applyList403, LIST_403_BACKOFF_MS, restoreList403Backoff, voidOpenAfterBoxPause, formatPauseVoidLog, wsLastMsgAgoS, portalWsShouldReconnect, applyOpenMark, heartbeatGradWait, startEarlyRunner };
+module.exports = { readPersistedListBlockedUntil, applyList403, LIST_403_BACKOFF_MS, restoreList403Backoff, voidOpenAfterBoxPause, voidBlindOpensOnBoot, formatPauseVoidLog, wsLastMsgAgoS, portalWsShouldReconnect, applyOpenMark, heartbeatGradWait, startEarlyRunner };
