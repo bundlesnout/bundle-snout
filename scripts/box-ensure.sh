@@ -163,6 +163,9 @@ open("/workspace/agentdata/NEED_BROWSER_FETCH","w").write(json.dumps({"at":time.
   fi
 fi
 
+# Validate a browser-saved board (HTML/empty saves get quarantined) and auto-write its meta.
+python3 "$(dirname "$0")/board-cache-check.py" 2>/dev/null || echo "board-check: error"
+
 # Browser fetch (Vigilancia computerUse) writes the board while featured is already running.
 # Mirror the curl-refresh restart: if the board file is fresh and newer than the runner
 # process start, bounce featured so it reloads cache immediately (ops 2026-11-06).
