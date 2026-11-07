@@ -188,6 +188,9 @@ print(1 if start < board_m else 0)
   fi
 fi
 
+# Box awake coverage (pinger log) -> box-coverage.json; flags LOW_BOX_COVERAGE under 50%.
+python3 "$(dirname "$0")/box-coverage.py" 2>/dev/null || echo "box-coverage: error"
+
 # Flag when origin/main is ahead of the live Render deploy (autoDeploy can miss a push).
 # Read-only: prints RENDER_DEPLOY_LAG and writes a flag for Vigilancia; does not trigger deploys.
 if [ -f .env.local ]; then
