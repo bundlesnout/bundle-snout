@@ -259,6 +259,11 @@ elif live_id:
         "scripts/early-runner",
         "tests/featured-runner",
         "tests/early",
+        # early.js is the Frongus early-volume rule module, required only by
+        # scripts/early-runner.js + tests (not server.js); .gitignore never ships
+        # behaviour (ops 2026-11-07: false renderFiles=2 for live=5952b8b origin=6de4d14).
+        "early.js",
+        ".gitignore",
     )
     changed = []
     try:
@@ -271,6 +276,17 @@ elif live_id:
     changed = [c.strip() for c in changed if c.strip()]
     def is_box_only(path: str) -> bool:
         return any(path == pref or path.startswith(pref) for pref in BOX_ONLY_PREFIXES)
+    # Guard: if Render-side code ever starts requiring early.js, it stops being box-only.
+    try:
+        hits = subprocess.run(
+            ["git", "-C", "/workspace/sniff", "grep", "-lE", r"require\(['\"]\.{1,2}/early['\"]\)", origin, "--", "*.js"],
+            text=True, capture_output=True,
+        ).stdout.splitlines()
+        srv = [h.split(":", 1)[-1] for h in hits if not h.split(":", 1)[-1].startswith(("scripts/", "tests/"))]
+    except Exception:
+        srv = ["?"]
+    if srv:
+        BOX_ONLY_PREFIXES = tuple(p for p in BOX_ONLY_PREFIXES if p != "early.js")
     render_paths = [c for c in changed if not is_box_only(c)]
     box_paths = [c for c in changed if is_box_only(c)]
     if changed and not render_paths:
