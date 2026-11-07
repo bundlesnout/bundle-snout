@@ -62,16 +62,39 @@ function decodeCurve(b64) { const b = Buffer.from(b64, 'base64'); if (b.length <
 async function curves(keys) { const out = {}; for (let i = 0; i < keys.length; i += 100) { const r = await rpc('getMultipleAccounts', [keys.slice(i, i + 100), { encoding: 'base64', commitment: 'confirmed' }]); r.value.forEach((a, j) => { out[keys[i + j]] = a ? decodeCurve(a.data[0]) : null; }); } return out; }
 
 // ---- new coins
+// Ops evidence 2026-11-07 vigilancia: early-status right after box-ensure restart showed
+// ws.lastMsgAgoS ≈ 1.79e9 (Date.now()-0) while opens was still 0 — status treated unset
+// lastMsg as epoch, and the portal heartbeat used the same formula so a quiet/new socket
+// looked "stale >90s" immediately. Match chain: stamp lastMsg on open, null-guard age,
+// and only force-reconnect when a real lastMsg is older than 90s.
+function wsLastMsgAgoS(lastMsg, now = Date.now()) {
+  return lastMsg ? Math.round((now - lastMsg) / 1000) : null;
+}
+function portalWsShouldReconnect(lastMsg, now = Date.now(), staleMs = 90e3) {
+  return !!(lastMsg && now - lastMsg > staleMs);
+}
 function connect() {
   const ws = new WS('wss://pumpportal.fun/api/data'); let alive = true;
-  ws.on('open', () => { wsInfo.opens++; ws.send(JSON.stringify({ method: 'subscribeNewToken' })); });
+  ws.on('open', () => {
+    wsInfo.opens++;
+    wsInfo.lastMsg = Date.now(); // prove socket live before first create (same as chain)
+    ws.send(JSON.stringify({ method: 'subscribeNewToken' }));
+  });
   ws.on('message', (m) => { wsInfo.lastMsg = Date.now(); let d; try { d = JSON.parse(m); } catch { return; }
     if (d.txType !== 'create' || !d.mint || (d.pool && d.pool !== 'pump')) return;
     if (EXCLUDE.has(d.mint) || almaEx.has(d.mint) || PROTECTED.has(d.traderPublicKey)) { skip('excluded'); return; }
     S.seen++; if (!coins.has(d.mint) && !done.has(d.mint)) coins.set(d.mint, { mint: d.mint, cr: Date.now(), creator: d.traderPublicKey, bc: d.bondingCurveKey, sym: d.symbol, next: Date.now() + PRECHECK_S * 1000, stage: 'pre' }); });
   const dead = () => { if (!alive) return; alive = false; setTimeout(connect, 1000); };
   ws.on('close', dead); ws.on('error', () => { try { ws.terminate(); } catch {} dead(); });
-  const hb = setInterval(() => { if (!alive) return clearInterval(hb); if (Date.now() - wsInfo.lastMsg > 90e3) { try { ws.terminate(); } catch {} dead(); clearInterval(hb); } }, 30e3);
+  const hb = setInterval(() => {
+    if (!alive) return clearInterval(hb);
+    if (portalWsShouldReconnect(wsInfo.lastMsg)) {
+      log('[early] portal WS stale >90s; forcing reconnect');
+      try { ws.terminate(); } catch {}
+      dead();
+      clearInterval(hb);
+    }
+  }, 30e3);
 }
 
 
@@ -299,7 +322,7 @@ function sweep() { // move finished positions, void blind ones
 function status() {
   const by = {}; for (const ex of E.EXITS) by[ex.id] = E.stats(S.closed.filter((p) => p.v === ex.id));
   const done = S.triggers.filter((t) => !t.miss);
-  return { paper: true, runner: { host: 'box', pid: process.pid, savedAt: new Date().toISOString(), since: S.since, pauses, solUsd: Math.round(solUsd * 100) / 100, api, ws: { opens: wsInfo.opens, lastMsgAgoS: Math.round((Date.now() - wsInfo.lastMsg) / 1000) }, chain: { opens: chainInfo.opens, closes: chainInfo.closes, trades: chainInfo.trades, kept: chainInfo.kept, mintsBuffered: recentTrades.size, lastMsgAgoS: chainInfo.lastMsg ? Math.round((Date.now() - chainInfo.lastMsg) / 1000) : null, lastError: chainInfo.lastError } },
+  return { paper: true, runner: { host: 'box', pid: process.pid, savedAt: new Date().toISOString(), since: S.since, pauses, solUsd: Math.round(solUsd * 100) / 100, api, ws: { opens: wsInfo.opens, lastMsgAgoS: wsLastMsgAgoS(wsInfo.lastMsg) }, chain: { opens: chainInfo.opens, closes: chainInfo.closes, trades: chainInfo.trades, kept: chainInfo.kept, mintsBuffered: recentTrades.size, lastMsgAgoS: chainInfo.lastMsg ? Math.round((Date.now() - chainInfo.lastMsg) / 1000) : null, lastError: chainInfo.lastError } },
     rule: E.RULE, size: E.SIZE, seen: S.seen, prechecked: S.prechecked, candidates: S.candidates, watching: coins.size, skips: S.skips, voided: S.voided, voidedPause: S.voidedPause || 0,
     triggers: S.triggers.length, filled: done.length, misses: S.triggers.filter((t) => t.miss).map((t) => ({ sym: t.sym, mint: t.mint, miss: t.miss })),
     peaks: { tracked: done.length, ge2x: done.filter((t) => t.peakMult >= 2).length, ge5x: done.filter((t) => t.peakMult >= 5).length, ge10x: done.filter((t) => t.peakMult >= 10).length },
@@ -338,4 +361,4 @@ function startEarlyRunner() {
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { save(); process.exit(0); });
 }
 if (require.main === module) startEarlyRunner();
-module.exports = { readPersistedListBlockedUntil, applyList403, LIST_403_BACKOFF_MS, restoreList403Backoff, voidOpenAfterBoxPause, formatPauseVoidLog, startEarlyRunner };
+module.exports = { readPersistedListBlockedUntil, applyList403, LIST_403_BACKOFF_MS, restoreList403Backoff, voidOpenAfterBoxPause, formatPauseVoidLog, wsLastMsgAgoS, portalWsShouldReconnect, startEarlyRunner };
