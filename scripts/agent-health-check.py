@@ -53,12 +53,24 @@ def check(health, agent, now, prev=None):
     sb, mx = p.get("stateBytes"), p.get("maxStateBytes")
     if sb and mx and sb > 0.9 * mx:
         flags.append("STATE_NEAR_CAP")
+    # Projection: state growing fast enough to reach 90% of cap within 3 days.
+    eta_days = None
+    if sb and mx and prev and prev.get("stateBytes") and prev.get("at") and now - prev["at"] > 600 \
+            and sb > prev["stateBytes"]:
+        rate = (sb - prev["stateBytes"]) / (now - prev["at"])
+        eta_days = round(max(0, 0.9 * mx - sb) / rate / 86400, 1)
+        if eta_days < 3:
+            flags.append("STATE_GROWING_FAST")
     if p.get("stateTrimmed"):
         flags.append("STATE_TRIMMED")
     sh = ((a.get("stream") or {}).get("health")) or {}
     if (sh.get("downPct") or 0) > 5:
         flags.append("STREAM_BLIND_HIGH")
     prev = prev or {}
+    new_trades = new_wins = None
+    if prev.get("closedTrades") is not None and st.get("closedTrades") is not None:
+        new_trades = st["closedTrades"] - prev["closedTrades"]
+        new_wins = (st.get("wins") or 0) - (prev.get("wins") or 0)
     for k in ("scanErrors", "liveErrors"):
         if prev.get(k) is not None and (st.get(k) or 0) > prev[k]:
             flags.append(k.upper() + "_UP")
@@ -71,6 +83,8 @@ def check(health, agent, now, prev=None):
         "drawdownPct": st.get("drawdownPct"), "scanErrors": st.get("scanErrors"),
         "liveErrors": st.get("liveErrors"), "lastDecisionAgoSec": dec_age, "stateBytes": sb,
         "maxStateBytes": mx, "streamBlindPct": sh.get("downPct"), "streamClosesLastHour": sh.get("closesLastHour"),
+        "newTradesSincePrev": new_trades, "newWinsSincePrev": new_wins, "stateCapEtaDays": eta_days,
+        "worstPctPastStop": (st.get("exitSlippage") or {}).get("worstPctPastStop"),
         "flags": flags,
     }
     return flags, summary
@@ -96,7 +110,8 @@ def main():
     json.dump(summary, open(OUT, "w"), indent=2)
     print("agent-health: " + ("ok" if not flags else " ".join(flags)) +
           f" (mode={summary['mode']} trades={summary['closedTrades']} dd={summary['drawdownPct']}% "
-          f"state={summary['stateBytes']}/{summary['maxStateBytes']} lastDecision={summary['lastDecisionAgoSec']}s)")
+          f"state={summary['stateBytes']}/{summary['maxStateBytes']} capEta={summary['stateCapEtaDays']}d "
+          f"new={summary['newTradesSincePrev']}t/{summary['newWinsSincePrev']}w lastDecision={summary['lastDecisionAgoSec']}s)")
 
 
 if __name__ == "__main__":
