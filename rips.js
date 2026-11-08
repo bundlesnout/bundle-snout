@@ -147,7 +147,8 @@ function createRips(opts = {}) {
         const r = await j(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) }, method === 'getSignaturesForAddress' ? sigsTimeoutMs : 15000);
         if (r.error) throw new Error(`${method}: ${r.error.message}`); return r.result;
       } catch (e) {
-        if (attempt >= 2 || !/HTTP (429|413|5\d\d)/.test(e.message)) throw e;
+        // The public RPC also answers getSignaturesForAddress with a transient JSON-RPC error "Failed to query long-term storage" (seen ~20x in logs); it succeeds on retry.
+        if (attempt >= 2 || !/HTTP (429|413|5\d\d)|long-term storage/i.test(e.message)) throw e;
         st.rpcRetries = (st.rpcRetries || 0) + 1; if (retryMs) await sleep(retryMs * (attempt + 1));
       }
     }

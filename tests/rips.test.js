@@ -154,6 +154,11 @@ assert.strictEqual(R.tradeFees(ammTx('So1111111111111111111111111111111111111111
   let threw = false; try { await r4._rpc('getSlot', []); } catch { threw = true; }
   if (!threw || k !== 1) { console.error('FAIL rips 400 not retried', k); process.exit(1); }
   console.log('ok rips 413 retry / 400 no retry');
+  let q = 0;
+  const r5 = R2.createRips({ env: { RIPS_RETRY_MS: '0' }, log: () => {}, fetch: async () => { q++; return { ok: true, json: async () => (q < 2 ? { error: { code: -32019, message: 'Failed to query long-term storage; please try again' } } : { result: 9 }) }; } });
+  const v5 = await r5._rpc('getSignaturesForAddress', ['x', {}]);
+  if (v5 !== 9 || q !== 2) { console.error('FAIL rips long-term storage retry', v5, q); process.exit(1); }
+  console.log('ok rips long-term storage retry');
 })();
 
 // When the RPC throttles during refresh, the remaining RPC steps are skipped for that round (no hammering), market still runs.
