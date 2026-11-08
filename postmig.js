@@ -68,6 +68,14 @@ function pmSim(E, P, S = BASE) {
   const y = evs[evs.length - 1]; return { tIn, tOut: y.at + 60e3, ret: val(y), why: 'end' };
 }
 const fresh = (t) => ({ since: new Date(t).toISOString(), prereg: 'alma-research/C/PREREG.md', grads: 0, excluded: 0, settled: 0, noData: 0, byVar: {}, closed: [] });
+// Same public-RPC 1006 drops scalp.js already ignores: the `ws` library emits
+// "Invalid WebSocket frame: invalid status code 1006" before 'close'. That is a
+// routine tear-down (live /api/agent/postmig 2026-11-08: lastErr pinned to that
+// message while connected:true), not a stream fault — don't show it as lastErr.
+function isRoutineWsDrop(msg, code) {
+  if (code === 1006) return true;
+  return /invalid status code 1006|^closed 1006$/i.test(String(msg || ''));
+}
 function createPostmig({ WS = require('ws'), wsUrl = process.env.POSTMIG_WS_URL || process.env.SCALP_WS_URL || 'wss://api.mainnet-beta.solana.com', now = () => Date.now(), log = console.log,
   getState = null, isExcluded = () => false, maxWatch = 12 } = {}) {
   let local = null; const state = () => { if (getState) { const s = getState(); if (s) return s; } return local || (local = fresh(now())); };
@@ -82,7 +90,7 @@ function createPostmig({ WS = require('ws'), wsUrl = process.env.POSTMIG_WS_URL 
     ws.on('open', () => { connected = true; byReq.clear(); bySub.clear(); for (const [p, w] of watch) { w.subId = null; subscribe(p); } });
     ws.on('message', (b) => { msgs++; const str = b.toString(); if (str.includes('logsNotification') && !str.includes('"err":null')) { failedTx++; return; } try { onMsg(JSON.parse(str)); } catch {} }); // failed txs skipped before parsing (bot spam)
     ws.on('close', () => { connected = false; if (!stopped) setTimeout(connect, 3000).unref?.(); });
-    ws.on('error', (e) => { lastErr = e.message; });
+    ws.on('error', (e) => { if (!isRoutineWsDrop(e.message, null)) lastErr = e.message; });
   }
   function onMsg(j) {
     if (j.id != null && byReq.has(j.id)) { const pool = byReq.get(j.id); byReq.delete(j.id); const w = watch.get(pool); if (w && typeof j.result === 'number') { w.subId = j.result; bySub.set(j.result, pool); } return; }
@@ -124,4 +132,4 @@ function createPostmig({ WS = require('ws'), wsUrl = process.env.POSTMIG_WS_URL 
       stream: { connected, msgs, failedTx, events, watching: watch.size, lastErr } }; },
   };
 }
-module.exports = { createPostmig, pmSim, decodePoolEvent, poolEventsFromLogs, poolOf, VARIANTS, ammSell, ammBuy };
+module.exports = { createPostmig, pmSim, decodePoolEvent, poolEventsFromLogs, poolOf, VARIANTS, ammSell, ammBuy, isRoutineWsDrop };

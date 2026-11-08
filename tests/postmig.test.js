@@ -54,6 +54,23 @@ setImmediate(() => {
     t += 300e3; pm2.tick();
     const st = pm2.status(); assert.strictEqual(st.settled, 1); assert.strictEqual(st.paperOnly, true);
     const f0 = st.variants.find((v) => v.id === 'F0_P5'); assert.strictEqual(f0.n, 1); assert.ok(sent.some((x) => x.method === 'logsUnsubscribe' && x.params[0] === 77), 'unsubscribed');
-    pm.stop(); pm2.stop(); console.log('postmig tests OK');
+    pm.stop(); pm2.stop();
+
+    // public-RPC 1006 is a routine drop (same helper as scalp); don't pin it as lastErr
+    assert.strictEqual(P.isRoutineWsDrop('Invalid WebSocket frame: invalid status code 1006', null), true);
+    assert.strictEqual(P.isRoutineWsDrop('closed 1006', null), true);
+    assert.strictEqual(P.isRoutineWsDrop(null, 1006), true);
+    assert.strictEqual(P.isRoutineWsDrop('getaddrinfo ENOTFOUND', null), false);
+    let inst3 = null;
+    class FakeWS3 { constructor() { inst3 = this; this.h = {}; } on(k, f) { this.h[k] = f; } send() {} close() {} }
+    const pm3 = P.createPostmig({ WS: FakeWS3, now: () => t, log: () => {} });
+    pm3.start();
+    inst3.h.open();
+    inst3.h.error({ message: 'Invalid WebSocket frame: invalid status code 1006' });
+    assert.strictEqual(pm3.status().stream.lastErr, null, '1006 frame error is routine');
+    inst3.h.error({ message: 'getaddrinfo ENOTFOUND api.mainnet-beta.solana.com' });
+    assert.strictEqual(pm3.status().stream.lastErr, 'getaddrinfo ENOTFOUND api.mainnet-beta.solana.com');
+    pm3.stop();
+    console.log('postmig tests OK');
   });
 });
