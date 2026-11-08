@@ -37,7 +37,7 @@ function restoreCredits(snap) {
 }
 function creditSnapshot() { const c = creditStats(); return { day: c.day, today: c.today, byTag: { ...c.byTag } }; }
 
-// --- RPC with rate-limit handling (429 / -32429 / network errors -> exponential backoff)
+// --- RPC with rate-limit handling (429 / -32429 / network errors / transient long-term storage -> exponential backoff)
 let lastCall = 0;
 const MIN_GAP_MS = Number(process.env.RPC_MIN_GAP_MS || 120);
 async function rpc(method, params, tries = 7) {
@@ -58,7 +58,9 @@ async function rpc(method, params, tries = 7) {
       if (res.status === 429 || res.status >= 500) throw Object.assign(new Error('HTTP ' + res.status), { retry: true });
       const j = await res.json();
       if (j.error) {
-        if (j.error.code === 429 || j.error.code === -32429 || /rate|too many/i.test(j.error.message)) throw Object.assign(new Error(j.error.message), { retry: true });
+        // Same transient public-RPC error rips.js already retries (~20x in logs on getSignaturesForAddress).
+        // ALMA's scanner, Bond Radar and deep.js share this helper, so they should retry it too.
+        if (j.error.code === 429 || j.error.code === -32429 || /rate|too many|long-term storage/i.test(j.error.message || '')) throw Object.assign(new Error(j.error.message), { retry: true });
         throw new Error(`${method}: ${j.error.message}`);
       }
       return j.result;
