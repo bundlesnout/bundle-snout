@@ -33,6 +33,8 @@ assert.ok(st.entries >= 1 && st.openPositions > 0, 'positions opened after laten
 const pos0 = st.openPositions;
 for (let i = 0; i < 25; i++) { clock += 1000; trade('fomo' + i, true, 1.5); sc.tick(); } // strong pump -> TPs
 for (let i = 0; i < 20; i++) { clock += 1000; trade('fomo' + i, false, 1.2); sc.tick(); }
+const coolBefore = [...sc.variants.values()].reduce((n, v) => n + v.cool.size, 0);
+assert.ok(coolBefore > 0, 'closes leave cooldown keys: ' + coolBefore);
 clock += 31 * 60e3; sc.tick(); clock += 5000; sc.tick(); // time stops flush the rest
 st = sc.status();
 assert.strictEqual(st.openPositions, 0, 'everything closed eventually');
@@ -42,6 +44,9 @@ assert.ok(tp && tp.reasons.tp >= 1 && tp.net > 0, 'TP variant profitable on a re
 assert.ok(st.scalp.top10.length === 0 || st.scalp.top10[0].netSol >= st.scalp.top10[st.scalp.top10.length - 1].netSol, 'ranking sorted by net');
 const zero = [...sc.variants.values()].filter((v) => v.n).every((v) => v.n === Object.values(v.reasons).reduce((a, x) => a + x, 0));
 assert.ok(zero, 'exit reasons add up to trade count');
+clock += (cfg.cooldownMin + 1) * 60e3;
+sc.tick();
+assert.ok([...sc.variants.values()].filter((v) => v.kind === 'scalp').every((v) => v.cool.size === 0), 'expired scalp cool keys pruned');
 // ride signal must NOT fire on a coin dominated by looping bots
 assert.strictEqual(S.rideOk({ uniqueBuyers: 30, buySol: 10, sellSol: 2, net: 8, loopShare: 0.6, sameSize: 0.1, botTxShare: 0.1, progress: 30 }), false);
 assert.strictEqual(S.rideOk({ uniqueBuyers: 30, buySol: 10, sellSol: 2, net: 8, loopShare: 0.1, sameSize: 0.1, botTxShare: 0.05, progress: 30 }), true);
@@ -73,5 +78,22 @@ assert.strictEqual(S.rideOk({ uniqueBuyers: 30, buySol: 10, sellSol: 2, net: 8, 
 { const a = S.reconnectPlan(95e3, 8000); assert.deepStrictEqual(a, { delay: 250, next: 2000 }, 'healthy drop -> fast reconnect, backoff reset');
   const b = S.reconnectPlan(3e3, 2000); assert.deepStrictEqual(b, { delay: 2000, next: 4000 }, 'flapping -> backoff grows');
   assert.deepStrictEqual(S.reconnectPlan(null, 64000), { delay: 64000, next: 120000 }, 'never opened -> backoff, capped'); }
+// 6) tick() prunes expired per-variant cooldown keys and leaves still-valid ones
+{
+  let c = 2_000_000_000_000; const sc4 = S.createScalper({ now: () => c, log: () => {} });
+  const v = [...sc4.variants.values()][0];
+  v.cool.set('expiredMint', c - 1);
+  v.cool.set('freshMint', c + 60e3);
+  sc4.tick();
+  assert.strictEqual(v.cool.has('expiredMint'), false, 'expired cool key pruned');
+  assert.strictEqual(v.cool.has('freshMint'), true, 'unexpired cool key kept');
+  if (typeof sc4.memStats === 'function') {
+    const ms = sc4.memStats();
+    assert.strictEqual(ms.cool, 1, 'memStats.cool matches remaining keys');
+    assert.strictEqual(ms.variants, sc4.variants.size);
+    assert.strictEqual(ms.positions, 0);
+  }
+  sc4.stop();
+}
 console.log('scalp tests passed:', JSON.stringify({ signals: st.signals, entries: st.entries, closes: st.closes, tpVariant: { n: tp.n, net: Math.round(tp.net * 1e4) / 1e4, exits: tp.reasons } }));
 process.exit(0);

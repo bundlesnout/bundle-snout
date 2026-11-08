@@ -245,7 +245,7 @@ const HEAP_LIMIT_MB = Math.round(require('v8').getHeapStatistics().heap_size_lim
 const MEM_HEAP_RESTART_PCT = Number(process.env.MEM_HEAP_RESTART_PCT || 85);
 const HEAP_RESTART_MB = Math.round(HEAP_LIMIT_MB * MEM_HEAP_RESTART_PCT / 100);
 const mem = { rssMB: 0, heapMB: 0, peakRssMB: 0, restartAtMB: MEM_RESTART_MB, heapLimitMB: HEAP_LIMIT_MB, heapRestartAtMB: HEAP_RESTART_MB, checkedAt: null };
-const memSizes = () => ({ createdSyms: createdSyms.size, mref: mref.size, cache: cache.size, walletDeltas: walletTx.deltas.size, scalpMints: scalper?.mints?.size ?? null });
+const memSizes = () => { const ss = scalper?.memStats?.() ?? null; return { createdSyms: createdSyms.size, mref: mref.size, cache: cache.size, walletDeltas: walletTx.deltas.size, scalpMints: ss?.mints ?? null, scalpCool: ss?.cool ?? null }; };
 let memTick = 0;
 function memCheck() {
   const u = process.memoryUsage(); Object.assign(mem, { rssMB: Math.round(u.rss / 1048576), heapMB: Math.round(u.heapUsed / 1048576), checkedAt: new Date().toISOString() }); mem.peakRssMB = Math.max(mem.peakRssMB, mem.rssMB);

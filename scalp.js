@@ -274,6 +274,7 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
     for (let i = pendingEntries.length - 1; i >= 0; i--) { const e = pendingEntries[i]; if (t >= e.at + 3000) { pendingEntries.splice(i, 1); const m = mints.get(e.mint); if (m && !m.complete) openPositions(e, m); } }
     for (const [mint] of positions) checkExits(mint, mints.get(mint), false);
     for (const [mint, m] of mints) if (t - m.lastAt > 600e3 && !positions.has(mint)) mints.delete(mint);
+    for (const v of variants.values()) { for (const [mint, until] of v.cool) if (until <= t) v.cool.delete(mint); }
     save();
   }
   function onMessage(buf) { st.ws.msgs++; st.ws.bytes += buf.length; const s = buf.toString(); const tr = tradesFromMessage(s); if (tr.length) st.ws.lastAt = new Date(now()).toISOString(); tr.forEach(onTrade); }
@@ -323,6 +324,12 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
     const vs = [...variants.values()].filter((v) => v.kind === kind);
     const active = vs.filter((v) => v.n); return { variants: vs.length, withTrades: active.length, profitable: active.filter((v) => v.net > 0).length, simulatedTrades: active.reduce((a, v) => a + v.n, 0) };
   }
+  function memStats() {
+    let cool = 0, posN = 0;
+    for (const v of variants.values()) cool += v.cool.size;
+    for (const arr of positions.values()) posN += arr.length;
+    return { mints: mints.size, cool, variants: variants.size, positions: posN };
+  }
 
   return {
     async start() {
@@ -335,7 +342,7 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
     stop() { stopped = true; timers.forEach(clearInterval); try { ws?.close(); } catch {} },
     solUsd: () => st.solUsd, symbol: (m) => symOf(m), streamInfo: () => ({ connected: st.ws.connected, lastAt: st.ws.lastAt, pausedUntil: st.ws.pausedUntil, mintsTracked: mints.size, health: wsHealth() }),
     _wsOpened: wsOpened, _wsClosed: wsClosed,
-    save: () => save(true), resolveSymbols, onTrade, onMessage, tick, lagCheck, variants, logs,
+    save: () => save(true), resolveSymbols, onTrade, onMessage, tick, lagCheck, variants, logs, memStats,
     _setConnected: (v) => { st.ws.connected = v; },
     status() {
       const prim = variants.get(cfg.primary), rp = variants.get(cfg.ridePrimary);
