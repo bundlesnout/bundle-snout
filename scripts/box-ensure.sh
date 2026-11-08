@@ -211,6 +211,9 @@ fi
 
 # Box awake coverage (pinger log) -> box-coverage.json; flags LOW_BOX_COVERAGE under 50%.
 python3 "$(dirname "$0")/box-coverage.py" 2>/dev/null || echo "box-coverage: error"
+# Render app logs, last 2h, paginated (one 100-line page only covers ~1.5h) -> render-log-scan.json.
+( [ -f "$(dirname "$0")/../.env.local" ] && set -a && . "$(dirname "$0")/../.env.local" && set +a; \
+  timeout 120 python3 "$(dirname "$0")/render-log-scan.py" 2>/dev/null ) || echo "render-logs: error"
 
 # Flag when origin/main is ahead of the live Render deploy (autoDeploy can miss a push).
 # Read-only: prints RENDER_DEPLOY_LAG and writes a flag for Vigilancia; does not trigger deploys.
@@ -283,10 +286,12 @@ elif live_id:
         "scripts/early-runner",
         "scripts/box-coverage",
         "scripts/board-cache-check",
+        "scripts/render-log-scan",
         "tests/featured-runner",
         "tests/early",
         "tests/box-coverage",
         "tests/board-cache-check",
+        "tests/render-log-scan",
         "tests/box-ensure",
         # early.js is the Frongus early-volume rule module, required only by
         # scripts/early-runner.js + tests (not server.js); .gitignore never ships
