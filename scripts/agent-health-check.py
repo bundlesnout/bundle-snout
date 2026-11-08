@@ -118,7 +118,7 @@ def main():
     json.dump(summary, open(OUT, "w"), indent=2)
     print("agent-health: " + ("ok" if not flags else " ".join(flags)) +
           f" (mode={summary['mode']} trades={summary['closedTrades']} dd={summary['drawdownPct']}% "
-          f"state={summary['stateBytes']}/{summary['maxStateBytes']} capEta={summary['stateCapEtaDays']}d "
+          f"state={summary['stateBytes']}/{summary['maxStateBytes']} capEta={(str(summary['stateCapEtaDays'])+'d') if summary['stateCapEtaDays'] is not None else 'n/a'} "
           f"new={summary['newTradesSincePrev']}t/{summary['newWinsSincePrev']}w lastDecision={summary['lastDecisionAgoSec']}s)")
 
 
