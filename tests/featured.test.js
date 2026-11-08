@@ -104,6 +104,10 @@ function curveBuf(vs, vt, complete = false, creator = null) {
     const s5 = {}; const F5 = createFeatured({ getState: () => s5, fetchFn: async () => ({ ok: true, json: async () => ({ entries: [{ m: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', c: 'solana:mainnet', pg: 'pump', pa: 'SOL', p: 20, mc: 6000 }] }) }), now, rng: () => 0,
       baseline: async () => [{ mint: '7emEGMge9ucu2GZVCKxoWqnXTGfFFunczgbgiaqtpump', mcUsd: 5000, lastAt: t, complete: false }, { mint: R, mcUsd: 5000, lastAt: t, complete: false }, { mint: X, mcUsd: 5000, lastAt: t - 600e3, complete: false }] });
     await F5.refreshBoard(); const rb = s5.open.filter((p) => p.v.startsWith('rand_')); assert.ok(rb.length === 3 && rb.every((p) => p.mint === R), 'baseline = recent non-board coin'); }
+  { // zero trades: the verdict says why (board blocked) instead of implying data was tested
+    const s6 = {}; const F6 = createFeatured({ getState: () => s6, fetchFn: async () => ({ ok: false, status: 403, json: async () => ({}) }), now, rng: () => 0 });
+    await F6.refreshBoard().catch(() => {}); const v6 = F6.status().verdict;
+    assert.ok(/^no data yet: the movers board is unreachable/.test(v6) && /403/.test(v6), v6); }
   // wired into ALMA: status exposes it, the snapshot carries it and stays under the cap with a full book
   const ag = createAgent({ scalper: { mints: new Map(), symbol: () => 'T', solUsd: () => 100, streamInfo: () => ({}) }, now, log: () => {}, analyze: async () => ({}), cleanCheck: () => ({ ok: false, reasons: ['x'] }), rpc: null, params: null, fetchFn: async () => ({ json: async () => ({}) }), quiet: true });
   assert.ok(ag.status().shadowFeatured && ag.status().shadowFeatured.variants.length === 18);
