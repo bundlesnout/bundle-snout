@@ -4,6 +4,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { analyze } = require('./analyzer');
+const { publicRpc } = require('./public-rpc');
 const app = express();
 const PORT = Number(process.env.PORT || 8787);
 const BOT_MODE = (process.env.BOT_MODE || 'off').toLowerCase();
@@ -142,8 +143,7 @@ function walletBalance() {
 }
 // wallet history (funding, payout, swaps) straight from the chain: signatures cached 20 s, each tx's SOL delta cached forever
 const walletTx = { list: [], at: 0, pending: null, deltas: new Map() };
-const rpcCall = (method, params) => fetch(MOBILE_RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(8000), body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })
-  .then((r) => r.json()).then((j) => { if (j.error) throw new Error(j.error.message); return j.result; });
+const rpcCall = (method, params) => publicRpc(MOBILE_RPC, method, params, { timeoutMs: 8000 });
 function walletHistory() {
   if (Date.now() - walletTx.at < 20e3 || walletTx.pending) return walletTx.pending || Promise.resolve();
   walletTx.pending = (async () => {
