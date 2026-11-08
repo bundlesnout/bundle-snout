@@ -53,11 +53,19 @@ def check(health, agent, now, prev=None):
     sb, mx = p.get("stateBytes"), p.get("maxStateBytes")
     if sb and mx and sb > 0.9 * mx:
         flags.append("STATE_NEAR_CAP")
-    # Projection: state growing fast enough to reach 90% of cap within 3 days.
+    # Projection: reach 90% of cap within 3 days? Measured over >=12 h of samples, not one
+    # 2 h hop: state size wobbles a few KB as logs rotate, so a single hop gave false alarms
+    # (73->74.5 KB in 2 h projected "1 day" while it had been ~74 KB for two days).
     eta_days = None
-    if sb and mx and prev and prev.get("stateBytes") and prev.get("at") and now - prev["at"] > 600 \
-            and sb > prev["stateBytes"]:
-        rate = (sb - prev["stateBytes"]) / (now - prev["at"])
+    hist = [x for x in ((prev or {}).get("stateHist") or []) if x.get("at") and x.get("b")]
+    if not hist and prev and prev.get("stateBytes") and prev.get("at"):
+        hist = [{"at": prev["at"], "b": prev["stateBytes"]}]
+    if sb:
+        hist = [x for x in hist if now - x["at"] <= 3 * 86400] + [{"at": now, "b": sb}]
+    old = [x for x in hist if now - x["at"] >= 12 * 3600]
+    if sb and mx and old and sb > old[0]["b"]:
+        base = old[0]
+        rate = (sb - base["b"]) / (now - base["at"])
         eta_days = round(max(0, 0.9 * mx - sb) / rate / 86400, 1)
         if eta_days < 3:
             flags.append("STATE_GROWING_FAST")
@@ -83,7 +91,7 @@ def check(health, agent, now, prev=None):
         "drawdownPct": st.get("drawdownPct"), "scanErrors": st.get("scanErrors"),
         "liveErrors": st.get("liveErrors"), "lastDecisionAgoSec": dec_age, "stateBytes": sb,
         "maxStateBytes": mx, "streamBlindPct": sh.get("downPct"), "streamClosesLastHour": sh.get("closesLastHour"),
-        "newTradesSincePrev": new_trades, "newWinsSincePrev": new_wins, "stateCapEtaDays": eta_days,
+        "newTradesSincePrev": new_trades, "newWinsSincePrev": new_wins, "stateCapEtaDays": eta_days, "stateHist": hist[-40:],
         "worstPctPastStop": (st.get("exitSlippage") or {}).get("worstPctPastStop"),
         "flags": flags,
     }

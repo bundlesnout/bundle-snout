@@ -9,6 +9,9 @@ f,_=m.check(dict(H,agent={"loopRunning":False,"streamConnected":True}),B,now,{"l
 for k in ["LOOP_STOPPED","MODE_NOT_PAPER","DECISIONS_STALE","SAVE_ERROR","STATE_NEAR_CAP","LIVEERRORS_UP","RESTARTED"]: assert k in f,(k,f)
 G=dict(A,stats={"closedTrades":70,"wins":10,"scanErrors":0,"liveErrors":1},persistence=dict(A["persistence"],stateBytes=88000))
 f,sm=m.check(H,G,now,{"stateBytes":80000,"at":now-7200,"closedTrades":68,"wins":9,"uptimeSec":50})
-assert "STATE_GROWING_FAST" in f,(f,sm); assert sm["newTradesSincePrev"]==2 and sm["newWinsSincePrev"]==1, sm
-f,sm=m.check(H,A,now,{"stateBytes":69990,"at":now-7200}); assert "STATE_GROWING_FAST" not in f and sm["stateCapEtaDays"]>3, sm
+assert "STATE_GROWING_FAST" not in f and sm["stateCapEtaDays"] is None,(f,sm)  # one 2 h hop is noise
+f,sm=m.check(H,G,now,{"stateHist":[{"at":now-14*3600,"b":80000},{"at":now-7200,"b":87000}],"closedTrades":68,"wins":9,"uptimeSec":50})
+assert "STATE_GROWING_FAST" in f,(f,sm); assert len(sm["stateHist"])==3, sm; assert sm["newTradesSincePrev"]==2 and sm["newWinsSincePrev"]==1, sm
+f,sm=m.check(H,A,now,{"stateHist":[{"at":now-20*3600,"b":69990}]}); assert "STATE_GROWING_FAST" not in f and sm["stateCapEtaDays"]>3, sm
+f,sm=m.check(H,A,now,{"stateHist":[{"at":now-4*86400,"b":10000}]}); assert sm["stateCapEtaDays"] is None and len(sm["stateHist"])==1, sm  # >3 d old dropped
 print("ok")
