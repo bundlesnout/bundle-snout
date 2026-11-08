@@ -78,6 +78,28 @@ assert.strictEqual(S.rideOk({ uniqueBuyers: 30, buySol: 10, sellSol: 2, net: 8, 
 { const a = S.reconnectPlan(95e3, 8000); assert.deepStrictEqual(a, { delay: 250, next: 2000 }, 'healthy drop -> fast reconnect, backoff reset');
   const b = S.reconnectPlan(3e3, 2000); assert.deepStrictEqual(b, { delay: 2000, next: 4000 }, 'flapping -> backoff grows');
   assert.deepStrictEqual(S.reconnectPlan(null, 64000), { delay: 64000, next: 120000 }, 'never opened -> backoff, capped'); }
+// routine public-RPC 1006 (and the ws-library "invalid status code 1006" error) is not a stream fault
+assert.strictEqual(S.isRoutineWsDrop('Invalid WebSocket frame: invalid status code 1006', null), true);
+assert.strictEqual(S.isRoutineWsDrop('closed 1006', null), true);
+assert.strictEqual(S.isRoutineWsDrop(null, 1006), true);
+assert.strictEqual(S.isRoutineWsDrop('getaddrinfo ENOTFOUND', null), false);
+assert.strictEqual(S.isRoutineWsDrop('stalled', null), false);
+{
+  let c = 1_900_000_000_000; const sc5 = S.createScalper({ now: () => c, log: () => {} });
+  sc5._wsOpened();
+  sc5._noteWsError({ message: 'Invalid WebSocket frame: invalid status code 1006' });
+  assert.strictEqual(sc5.streamInfo().health.lastError, null, '1006 frame error is not lastError');
+  sc5._wsClosed(1006);
+  assert.strictEqual(sc5.streamInfo().health.lastError, null, '1006 close does not invent lastError');
+  assert.strictEqual(sc5.streamInfo().health.lastCloseCode, 1006);
+  sc5._wsOpened();
+  assert.strictEqual(sc5.streamInfo().health.lastError, null);
+  sc5._noteWsError({ message: 'getaddrinfo ENOTFOUND' });
+  assert.ok(/ENOTFOUND/.test(sc5.streamInfo().health.lastError));
+  sc5._wsClosed(1006);
+  assert.ok(/ENOTFOUND/.test(sc5.streamInfo().health.lastError), 'unexpected error kept across a later 1006 close');
+  sc5.stop();
+}
 // 6) tick() prunes expired per-variant cooldown keys and leaves still-valid ones
 {
   let c = 2_000_000_000_000; const sc4 = S.createScalper({ now: () => c, log: () => {} });

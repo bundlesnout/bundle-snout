@@ -61,6 +61,14 @@ function reconnectPlan(livedMs, backoff) {
   if (livedMs != null && livedMs >= 30e3) return { delay: 250, next: 2000 };
   return { delay: backoff, next: Math.min(backoff * 2, 120e3) };
 }
+// The public RPC often tears the socket down with reserved close code 1006. The `ws` library
+// then emits "Invalid WebSocket frame: invalid status code 1006" before 'close'. That is a
+// routine drop (ops 2026-11-08: 19/19 closes since boot were 1006, 0.2% blind), not a stream
+// fault — don't pin it as lastError on the public dashboard.
+function isRoutineWsDrop(msg, code) {
+  if (code === 1006) return true;
+  return /invalid status code 1006|^closed 1006$/i.test(String(msg || ''));
+}
 function tradesFromMessage(str) {
   if (str.indexOf('"err":null') < 0) return [];
   const out = []; LOG_RE.lastIndex = 0; let m;
@@ -304,8 +312,13 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
     ws.on('open', () => { openedAt = now(); wsOpened(); ws.send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'logsSubscribe', params: [{ mentions: [PUMP] }, { commitment: 'confirmed' }] }));
       ping = setInterval(() => { try { ws.ping(); } catch {} if (now() - lastMsg > 90e3) { st.ws.lastError = 'stalled'; ws.terminate(); } }, 30000); });
     ws.on('message', (b) => { lastMsg = now(); onMessage(b); });
-    ws.on('error', (e) => { st.ws.lastError = e.message; });
-    ws.on('close', (c) => { clearInterval(ping); wsClosed(c); st.ws.lastError ||= 'closed ' + c; const plan = reconnectPlan(openedAt == null ? null : now() - openedAt, backoff); backoff = plan.next; st.ws.lastReconnectMs = plan.delay; if (!stopped) setTimeout(connect, plan.delay); });
+    ws.on('error', (e) => { if (!isRoutineWsDrop(e.message, null)) st.ws.lastError = e.message; });
+    ws.on('close', (c) => {
+      clearInterval(ping); wsClosed(c);
+      if (isRoutineWsDrop(st.ws.lastError, null)) st.ws.lastError = null;
+      else if (!isRoutineWsDrop(null, c)) st.ws.lastError ||= 'closed ' + c;
+      const plan = reconnectPlan(openedAt == null ? null : now() - openedAt, backoff); backoff = plan.next; st.ws.lastReconnectMs = plan.delay; if (!stopped) setTimeout(connect, plan.delay);
+    });
   }
   // CPU guard: if the event loop lags (Render free = 0.1 CPU), back the stream off for a minute so the radar's scans can finish.
   let lagSlow = 0, lastTick = now();
@@ -342,6 +355,7 @@ function createScalper({ store = null, symbolOf = () => null, log = console.log,
     stop() { stopped = true; timers.forEach(clearInterval); try { ws?.close(); } catch {} },
     solUsd: () => st.solUsd, symbol: (m) => symOf(m), streamInfo: () => ({ connected: st.ws.connected, lastAt: st.ws.lastAt, pausedUntil: st.ws.pausedUntil, mintsTracked: mints.size, health: wsHealth() }),
     _wsOpened: wsOpened, _wsClosed: wsClosed,
+    _noteWsError: (e) => { if (!isRoutineWsDrop(e?.message || e, null)) st.ws.lastError = e?.message || String(e); },
     save: () => save(true), resolveSymbols, onTrade, onMessage, tick, lagCheck, variants, logs, memStats,
     _setConnected: (v) => { st.ws.connected = v; },
     status() {
@@ -373,4 +387,4 @@ function renderEnvStore(key = process.env.SCALP_STATE_KEY || 'SCALP_STATE') {
     async put(value) { const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ value }), signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error('HTTP ' + r.status); } };
 }
 
-module.exports = { reconnectPlan, createScalper, renderEnvStore, decodeTrade, tradesFromMessage, buyFill, sellValue, features, scalpLevels, rideOk, buildVariants, SCFG, DISC };
+module.exports = { reconnectPlan, isRoutineWsDrop, createScalper, renderEnvStore, decodeTrade, tradesFromMessage, buyFill, sellValue, features, scalpLevels, rideOk, buildVariants, SCFG, DISC };
