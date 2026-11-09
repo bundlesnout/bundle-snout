@@ -11,3 +11,4 @@ dryrun*.log
 
 # box backups
 *.bak-*
+__pycache__/
