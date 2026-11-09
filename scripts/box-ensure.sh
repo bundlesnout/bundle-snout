@@ -213,6 +213,7 @@ fi
 python3 "$(dirname "$0")/box-coverage.py" 2>/dev/null || echo "box-coverage: error"
 # ALMA /health + /api/agent snapshot -> agent-health.json; flags loop/mode/decisions/save/state-size/error-count regressions.
 timeout 90 python3 "$(dirname "$0")/agent-health-check.py" 2>/dev/null || echo "agent-health: error"
+timeout 30 python3 "$(dirname "$0")/experiments-check.py" 2>/dev/null || echo "experiments: error"
 # Render app logs, last 2h, paginated (one 100-line page only covers ~1.5h) -> render-log-scan.json.
 ( [ -f "$(dirname "$0")/../.env.local" ] && set -a && . "$(dirname "$0")/../.env.local" && set +a; \
   timeout 120 python3 "$(dirname "$0")/render-log-scan.py" 2>/dev/null ) || echo "render-logs: error"
@@ -290,12 +291,14 @@ elif live_id:
         "scripts/board-cache-check",
         "scripts/render-log-scan",
         "scripts/agent-health-check",
+        "scripts/experiments-check",
         "tests/featured-runner",
         "tests/early",
         "tests/box-coverage",
         "tests/board-cache-check",
         "tests/render-log-scan",
         "tests/agent-health-check",
+        "tests/experiments-check",
         "tests/box-ensure",
         # early.js is the Frongus early-volume rule module, required only by
         # scripts/early-runner.js + tests (not server.js); .gitignore never ships
