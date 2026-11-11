@@ -384,7 +384,7 @@ function renderEnvStore(key = process.env.SCALP_STATE_KEY || 'SCALP_STATE') {
   const headers = { authorization: `Bearer ${API_KEY}`, 'content-type': 'application/json', accept: 'application/json' };
   return { name: 'render-env:' + key,
     async get() { const r = await fetch(url, { headers, signal: AbortSignal.timeout(15000) }); if (r.status === 404) return null; if (!r.ok) throw new Error('HTTP ' + r.status); return (await r.json()).value; },
-    async put(value) { const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ value }), signal: AbortSignal.timeout(15000) }); if (!r.ok) throw new Error('HTTP ' + r.status); } };
+    async put(value) { const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ value }), signal: AbortSignal.timeout(Number(process.env.STATE_PUT_TIMEOUT_MS) || 30000) }); if (!r.ok) throw new Error('HTTP ' + r.status); } };
 }
 
 module.exports = { reconnectPlan, isRoutineWsDrop, createScalper, renderEnvStore, decodeTrade, tradesFromMessage, buyFill, sellValue, features, scalpLevels, rideOk, buildVariants, SCFG, DISC };

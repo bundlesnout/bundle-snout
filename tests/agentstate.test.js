@@ -21,5 +21,13 @@ const { createAgent } = require('../agent');
   const j = JSON.parse(zlib.gunzipSync(Buffer.from(saved.slice(3), 'base64')));
   assert.ok(j.dayStats.missed.mints.length <= 40); assert.strictEqual(j.paperCash, 0.0912, 'core state kept');
   a.stop(); const b = mk(); await b.start(); assert.strictEqual(b.st.paperCash, 0.0912, 'trimmed snapshot restores'); b.stop();
+  // a failed save is retried after saveRetrySec (60 s), not a full saveMin (5 min)
+  let fail = true; const fstore = { name: 'mem', get: async () => null, put: async (v) => { if (fail) throw new Error('The operation was aborted due to timeout'); saved = v; } };
+  const c = createAgent({ scalper, store: fstore, now, log: () => {}, analyze: async () => ({}), cleanCheck: () => ({ ok: false, reasons: ['x'] }) }); await c.start();
+  saved = null; t += 6 * 60e3; c.st.paperCash = 0.0777; await c.tick(); await new Promise((r) => setTimeout(r, 20));
+  let cp = c.status().persistence; assert.ok(/timeout/.test(cp.lastSaveError) && cp.saveFailStreak >= 1, JSON.stringify(cp));
+  fail = false; t += 30e3; await c.tick(); await new Promise((r) => setTimeout(r, 20)); assert.strictEqual(saved, null, 'not before the retry delay');
+  t += 35e3; await c.tick(); await new Promise((r) => setTimeout(r, 20));
+  cp = c.status().persistence; assert.ok(saved, 'retried after ~60 s'); assert.strictEqual(cp.lastSaveError, null); assert.strictEqual(cp.saveFailStreak, 0); assert.ok(cp.saveFails >= 1); c.stop();
   console.log('agentstate ok'); process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -87,6 +87,8 @@ const ACFG = () => ({
   limboFloorSol: num('AGENT_LIMBO_FLOOR_SOL', 0.015), liveStartSol: process.env.AGENT_LIVE_START_SOL ? Number(process.env.AGENT_LIVE_START_SOL) : null, // stays in the wallet for trading when a body part is bought
   seed: process.env.AGENT_SEED ? Number(process.env.AGENT_SEED) : null,
   saveMin: num('AGENT_SAVE_MIN', 5),
+  // a failed save (the Render API sometimes hangs for a minute) is retried this soon instead of waiting a full saveMin
+  saveRetrySec: num('AGENT_SAVE_RETRY_SEC', 60),
   // zero-downtime deploys: the new instance boots while the old one still trades, so on boot I wait (up to this long) for the old
   // instance's final shutdown save instead of restoring a snapshot up to saveMin old and trading alongside it. Render only.
   handoverSec: num('AGENT_HANDOVER_SEC', process.env.RENDER ? 90 : 0), handoverPollMs: num('AGENT_HANDOVER_POLL_MS', 5000),
@@ -958,7 +960,9 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
   async function save(force = false, final = false) {
     if (!store || (!dirty && !force)) return; const t = now(); if (!force && t - lastSave < cfg.saveMin * 60e3) return;
     lastSave = t; dirty = false;
-    try { await store.put(snapshot(final)); st.saves++; st.lastSaveAt = new Date(t).toISOString(); st.lastSaveError = null; } catch (e) { st.lastSaveError = e.message; dirty = true; }
+    try { await store.put(snapshot(final)); st.saves++; st.lastSaveAt = new Date(t).toISOString(); st.lastSaveError = null; st.saveFailStreak = 0; }
+    catch (e) { st.lastSaveError = e.message; st.saveFails = (st.saveFails || 0) + 1; st.saveFailStreak = (st.saveFailStreak || 0) + 1; dirty = true;
+      lastSave = t - Math.max(0, cfg.saveMin * 60e3 - cfg.saveRetrySec * 1e3); } // retry in saveRetrySec, not a full saveMin
   }
 
   function execution() {
@@ -1005,7 +1009,7 @@ function createAgent({ scalper = null, store = null, log = console.log, now = ()
       execution: execution(), shadow: shadowStatus(), shadowFeatured: FT.status(),
       payout: payoutStatus(), paperArchive: st.paperArchive ? { ...st.paperArchive, trades: st.paperArchive.trades.slice(0, 30) } : null,
       positions: open, trades: st.trades, decisions: st.decisions,
-      stream: scalper?.streamInfo?.() || null, persistence: store ? { backend: store.name, saves: st.saves, lastSaveAt: st.lastSaveAt, lastSaveError: st.lastSaveError, handover: st.handover || null, stateBytes: st.stateBytes ?? null, maxStateBytes: cfg.maxStateB64, stateTrimmed: st.stateTrimmed || null } : { backend: 'memory' },
+      stream: scalper?.streamInfo?.() || null, persistence: store ? { backend: store.name, saves: st.saves, lastSaveAt: st.lastSaveAt, lastSaveError: st.lastSaveError, saveFails: st.saveFails || 0, saveFailStreak: st.saveFailStreak || 0, handover: st.handover || null, stateBytes: st.stateBytes ?? null, maxStateBytes: cfg.maxStateB64, stateTrimmed: st.stateTrimmed || null } : { backend: 'memory' },
       lastDecisionAt: st.lastDecisionAt, activity: activity(),
     };
   }
