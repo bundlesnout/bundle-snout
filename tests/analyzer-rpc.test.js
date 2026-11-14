@@ -31,5 +31,19 @@ const { rpc } = require('../analyzer');
   }
   assert.ok(threw, 'permanent RPC error should throw');
   assert.strictEqual(n, 1, 'permanent RPC error should not retry');
+  // Size cap: an oversized streamed body is aborted with a non-retryable 'response too large' error.
+  n = 0;
+  const big = new TextEncoder().encode('{"result":[' + '"x",'.repeat(300000) + '"x"]}');
+  global.fetch = async () => { n++; return new Response(big, { status: 200 }); };
+  let tooLarge = false;
+  try { await rpc('getProgramAccounts', ['p', {}], 4, { maxBytes: 100000 }); } catch (e) { tooLarge = e.tooLarge && /too large/.test(e.message); }
+  assert.ok(tooLarge, 'oversized body should throw tooLarge');
+  assert.strictEqual(n, 1, 'too-large should not retry');
+  global.fetch = async () => new Response(JSON.stringify({ result: [1, 2] }), { status: 200 });
+  assert.deepStrictEqual(await rpc('getProgramAccounts', ['p', {}], 4, { maxBytes: 100000 }), [1, 2]);
+  global.fetch = async () => new Response(big, { status: 200, headers: { 'content-length': String(big.length) } });
+  tooLarge = false;
+  try { await rpc('getProgramAccounts', ['p', {}], 4, { maxBytes: 100000 }); } catch (e) { tooLarge = !!e.tooLarge; }
+  assert.ok(tooLarge, 'content-length over cap should throw');
   console.log('ok analyzer long-term storage retry');
 })().catch((e) => { console.error('FAIL analyzer-rpc', e); process.exit(1); }).finally(() => { global.fetch = origFetch; });

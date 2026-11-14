@@ -40,7 +40,26 @@ function creditSnapshot() { const c = creditStats(); return { day: c.day, today:
 // --- RPC with rate-limit handling (429 / -32429 / network errors / transient long-term storage -> exponential backoff)
 let lastCall = 0;
 const MIN_GAP_MS = Number(process.env.RPC_MIN_GAP_MS || 120);
-async function rpc(method, params, tries = 7) {
+// Response-size cap (2026-11-14: Bond Radar ran getProgramAccounts on a non-pump token with a huge holder list;
+// the JSON body + parse blew the 259 MB V8 heap in seconds, before the 60 s heap watchdog could run -> FATAL OOM,
+// no final save). Callers pass { maxBytes } and get a non-retryable 'response too large' error instead.
+const GPA_MAX_BYTES = Number(process.env.RPC_GPA_MAX_BYTES || 8 * 1048576);
+async function readCapped(res, maxBytes, method) {
+  const len = Number(res.headers?.get?.('content-length') || 0);
+  const tooBig = (n) => Object.assign(new Error(method + ': response too large (' + Math.round(n / 1048576) + ' MB > ' + Math.round(maxBytes / 1048576) + ' MB cap)'), { tooLarge: true });
+  if (len > maxBytes) { try { await res.body?.cancel?.(); } catch {} throw tooBig(len); }
+  if (!res.body?.getReader) return res.json();
+  const reader = res.body.getReader(); const chunks = []; let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.length;
+    if (n > maxBytes) { try { await reader.cancel(); } catch {} throw tooBig(n); }
+    chunks.push(value);
+  }
+  return JSON.parse(Buffer.concat(chunks, n).toString('utf8'));
+}
+async function rpc(method, params, tries = 7, opts = {}) {
   let delay = 600;
   for (let i = 0; i < tries; i++) {
     const wait = lastCall + MIN_GAP_MS - Date.now();
@@ -56,7 +75,7 @@ async function rpc(method, params, tries = 7) {
         signal: AbortSignal.timeout(25000),
       });
       if (res.status === 429 || res.status >= 500) throw Object.assign(new Error('HTTP ' + res.status), { retry: true });
-      const j = await res.json();
+      const j = opts.maxBytes ? await readCapped(res, opts.maxBytes, method) : await res.json();
       if (j.error) {
         // Same transient public-RPC error rips.js already retries (~20x in logs on getSignaturesForAddress).
         // ALMA's scanner, Bond Radar and deep.js share this helper, so they should retry it too.
@@ -356,7 +375,7 @@ async function analyze(mintStr, opts = {}) {
   try {
     const filters = [{ memcmp: { offset: 0, bytes: mint } }];
     if (report.tokenProgram === 'SPL Token') filters.push({ dataSize: 165 });
-    const all = await rpc('getProgramAccounts', [tokenProgram, { encoding: 'base64', dataSlice: { offset: 32, length: 40 }, filters }], 4);
+    const all = await rpc('getProgramAccounts', [tokenProgram, { encoding: 'base64', dataSlice: { offset: 32, length: 40 }, filters }], 4, { maxBytes: GPA_MAX_BYTES });
     const rows = all.map((a) => { const d = Buffer.from(a.account.data[0], 'base64'); return { address: a.pubkey, owner: new PublicKey(d.subarray(0, 32)).toBase58(), amount: d.readBigUInt64LE(32) }; }).filter((r) => r.amount > 0n);
     holderCount = new Set(rows.map((r) => r.owner)).size;
     rows.sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0));
