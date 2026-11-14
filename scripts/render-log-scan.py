@@ -18,7 +18,7 @@ ERR_RE = re.compile(r"(error|exception)\b|\b(uncaught|unhandled|fatal|crash(ed)?
 # Known benign: ALMA's own reasoning text often says "failed"/"error" in diary lines; keep level-based + regex.
 # JSON status dumps carry keys like "lastSaveError":null / "scanErrors":0 that are not errors.
 NULLKEY_RE = re.compile(r'"?\w*(error|errors)"?\s*:\s*(null|0|false|\[\]|\{\}|"")', re.I)
-DIARY_RE = re.compile(r"\[agent\] (SKIP|BUY|SELL|WATCH|SCAN|HOLD)\b")
+DIARY_RE = re.compile(r"\[agent\] (SKIP|BUY|SELL|WATCH|SCAN|HOLD)\b|\[radar\] \S+ [1-9A-HJ-NP-Za-km-z]{32,44} crossed\b")
 IGNORE_RE = re.compile(r"\[radar\] (dirty|clean)|scanErrors: 0", re.I)
 
 
@@ -38,7 +38,8 @@ def classify(logs):
         if IGNORE_RE.search(msg):
             continue
         # Render auto-levels lines containing words like "PANIC" as error; ALMA's
-        # own "[agent] SKIP <TICKER>" diary lines (e.g. coin $PANIC) are not errors.
+        # own "[agent] SKIP <TICKER>" diary lines (e.g. coin $PANIC) and Bond Radar
+        # "[radar] <TICKER> <mint> crossed N%" lines are not errors.
         if lv in ("error", "fatal") and DIARY_RE.match(msg) and not ERR_RE.search(msg):
             continue
         if lv in ("error", "fatal") or ERR_RE.search(msg):
